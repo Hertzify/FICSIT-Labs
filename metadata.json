@@ -1,0 +1,6 @@
+{
+  "name": "FICSIT Node Labs",
+  "description": "A 2D landscape factory automation and node-tycoon adaptation of Satisfactory with an Upload Labs-inspired interface.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,96 @@
+name: Android APK & Dev Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_title:
+        description: 'Release Title (defaults to package.json version + dev build)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build Android APK & Publish Dev Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Java JDK 21 for Android Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Read Version from package.json
+        id: pkg
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}-dev" >> $GITHUB_OUTPUT
+          echo "apk_name=ficsit-node-labs-${VERSION}-dev.apk" >> $GITHUB_OUTPUT
+
+      - name: Install Dependencies & Build Web Bundle
+        run: |
+          npm install
+          npm run build
+
+      - name: Add Capacitor Android & Configure Landscape Orientation
+        run: |
+          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          if [ ! -d "android" ]; then
+            npx cap add android
+          else
+            npx cap sync android
+          fi
+          npx cap copy android
+          # Enforce landscape orientation in AndroidManifest.xml for Android tablets/phones
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ] && ! grep -q 'android:screenOrientation' "$MANIFEST"; then
+            sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"/' "$MANIFEST"
+          fi
+
+      - name: Build Android Debug APK via Gradle
+        working-directory: ./android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "../${{ steps.pkg.outputs.apk_name }}"
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.apk_name }}
+          path: ./${{ steps.pkg.outputs.apk_name }}
+
+      - name: Create or Update GitHub Dev Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pkg.outputs.tag }}
+          name: ${{ github.event.inputs.release_title || format('{0} dev build', steps.pkg.outputs.version) }}
+          body: |
+            ## FICSIT Node Labs — ${{ steps.pkg.outputs.version }} dev build
+            - **Platform**: Android (Landscape Widescreen APK) + Web
+            - **Package**: `${{ steps.pkg.outputs.apk_name }}`
+            - Download and install `${{ steps.pkg.outputs.apk_name }}` directly on your Android device.
+          prerelease: true
+          files: ./${{ steps.pkg.outputs.apk_name }}

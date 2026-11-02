@@ -1,0 +1,10 @@
+{
+  "name": "FICSIT Node Labs",
+  "short_name": "Node Labs",
+  "description": "2D Factory Automation & Logistics Tycoon",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17"
+}

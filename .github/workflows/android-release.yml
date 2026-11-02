@@ -37,8 +37,11 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Pre-Installed Android SDK Licenses
+        run: |
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
 
       - name: Read Version from package.json
         id: pkg
@@ -65,19 +68,24 @@ jobs:
           )
           npm run build
 
-      - name: Add Capacitor Android & Configure Landscape Orientation
+      - name: Initialize Capacitor Android & Lock Landscape Orientation
         run: |
-          npm install --no-save --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android
+          npm install --save --legacy-peer-deps @capacitor/core@^7.0.0 @capacitor/cli@^7.0.0 @capacitor/android@^7.0.0
           if [ ! -d "android" ]; then
             npx cap add android
-          else
-            npx cap sync android
           fi
           npx cap copy android
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ] && ! grep -q 'android:screenOrientation' "$MANIFEST"; then
-            sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"/' "$MANIFEST"
-          fi
+          node -e '
+            const fs = require("fs");
+            const p = "android/app/src/main/AndroidManifest.xml";
+            if (fs.existsSync(p)) {
+              let xml = fs.readFileSync(p, "utf8");
+              if (!xml.includes("android:screenOrientation")) {
+                xml = xml.replace("<activity", "<activity android:screenOrientation=\"sensorLandscape\"");
+                fs.writeFileSync(p, xml);
+              }
+            }
+          '
 
       - name: Build Android Debug APK via Gradle
         working-directory: ./android

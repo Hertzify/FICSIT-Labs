@@ -4,9 +4,15 @@ import { playSynthSfx } from '../game/audio';
 import {
   canConnectPorts,
   changeNodeRecipe,
+  clampCameraToWorld,
+  clampNodeToWorld,
   createMachineNode,
+  MAX_ZOOM,
+  MIN_ZOOM,
   snapToGrid,
   stepSimulation,
+  WORLD_HEIGHT,
+  WORLD_WIDTH,
 } from '../game/rules';
 import {
   CameraState,
@@ -110,6 +116,23 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     pointerWorldX: number;
     pointerWorldY: number;
     pulsePhase: number;
+    // Google Maps-style Pinch & Double-Tap Zoom state
+    activePointers: Map<number, { x: number; y: number }>;
+    lastPinchDist: number | null;
+    lastPinchMidX: number | null;
+    lastPinchMidY: number | null;
+    lastTapTime: number;
+    lastTapX: number;
+    lastTapY: number;
+    isDoubleTapZooming: boolean;
+    doubleTapAnchorX: number;
+    doubleTapAnchorY: number;
+    doubleTapStartY: number;
+    doubleTapStartZoom: number;
+    // Smooth animated zoom target (for wheel / double-tap glide)
+    smoothZoomTarget: number | null;
+    smoothZoomAnchorX: number;
+    smoothZoomAnchorY: number;
   }>({
     isPanning: false,
     draggingNodeId: null,
@@ -124,6 +147,21 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     pointerWorldX: 0,
     pointerWorldY: 0,
     pulsePhase: 0,
+    activePointers: new Map(),
+    lastPinchDist: null,
+    lastPinchMidX: null,
+    lastPinchMidY: null,
+    lastTapTime: 0,
+    lastTapX: 0,
+    lastTapY: 0,
+    isDoubleTapZooming: false,
+    doubleTapAnchorX: 0,
+    doubleTapAnchorY: 0,
+    doubleTapStartY: 0,
+    doubleTapStartZoom: 1,
+    smoothZoomTarget: null,
+    smoothZoomAnchorX: 0,
+    smoothZoomAnchorY: 0,
   });
 
   const showToast = (msg: string) => {
@@ -136,7 +174,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     return () => window.clearTimeout(t);
   }, [statusToast]);
 
-  // Keep selectedNodeSnapshot synced when selectedNodeId changes
   useEffect(() => {
     if (!selectedNodeId) {
       setSelectedNodeSnapshot(null);
@@ -145,6 +182,25 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     const found = nodesRef.current.find((n) => n.id === selectedNodeId) ?? null;
     setSelectedNodeSnapshot(found ? { ...found } : null);
   }, [selectedNodeId, nodesRef]);
+
+  const applyZoomAboutScreenPoint = (
+    nextZoomRaw: number,
+    screenX: number,
+    screenY: number,
+    viewportW: number,
+    viewportH: number
+  ) => {
+    const cam = cameraRef.current;
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoomRaw));
+    const worldX = (screenX - cam.x) / cam.zoom;
+    const worldY = (screenY - cam.y) / cam.zoom;
+    const rawCam: CameraState = {
+      x: screenX - worldX * nextZoom,
+      y: screenY - worldY * nextZoom,
+      zoom: nextZoom,
+    };
+    cameraRef.current = clampCameraToWorld(rawCam, viewportW, viewportH);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -160,6 +216,13 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.max(1, Math.floor(rect.width * dpr));
       canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      if (mode === 'interactive') {
+        cameraRef.current = clampCameraToWorld(
+          cameraRef.current,
+          rect.width,
+          rect.height
+        );
+      }
     };
 
     resizeCanvas();
@@ -178,29 +241,51 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       lastTime = now;
       const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
-      // Step simulation
       const simResult = stepSimulation(nodesRef.current, connectionsRef.current, dt);
       nodesRef.current = simResult.nodes;
       connectionsRef.current = simResult.connections;
 
       interactionRef.current.pulsePhase = (interactionRef.current.pulsePhase + dt * 0.85) % 1;
 
-      // Ambient pan in background mode
-      if (mode === 'background') {
-        cameraRef.current.x = 60 + Math.sin(now * 0.00025) * 90;
-        cameraRef.current.y = 80 + Math.cos(now * 0.0002) * 35;
-        cameraRef.current.zoom = 0.82;
-      }
-
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
 
+      // Ambient pan in background mode, or smooth Google Maps-like zoom interpolation in interactive mode
+      if (mode === 'background') {
+        cameraRef.current.x = 60 + Math.sin(now * 0.00025) * 90;
+        cameraRef.current.y = 80 + Math.cos(now * 0.0002) * 35;
+        cameraRef.current.zoom = 0.82;
+      } else if (interactionRef.current.smoothZoomTarget !== null) {
+        const curZ = cameraRef.current.zoom;
+        const targetZ = interactionRef.current.smoothZoomTarget;
+        const diff = targetZ - curZ;
+        if (Math.abs(diff) < 0.002) {
+          applyZoomAboutScreenPoint(
+            targetZ,
+            interactionRef.current.smoothZoomAnchorX,
+            interactionRef.current.smoothZoomAnchorY,
+            width,
+            height
+          );
+          interactionRef.current.smoothZoomTarget = null;
+        } else {
+          const stepZ = curZ + diff * Math.min(1, dt * 14);
+          applyZoomAboutScreenPoint(
+            stepZ,
+            interactionRef.current.smoothZoomAnchorX,
+            interactionRef.current.smoothZoomAnchorY,
+            width,
+            height
+          );
+        }
+      }
+
       ctx.save();
       ctx.scale(dpr, dpr);
 
-      // 1. Deep Obsidian Blueprint Canvas Fill
-      ctx.fillStyle = '#0B0F17';
+      // 1. Out-of-Bounds Deep Void Fill
+      ctx.fillStyle = '#06090F';
       ctx.fillRect(0, 0, width, height);
 
       const cam = cameraRef.current;
@@ -210,13 +295,29 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       ctx.translate(cam.x, cam.y);
       ctx.scale(cam.zoom, cam.zoom);
 
-      // 2. Blueprint Coordinate Grid
+      // 2. Bounded Sector 01 Playfield Surface ([0, 0] to [WORLD_WIDTH, WORLD_HEIGHT])
+      ctx.fillStyle = '#0B0F17';
+      ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+      // Bounded Blueprint Coordinate Grid (strictly inside Sector Bounds)
       const gridStep = cfg.gridSize || 24;
       const majorStep = gridStep * 4;
-      const startWorldX = Math.floor(-cam.x / cam.zoom / majorStep) * majorStep - majorStep;
-      const endWorldX = startWorldX + width / cam.zoom + majorStep * 3;
-      const startWorldY = Math.floor(-cam.y / cam.zoom / majorStep) * majorStep - majorStep;
-      const endWorldY = startWorldY + height / cam.zoom + majorStep * 3;
+      const startWorldX = Math.max(
+        0,
+        Math.floor(-cam.x / cam.zoom / majorStep) * majorStep
+      );
+      const endWorldX = Math.min(
+        WORLD_WIDTH,
+        startWorldX + width / cam.zoom + majorStep * 2
+      );
+      const startWorldY = Math.max(
+        0,
+        Math.floor(-cam.y / cam.zoom / majorStep) * majorStep
+      );
+      const endWorldY = Math.min(
+        WORLD_HEIGHT,
+        startWorldY + height / cam.zoom + majorStep * 2
+      );
 
       ctx.lineWidth = 1 / cam.zoom;
       ctx.strokeStyle = '#131B2A';
@@ -242,6 +343,21 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.lineTo(endWorldX, gy);
       }
       ctx.stroke();
+
+      // Sector Perimeter Border & Corner Telemetry Markers
+      ctx.strokeStyle = '#F59E0B';
+      ctx.lineWidth = 2 / cam.zoom;
+      ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+      ctx.font = '600 12px "JetBrains Mono", monospace';
+      ctx.fillStyle = '#64748B';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(
+        `SECTOR 01 BOUNDARY [0, 0 — ${WORLD_WIDTH} × ${WORLD_HEIGHT}] · EXPANDABLE`,
+        16,
+        14
+      );
 
       // 3. Render Conveyor Connections (Curved Bezier vs 90-Degree Orthogonal)
       const nodeById = new Map<string, MachineNode>();
@@ -326,7 +442,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
         const isFlowing = conn.ratePerMin > 0;
 
-        // Outer track casing
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
         ctx.strokeStyle = '#1E293B';
         ctx.lineWidth = 6;
@@ -334,13 +449,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // Inner active core
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
         ctx.strokeStyle = isFlowing ? '#F59E0B' : '#475569';
         ctx.lineWidth = 2.5;
         ctx.stroke();
 
-        // Animated Item Flow Pulses
         if (isFlowing) {
           const pulseCount = 4;
           for (let i = 0; i < pulseCount; i++) {
@@ -356,7 +469,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           }
         }
 
-        // Midpoint rate & item pill when showPortRates is enabled
         if (cfg.showPortRates && conn.itemName) {
           const mid = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, 0.5, cfg.conveyorStyle);
           const badgeText = `${conn.ratePerMin}/m`;
@@ -376,7 +488,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
       }
 
-      // Active Drag Wiring Preview Line
       if (interactionRef.current.wiringFrom) {
         const wf = interactionRef.current.wiringFrom;
         drawConveyorPath(
@@ -400,7 +511,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const isSelected = node.id === selectedNodeId;
         const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
 
-        // Fast Crisp Drop Shadow & Card Body (zero CPU Gaussian blur overhead)
         drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
         ctx.fill();
@@ -409,13 +519,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.fillStyle = '#131B2E';
         ctx.fill();
 
-        // Card Structural Border
         drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
         ctx.strokeStyle = isSelected ? '#F59E0B' : '#26334D';
         ctx.lineWidth = isSelected ? 2.2 : 1.2;
         ctx.stroke();
 
-        // Header Bar Fill
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(node.x + 10, node.y);
@@ -429,19 +537,16 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.fillStyle = '#1A2540';
         ctx.fill();
 
-        // Top Accent Strip
         ctx.fillStyle = accent;
         ctx.fillRect(node.x + 10, node.y, node.width - 20, 2.5);
         ctx.restore();
 
-        // Machine Name Header
         ctx.fillStyle = '#F8FAFC';
         ctx.font = '700 13px "Outfit", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(node.title, node.x + 12, node.y + 18);
 
-        // Status & Efficiency Badge (Right side of Header)
         let statusText = 'IDLE';
         let statusColor = '#64748B';
         if (node.status === 'optimal') {
@@ -460,7 +565,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.textAlign = 'right';
         ctx.fillText(statusText, node.x + node.width - 12, node.y + 18);
 
-        // Recipe Label Row
         const recipeTitle =
           recipe?.name ??
           (node.buildingId === 'the_hub'
@@ -474,7 +578,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.textAlign = 'left';
         ctx.fillText(recipeTitle, node.x + 14, node.y + 50);
 
-        // Animated Progress Bar inside Node Card
         const barX = node.x + 14;
         const barY = node.y + node.height - 20;
         const barW = node.width - 28;
@@ -604,7 +707,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     };
   }, [mode, nodesRef, connectionsRef, cameraRef, selectedNodeId, tapSourcePort]);
 
-  // Coordinate helper
   const screenToWorld = (clientX: number, clientY: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -687,29 +789,54 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (mode !== 'interactive') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
     e.currentTarget.setPointerCapture(e.pointerId);
+    interactionRef.current.activePointers.set(e.pointerId, { x: sx, y: sy });
+    interactionRef.current.smoothZoomTarget = null;
+
+    // Google Maps 2-Finger Pinch-to-Zoom Initiation
+    if (interactionRef.current.activePointers.size === 2) {
+      const pts = Array.from(interactionRef.current.activePointers.values());
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const midX = (pts[0].x + pts[1].x) * 0.5;
+      const midY = (pts[0].y + pts[1].y) * 0.5;
+      interactionRef.current.lastPinchDist = Math.max(10, dist);
+      interactionRef.current.lastPinchMidX = midX;
+      interactionRef.current.lastPinchMidY = midY;
+      interactionRef.current.isPanning = false;
+      interactionRef.current.draggingNodeId = null;
+      interactionRef.current.wiringFrom = null;
+      interactionRef.current.isDoubleTapZooming = false;
+      return;
+    }
 
     const world = screenToWorld(e.clientX, e.clientY);
     interactionRef.current.pointerWorldX = world.x;
     interactionRef.current.pointerWorldY = world.y;
     interactionRef.current.pointerMoved = false;
 
-    // 1. If a building from Build Menu is waiting to be placed on canvas:
+    // 1. Place Pending Building from Build Menu (clamped to Sector Bounds)
     if (pendingBuildRef.current) {
       const bId = pendingBuildRef.current;
       const bDef = BUILDINGS[bId];
       if (bDef) {
-        const nx = snapToGrid(
+        const rawX = snapToGrid(
           world.x - bDef.width / 2,
           settingsRef.current.gridSize,
           settingsRef.current.gridSnap
         );
-        const ny = snapToGrid(
+        const rawY = snapToGrid(
           world.y - bDef.height / 2,
           settingsRef.current.gridSize,
           settingsRef.current.gridSnap
         );
-        const newNode = createMachineNode(bId, nx, ny);
+        const clamped = clampNodeToWorld(rawX, rawY, bDef.width, bDef.height);
+        const newNode = createMachineNode(bId, clamped.x, clamped.y);
         nodesRef.current = [...nodesRef.current, newNode];
         playSynthSfx('place', settingsRef.current);
         onClearPendingBuild();
@@ -720,12 +847,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       return;
     }
 
-    // 2. Check if user tapped/pressed a Port Dot
+    // 2. Port Dot Interaction
     const portHit = findPortAtWorld(world.x, world.y);
     if (portHit) {
       const wMode = settingsRef.current.wiringMode;
 
-      // If Tap-to-Tap source is already active and user tapped an Input port:
       if (tapSourcePort && portHit.port.side === 'input') {
         tryCreateConnection(
           tapSourcePort.nodeId,
@@ -737,7 +863,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         return;
       }
 
-      // If tapping an already-connected Input port, disconnect that line
       if (portHit.port.side === 'input') {
         const existingConn = connectionsRef.current.find(
           (c) => c.toNodeId === portHit.nodeId && c.toPortId === portHit.port.id
@@ -753,7 +878,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
       }
 
-      // If Output port pressed:
       if (portHit.port.side === 'output') {
         if (wMode === 'tap' || wMode === 'both') {
           setTapSourcePort({
@@ -770,7 +894,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }
     }
 
-    // 3. Check if user pressed a Node Card body
+    // 3. Node Card Body Drag / Select
     const hitNode = findNodeAtWorld(world.x, world.y);
     if (hitNode) {
       interactionRef.current.draggingNodeId = hitNode.id;
@@ -781,7 +905,30 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       return;
     }
 
-    // 4. Otherwise start panning the canvas
+    // 4. Empty Canvas: Check for Google Maps Double-Tap / Double-Tap-Hold-Drag Zoom!
+    const now = performance.now();
+    const dtTap = now - interactionRef.current.lastTapTime;
+    const tapDist = Math.hypot(
+      sx - interactionRef.current.lastTapX,
+      sy - interactionRef.current.lastTapY
+    );
+
+    if (dtTap < 320 && tapDist < 36) {
+      // Enter Google Maps one-finger Double-Tap + Vertical Drag Zoom mode
+      interactionRef.current.isDoubleTapZooming = true;
+      interactionRef.current.doubleTapAnchorX = sx;
+      interactionRef.current.doubleTapAnchorY = sy;
+      interactionRef.current.doubleTapStartY = sy;
+      interactionRef.current.doubleTapStartZoom = cameraRef.current.zoom;
+      interactionRef.current.lastTapTime = 0;
+      return;
+    }
+
+    interactionRef.current.lastTapTime = now;
+    interactionRef.current.lastTapX = sx;
+    interactionRef.current.lastTapY = sy;
+
+    // 5. Standard Pan
     setSelectedNodeId(null);
     setTapSourcePort(null);
     interactionRef.current.isPanning = true;
@@ -793,6 +940,67 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (mode !== 'interactive') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+
+    if (interactionRef.current.activePointers.has(e.pointerId)) {
+      interactionRef.current.activePointers.set(e.pointerId, { x: sx, y: sy });
+    }
+
+    // 1. Google Maps 2-Finger Pinch-to-Zoom + Simultaneous Midpoint Pan
+    if (interactionRef.current.activePointers.size === 2) {
+      const pts = Array.from(interactionRef.current.activePointers.values());
+      const dist = Math.max(10, Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y));
+      const midX = (pts[0].x + pts[1].x) * 0.5;
+      const midY = (pts[0].y + pts[1].y) * 0.5;
+
+      const prevDist = interactionRef.current.lastPinchDist ?? dist;
+      const prevMidX = interactionRef.current.lastPinchMidX ?? midX;
+      const prevMidY = interactionRef.current.lastPinchMidY ?? midY;
+
+      const scaleRatio = dist / prevDist;
+      const cam = cameraRef.current;
+      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * scaleRatio));
+
+      // Anchor zoom at previous pinch midpoint and translate by midpoint movement
+      const worldMidX = (prevMidX - cam.x) / cam.zoom;
+      const worldMidY = (prevMidY - cam.y) / cam.zoom;
+
+      const rawCam: CameraState = {
+        x: midX - worldMidX * nextZoom,
+        y: midY - worldMidY * nextZoom,
+        zoom: nextZoom,
+      };
+      cameraRef.current = clampCameraToWorld(rawCam, rect.width, rect.height);
+
+      interactionRef.current.lastPinchDist = dist;
+      interactionRef.current.lastPinchMidX = midX;
+      interactionRef.current.lastPinchMidY = midY;
+      return;
+    }
+
+    // 2. Google Maps 1-Finger Double-Tap + Hold Vertical Drag Zoom
+    if (interactionRef.current.isDoubleTapZooming) {
+      const dy = sy - interactionRef.current.doubleTapStartY;
+      if (Math.abs(dy) > 4) {
+        interactionRef.current.pointerMoved = true;
+      }
+      // Dragging down zooms IN, dragging up zooms OUT (Google Maps convention)
+      const zoomFactor = Math.pow(1.006, dy);
+      const nextZoom = interactionRef.current.doubleTapStartZoom * zoomFactor;
+      applyZoomAboutScreenPoint(
+        nextZoom,
+        interactionRef.current.doubleTapAnchorX,
+        interactionRef.current.doubleTapAnchorY,
+        rect.width,
+        rect.height
+      );
+      return;
+    }
+
     const world = screenToWorld(e.clientX, e.clientY);
     interactionRef.current.pointerWorldX = world.x;
     interactionRef.current.pointerWorldY = world.y;
@@ -818,9 +1026,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         settingsRef.current.gridSnap
       );
 
-      nodesRef.current = nodesRef.current.map((n) =>
-        n.id === nodeId ? { ...n, x: snappedX, y: snappedY } : n
-      );
+      nodesRef.current = nodesRef.current.map((n) => {
+        if (n.id !== nodeId) return n;
+        const clamped = clampNodeToWorld(snappedX, snappedY, n.width, n.height);
+        return { ...n, x: clamped.x, y: clamped.y };
+      });
       return;
     }
 
@@ -830,13 +1040,41 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       if (Math.hypot(dx, dy) > 4) {
         interactionRef.current.pointerMoved = true;
       }
-      cameraRef.current.x = interactionRef.current.camStartX + dx;
-      cameraRef.current.y = interactionRef.current.camStartY + dy;
+      cameraRef.current = clampCameraToWorld(
+        {
+          x: interactionRef.current.camStartX + dx,
+          y: interactionRef.current.camStartY + dy,
+          zoom: cameraRef.current.zoom,
+        },
+        rect.width,
+        rect.height
+      );
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const handlePointerUpOrCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (mode !== 'interactive') return;
+    interactionRef.current.activePointers.delete(e.pointerId);
+
+    if (interactionRef.current.activePointers.size < 2) {
+      interactionRef.current.lastPinchDist = null;
+      interactionRef.current.lastPinchMidX = null;
+      interactionRef.current.lastPinchMidY = null;
+    }
+
+    // If user double-tapped without dragging vertically, smoothly zoom in 1.35x toward tap point
+    if (interactionRef.current.isDoubleTapZooming) {
+      if (!interactionRef.current.pointerMoved) {
+        const nextTarget = Math.min(MAX_ZOOM, cameraRef.current.zoom * 1.35);
+        interactionRef.current.smoothZoomTarget = nextTarget;
+        interactionRef.current.smoothZoomAnchorX = interactionRef.current.doubleTapAnchorX;
+        interactionRef.current.smoothZoomAnchorY = interactionRef.current.doubleTapAnchorY;
+      }
+      interactionRef.current.isDoubleTapZooming = false;
+      onGraphMutated();
+      return;
+    }
+
     const world = screenToWorld(e.clientX, e.clientY);
 
     if (interactionRef.current.wiringFrom) {
@@ -865,13 +1103,14 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    const cam = cameraRef.current;
-    const zoomFactor = e.deltaY < 0 ? 1.09 : 0.92;
-    const nextZoom = Math.min(1.65, Math.max(0.45, cam.zoom * zoomFactor));
+    const baseZoom =
+      interactionRef.current.smoothZoomTarget ?? cameraRef.current.zoom;
+    const factor = Math.exp(-e.deltaY * 0.0016);
+    const nextTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, baseZoom * factor));
 
-    cam.x = mx - ((mx - cam.x) / cam.zoom) * nextZoom;
-    cam.y = my - ((my - cam.y) / cam.zoom) * nextZoom;
-    cam.zoom = nextZoom;
+    interactionRef.current.smoothZoomTarget = nextTarget;
+    interactionRef.current.smoothZoomAnchorX = mx;
+    interactionRef.current.smoothZoomAnchorY = my;
   };
 
   const selectedBuildingDef = selectedNodeSnapshot
@@ -885,7 +1124,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         data-testid="factory-canvas"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
+        onPointerUp={handlePointerUpOrCancel}
+        onPointerCancel={handlePointerUpOrCancel}
         onWheel={handleWheel}
         className={`w-full h-full block touch-none ${
           pendingBuildId ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
@@ -899,7 +1139,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           className="fixed top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#131B2E] border border-amber-500/60 shadow-xl"
         >
           <span className="text-xs font-medium text-amber-300 whitespace-nowrap">
-            Tap anywhere on canvas to place{' '}
+            Tap anywhere inside Sector 01 to place{' '}
             <strong className="font-display text-white">
               {BUILDINGS[pendingBuildId].name}
             </strong>
@@ -1036,7 +1276,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         </div>
       )}
 
-      {/* Subtle Action Toast */}
       {statusToast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-lg bg-[#131B2E] border border-[#26334D] text-xs text-slate-200 shadow-lg pointer-events-none whitespace-nowrap">
           {statusToast}

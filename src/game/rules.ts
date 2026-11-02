@@ -1,14 +1,82 @@
 import { BUILDINGS, RECIPES } from './catalog';
 import {
+  CameraState,
   ConveyorConnection,
   MachineNode,
   PortSocket,
   SaveSlot,
 } from './types';
 
+// Initial Sector 01 Map Boundaries (Large 3840x2160 sector, expandable in future updates)
+export const WORLD_WIDTH = 3840;
+export const WORLD_HEIGHT = 2160;
+export const MIN_ZOOM = 0.35;
+export const MAX_ZOOM = 1.85;
+export const WORLD_PADDING = 24;
+
 export function snapToGrid(value: number, gridSize: number, enabled: boolean): number {
   if (!enabled || gridSize <= 0) return Math.round(value);
   return Math.round(value / gridSize) * gridSize;
+}
+
+export function clampNodeToWorld(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  worldWidth = WORLD_WIDTH,
+  worldHeight = WORLD_HEIGHT
+): { x: number; y: number } {
+  const minX = WORLD_PADDING;
+  const minY = WORLD_PADDING;
+  const maxX = Math.max(minX, worldWidth - width - WORLD_PADDING);
+  const maxY = Math.max(minY, worldHeight - height - WORLD_PADDING);
+  return {
+    x: Math.min(maxX, Math.max(minX, x)),
+    y: Math.min(maxY, Math.max(minY, y)),
+  };
+}
+
+export function clampCameraToWorld(
+  cam: CameraState,
+  viewportWidth: number,
+  viewportHeight: number,
+  worldWidth = WORLD_WIDTH,
+  worldHeight = WORLD_HEIGHT
+): CameraState {
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom));
+  const marginX = Math.min(280, viewportWidth * 0.25);
+  const marginY = Math.min(200, viewportHeight * 0.25);
+
+  const scaledWorldW = worldWidth * zoom;
+  const scaledWorldH = worldHeight * zoom;
+
+  let minX: number;
+  let maxX: number;
+  if (scaledWorldW + marginX * 2 <= viewportWidth) {
+    // Center if zoomed out enough that entire sector width fits inside viewport
+    minX = (viewportWidth - scaledWorldW) / 2;
+    maxX = minX;
+  } else {
+    minX = viewportWidth - scaledWorldW - marginX;
+    maxX = marginX;
+  }
+
+  let minY: number;
+  let maxY: number;
+  if (scaledWorldH + marginY * 2 <= viewportHeight) {
+    minY = (viewportHeight - scaledWorldH) / 2;
+    maxY = minY;
+  } else {
+    minY = viewportHeight - scaledWorldH - marginY;
+    maxY = marginY;
+  }
+
+  return {
+    x: Math.min(maxX, Math.max(minX, cam.x)),
+    y: Math.min(maxY, Math.max(minY, cam.y)),
+    zoom,
+  };
 }
 
 export function buildNodePorts(

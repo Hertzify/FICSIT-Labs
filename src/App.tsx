@@ -345,17 +345,6 @@ export default function App() {
               <span>Build Menu</span>
               <span className="text-xs font-mono opacity-80">[Q]</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                cameraRef.current = { x: 36, y: 120, zoom: 0.76 };
-                playSynthSfx('click', settings);
-              }}
-              className="min-h-[48px] px-3.5 py-2.5 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] border border-[#26334D] text-xs font-semibold text-slate-300 hover:text-white shadow-lg whitespace-nowrap"
-            >
-              Center View
-            </button>
           </div>
         </div>
       )}

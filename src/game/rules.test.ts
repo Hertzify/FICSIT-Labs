@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import {
   canConnectPorts,
   changeNodeRecipe,
+  clampCameraToWorld,
+  clampNodeToWorld,
   createMachineNode,
   createStarterFactory,
   parseSaveImport,
   serializeSaveExport,
   snapToGrid,
   stepSimulation,
+  WORLD_HEIGHT,
+  WORLD_WIDTH,
 } from './rules';
 import { APP_BUILD_TAG, APP_VERSION } from './version';
 
@@ -16,6 +20,23 @@ test('snapToGrid snaps coordinates only when enabled', () => {
   assert.equal(snapToGrid(37, 24, true), 48);
   assert.equal(snapToGrid(11, 24, true), 0);
   assert.equal(snapToGrid(37.4, 24, false), 37);
+});
+
+test('clampNodeToWorld keeps nodes inside bounded sector limits', () => {
+  const neg = clampNodeToWorld(-250, -100, 268, 140);
+  assert.equal(neg.x, 24);
+  assert.equal(neg.y, 24);
+
+  const far = clampNodeToWorld(9999, 9999, 268, 140);
+  assert.equal(far.x, WORLD_WIDTH - 268 - 24);
+  assert.equal(far.y, WORLD_HEIGHT - 140 - 24);
+});
+
+test('clampCameraToWorld constrains zoom and pan within sector bounds', () => {
+  const zoomedOut = clampCameraToWorld({ x: -99999, y: -99999, zoom: 0.05 }, 1440, 900);
+  assert.equal(zoomedOut.zoom, 0.35);
+  assert.ok(zoomedOut.x > -5000);
+  assert.ok(zoomedOut.y > -5000);
 });
 
 test('canConnectPorts validates self-loops, duplicate lines, and valid connections', () => {
@@ -113,9 +134,10 @@ test('serializeSaveExport and parseSaveImport round-trip save slot cleanly', () 
   assert.equal(parsed.slot.nodes.length, 5);
 });
 
-test('version tracking matches 0.0.01 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.01');
-  assert.equal(APP_BUILD_TAG, '0.0.01 dev build');
+test('version tracking matches 0.0.02 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.02');
+  assert.equal(APP_BUILD_TAG, '0.0.02 dev build');
 });
+
 
 

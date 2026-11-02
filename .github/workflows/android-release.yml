@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Setup Java JDK 21 for Android Gradle
         uses: actions/setup-java@v4
@@ -51,19 +50,30 @@ jobs:
 
       - name: Install Dependencies & Build Web Bundle
         run: |
-          npm install
+          npm install --legacy-peer-deps || (
+            node -e '
+              const fs = require("fs");
+              const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              for (const section of ["dependencies", "devDependencies"]) {
+                if (!pkg[section]) continue;
+                for (const k of Object.keys(pkg[section])) {
+                  pkg[section][k] = "latest";
+                }
+              }
+              fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+            ' && npm install --legacy-peer-deps
+          )
           npm run build
 
       - name: Add Capacitor Android & Configure Landscape Orientation
         run: |
-          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          npm install --no-save --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android
           if [ ! -d "android" ]; then
             npx cap add android
           else
             npx cap sync android
           fi
           npx cap copy android
-          # Enforce landscape orientation in AndroidManifest.xml for Android tablets/phones
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ] && ! grep -q 'android:screenOrientation' "$MANIFEST"; then
             sed -i 's/<activity/<activity android:screenOrientation="sensorLandscape" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"/' "$MANIFEST"

@@ -36,6 +36,8 @@ export interface RecipeDef {
   outputs: RecipeIngredient[];
 }
 
+export type ResourcePurity = 'impure' | 'normal' | 'pure';
+
 export interface BuildingDef {
   id: string;
   name: string;
@@ -50,6 +52,7 @@ export interface BuildingDef {
   defaultRecipeId: string | null;
   availableRecipeIds: string[];
   powerMw: number;
+  buildable?: boolean;
 }
 
 export interface PortSocket {
@@ -73,6 +76,8 @@ export interface MachineNode {
   width: number;
   height: number;
   recipeId: string | null;
+  purity?: ResourcePurity;
+  isWorldDeposit?: boolean;
   status: MachineStatus;
   efficiency: number; // 0..100 integer
   progress: number; // 0..1 animation progress

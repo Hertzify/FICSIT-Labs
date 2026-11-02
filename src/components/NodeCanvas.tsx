@@ -1,11 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BUILDINGS, RECIPES } from '../game/catalog';
+import { BUILDINGS, PURITY_CONFIG, RECIPES } from '../game/catalog';
 import { playSynthSfx } from '../game/audio';
+import {
+  getBuildingIconUrl,
+  getCanvasBuildingImage,
+  getCanvasItemImage,
+  getItemAccentColor,
+  getItemIconUrl,
+} from '../game/icons';
 import {
   canConnectPorts,
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
+  computeConveyorBeltFlowVisuals,
   createMachineNode,
   isMacroIconZoom,
   MAX_ZOOM,
@@ -78,8 +86,7 @@ function drawRoundedRect(
 }
 
 /**
- * Draws a bespoke vector icon for each machine building type.
- * Used both in Upload Labs-style zoomed-out Macro Icon Boxes and in close-up headers.
+ * Fallback vector icon if image is still decoding.
  */
 function drawMachineVectorIcon(
   ctx: CanvasRenderingContext2D,
@@ -100,26 +107,18 @@ function drawMachineVectorIcon(
 
   switch (buildingId) {
     case 'the_hub': {
-      // Command Beacon Tower + Signal Waves
       ctx.beginPath();
       ctx.moveTo(cx - r * 0.55, cy + r * 0.75);
       ctx.lineTo(cx, cy - r * 0.55);
       ctx.lineTo(cx + r * 0.55, cy + r * 0.75);
       ctx.closePath();
       ctx.stroke();
-
       ctx.beginPath();
       ctx.arc(cx, cy - r * 0.55, r * 0.18, 0, Math.PI * 2);
       ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(cx, cy - r * 0.55, r * 0.48, -Math.PI * 0.8, -Math.PI * 0.2);
-      ctx.stroke();
       break;
     }
-
     case 'resource_deposit': {
-      // Faceted Hexagonal Ore Crystal
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
         const ang = (Math.PI / 3) * i - Math.PI / 6;
@@ -130,15 +129,12 @@ function drawMachineVectorIcon(
       }
       ctx.closePath();
       ctx.stroke();
-
       ctx.beginPath();
       ctx.arc(cx, cy, r * 0.28, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
-
     case 'miner_mk1': {
-      // Rotary Auger Drill Head pointing down into ore
       ctx.beginPath();
       ctx.moveTo(cx - r * 0.65, cy - r * 0.65);
       ctx.lineTo(cx + r * 0.65, cy - r * 0.65);
@@ -147,126 +143,38 @@ function drawMachineVectorIcon(
       ctx.lineTo(cx - r * 0.35, cy + r * 0.1);
       ctx.closePath();
       ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(cx - r * 0.42, cy - r * 0.25);
-      ctx.lineTo(cx + r * 0.42, cy - r * 0.25);
-      ctx.moveTo(cx - r * 0.25, cy + r * 0.15);
-      ctx.lineTo(cx + r * 0.25, cy + r * 0.15);
-      ctx.stroke();
       break;
     }
-
     case 'smelter': {
-      // Industrial Furnace / Flame Silhouette
       ctx.beginPath();
       ctx.moveTo(cx, cy - r * 0.82);
-      ctx.bezierCurveTo(cx + r * 0.75, cy - r * 0.2, cx + r * 0.65, cy + r * 0.55, cx, cy + r * 0.82);
-      ctx.bezierCurveTo(cx - r * 0.65, cy + r * 0.55, cx - r * 0.75, cy - r * 0.2, cx, cy - r * 0.82);
+      ctx.bezierCurveTo(
+        cx + r * 0.75,
+        cy - r * 0.2,
+        cx + r * 0.65,
+        cy + r * 0.55,
+        cx,
+        cy + r * 0.82
+      );
+      ctx.bezierCurveTo(
+        cx - r * 0.65,
+        cy + r * 0.55,
+        cx - r * 0.75,
+        cy - r * 0.2,
+        cx,
+        cy - r * 0.82
+      );
       ctx.closePath();
       ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(cx, cy + r * 0.22, r * 0.24, 0, Math.PI * 2);
-      ctx.fill();
       break;
     }
-
-    case 'constructor': {
-      // Precision 8-Tooth Industrial Gear
-      const outerR = r * 0.82;
-      const innerR = r * 0.55;
+    default: {
       ctx.beginPath();
-      ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2);
       ctx.stroke();
-
-      for (let i = 0; i < 8; i++) {
-        const ang = (Math.PI / 4) * i;
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(ang) * innerR, cy + Math.sin(ang) * innerR);
-        ctx.lineTo(cx + Math.cos(ang) * outerR, cy + Math.sin(ang) * outerR);
-        ctx.stroke();
-      }
-
       ctx.beginPath();
       ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
       ctx.fill();
-      break;
-    }
-
-    case 'assembler': {
-      // Dual Interlocking Gears
-      const g1x = cx - r * 0.32;
-      const g1y = cy - r * 0.22;
-      const g2x = cx + r * 0.34;
-      const g2y = cy + r * 0.26;
-      ctx.beginPath();
-      ctx.arc(g1x, g1y, r * 0.42, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(g1x, g1y, r * 0.15, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(g2x, g2y, r * 0.36, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(g2x, g2y, r * 0.13, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    }
-
-    case 'splitter': {
-      // 1-to-3 Diverging Flow Arrows
-      ctx.beginPath();
-      ctx.moveTo(cx - r * 0.75, cy);
-      ctx.lineTo(cx - r * 0.1, cy);
-      ctx.moveTo(cx - r * 0.1, cy);
-      ctx.lineTo(cx + r * 0.65, cy - r * 0.55);
-      ctx.moveTo(cx - r * 0.1, cy);
-      ctx.lineTo(cx + r * 0.75, cy);
-      ctx.moveTo(cx - r * 0.1, cy);
-      ctx.lineTo(cx + r * 0.65, cy + r * 0.55);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(cx - r * 0.1, cy, r * 0.16, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    }
-
-    case 'merger': {
-      // 3-to-1 Converging Flow Arrows
-      ctx.beginPath();
-      ctx.moveTo(cx - r * 0.65, cy - r * 0.55);
-      ctx.lineTo(cx + r * 0.1, cy);
-      ctx.moveTo(cx - r * 0.75, cy);
-      ctx.lineTo(cx + r * 0.1, cy);
-      ctx.moveTo(cx - r * 0.65, cy + r * 0.55);
-      ctx.lineTo(cx + r * 0.1, cy);
-      ctx.moveTo(cx + r * 0.1, cy);
-      ctx.lineTo(cx + r * 0.78, cy);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(cx + r * 0.1, cy, r * 0.16, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    }
-
-    case 'storage_container':
-    default: {
-      // Industrial Storage Vault Container
-      drawRoundedRect(ctx, cx - r * 0.72, cy - r * 0.6, r * 1.44, r * 1.2, r * 0.2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx - r * 0.72, cy);
-      ctx.lineTo(cx + r * 0.72, cy);
-      ctx.moveTo(cx - r * 0.22, cy - r * 0.25);
-      ctx.lineTo(cx + r * 0.22, cy - r * 0.25);
-      ctx.moveTo(cx - r * 0.22, cy + r * 0.28);
-      ctx.lineTo(cx + r * 0.22, cy + r * 0.28);
-      ctx.stroke();
       break;
     }
   }
@@ -286,8 +194,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Keep reactive props in mutable refs so the canvas render loop is created ONCE
-  // and NEVER tears down or clears canvas.width/height when clicking nodes or switching menus!
   const modeRef = useRef<'background' | 'interactive'>(mode);
   modeRef.current = mode;
 
@@ -331,8 +237,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     wiringFrom: PortHit | null;
     pointerWorldX: number;
     pointerWorldY: number;
-    pulsePhase: number;
-    // Google Maps-style Pinch & Double-Tap Zoom state
+    elapsedTime: number;
     activePointers: Map<number, { x: number; y: number }>;
     lastPinchDist: number | null;
     lastPinchMidX: number | null;
@@ -345,7 +250,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     doubleTapAnchorY: number;
     doubleTapStartY: number;
     doubleTapStartZoom: number;
-    // Smooth animated zoom target (for wheel / double-tap glide)
     smoothZoomTarget: number | null;
     smoothZoomAnchorX: number;
     smoothZoomAnchorY: number;
@@ -362,7 +266,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     wiringFrom: null,
     pointerWorldX: 0,
     pointerWorldY: 0,
-    pulsePhase: 0,
+    elapsedTime: 0,
     activePointers: new Map(),
     lastPinchDist: null,
     lastPinchMidX: null,
@@ -397,7 +301,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const found = nodesRef.current.find((n) => n.id === selectedNodeId) ?? null;
       setSelectedNodeSnapshot(found ? { ...found } : null);
     }
-    // Redraw immediately on the same frame so selection border never lags or flickers
     drawNowRef.current?.();
   }, [selectedNodeId, nodesRef]);
 
@@ -424,7 +327,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     cameraRef.current = clampCameraToWorld(rawCam, viewportW, viewportH);
   };
 
-  // Single persistent Canvas loop: never torn down on state changes, eliminating buffer-reset flicker
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -462,7 +364,47 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       ctx.fillStyle = '#0B0F17';
       ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-      // Bounded Blueprint Coordinate Grid (adaptive density when zoomed far out)
+      // Topographic Terrain Contours & Oasis Features (inspired by Rocky Desert map)
+      ctx.save();
+      ctx.strokeStyle = '#141E30';
+      ctx.lineWidth = Math.max(1.5, 1.5 / cam.zoom);
+      const ridgeCenters = [
+        { x: 2300, y: 1100, rx: 620, ry: 420 },
+        { x: 3650, y: 1450, rx: 850, ry: 520 },
+        { x: 2700, y: 2950, rx: 920, ry: 600 },
+        { x: 6400, y: 1380, rx: 880, ry: 540 },
+        { x: 6150, y: 4080, rx: 780, ry: 480 },
+        { x: 3250, y: 6050, rx: 940, ry: 560 },
+        { x: 9300, y: 2250, rx: 860, ry: 540 },
+        { x: 9600, y: 5300, rx: 1100, ry: 640 },
+      ];
+      for (const rc of ridgeCenters) {
+        for (let ring = 1; ring <= 3; ring++) {
+          ctx.beginPath();
+          ctx.ellipse(
+            rc.x,
+            rc.y,
+            rc.rx * (0.55 + ring * 0.28),
+            rc.ry * (0.55 + ring * 0.28),
+            0.18,
+            0,
+            Math.PI * 2
+          );
+          ctx.stroke();
+        }
+      }
+
+      // Subtle Oasis Pond in West Rocky Desert (matching screenshot landmark)
+      ctx.beginPath();
+      ctx.ellipse(1380, 3360, 260, 145, -0.45, 0, Math.PI * 2);
+      ctx.fillStyle = '#0D283A';
+      ctx.fill();
+      ctx.strokeStyle = '#1E4E68';
+      ctx.lineWidth = Math.max(2, 2 / cam.zoom);
+      ctx.stroke();
+      ctx.restore();
+
+      // Bounded Blueprint Coordinate Grid
       const gridStep = cfg.gridSize || 24;
       const majorStep = gridStep * 4;
       const startWorldX = Math.max(
@@ -483,7 +425,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       );
 
       ctx.lineWidth = 1 / cam.zoom;
-      if (!macroMode) {
+      if (!macroMode && cam.zoom >= 0.42) {
         ctx.strokeStyle = '#131B2A';
         ctx.beginPath();
         for (let gx = startWorldX; gx <= endWorldX; gx += gridStep) {
@@ -497,21 +439,23 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.stroke();
       }
 
-      ctx.strokeStyle = '#1B263B';
-      ctx.beginPath();
-      for (let gx = startWorldX; gx <= endWorldX; gx += majorStep) {
-        ctx.moveTo(gx, startWorldY);
-        ctx.lineTo(gx, endWorldY);
+      if (cam.zoom >= 0.14) {
+        ctx.strokeStyle = '#1B263B';
+        ctx.beginPath();
+        for (let gx = startWorldX; gx <= endWorldX; gx += majorStep) {
+          ctx.moveTo(gx, startWorldY);
+          ctx.lineTo(gx, endWorldY);
+        }
+        for (let gy = startWorldY; gy <= endWorldY; gy += majorStep) {
+          ctx.moveTo(startWorldX, gy);
+          ctx.lineTo(endWorldX, gy);
+        }
+        ctx.stroke();
       }
-      for (let gy = startWorldY; gy <= endWorldY; gy += majorStep) {
-        ctx.moveTo(startWorldX, gy);
-        ctx.lineTo(endWorldX, gy);
-      }
-      ctx.stroke();
 
-      // Sector Perimeter Border & Corner Telemetry Markers
+      // Sector Perimeter Border
       ctx.strokeStyle = '#F59E0B';
-      ctx.lineWidth = Math.max(2, 2.2 / cam.zoom);
+      ctx.lineWidth = Math.max(2, 2.5 / cam.zoom);
       ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
       ctx.font = `600 ${Math.max(12, Math.round(12 / Math.min(1, cam.zoom * 1.4)))}px "JetBrains Mono", monospace`;
@@ -519,12 +463,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(
-        `SECTOR 01 BOUNDARY [0, 0 — ${WORLD_WIDTH} × ${WORLD_HEIGHT}]`,
-        20,
-        16
+        `SECTOR 01 BOUNDARY [0, 0 — ${WORLD_WIDTH} × ${WORLD_HEIGHT}] · 32 NATURAL RESOURCE DEPOSITS`,
+        24,
+        20
       );
 
-      // 3. Render Conveyor Connections (Curved Bezier vs 90-Degree Orthogonal)
+      // 3. Render Conveyor Connections with Single-Digit Adaptive Speed, Density & Item Icons
       const nodeById = new Map<string, MachineNode>();
       for (const n of nodesRef.current) {
         nodeById.set(n.id, n);
@@ -606,52 +550,77 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const p2 = getPortWorldCoords(toNode, 'input', inIdx, toNode.inputs.length);
 
         const isFlowing = conn.ratePerMin > 0;
+        const itemColor = getItemAccentColor(conn.itemName);
 
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
         ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 6;
+        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 6.5;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
-        ctx.strokeStyle = isFlowing ? '#F59E0B' : '#475569';
+        ctx.strokeStyle = isFlowing ? itemColor : '#475569';
         ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2.5;
         ctx.stroke();
 
+        // Fully Adaptive Moving Belt Packets (scales down to single-digit 1/m..9/m rates)
         if (isFlowing) {
-          const pulseCount = macroMode ? 3 : 4;
-          const dotRadius = macroMode ? Math.max(4.5, 3 / cam.zoom) : 4;
-          for (let i = 0; i < pulseCount; i++) {
-            const t = (interactionRef.current.pulsePhase + i / pulseCount) % 1;
+          const flowVis = computeConveyorBeltFlowVisuals(conn.ratePerMin);
+          const beltPhase =
+            (interactionRef.current.elapsedTime * 0.68 * flowVis.speedMultiplier) % 1;
+          const itemImg = !macroMode ? getCanvasItemImage(conn.itemName) : null;
+          const dotR = macroMode
+            ? Math.max(4.5, 3 / cam.zoom)
+            : flowVis.dotRadius;
+
+          for (let i = 0; i < flowVis.dotCount; i++) {
+            const t = (beltPhase + i / flowVis.dotCount) % 1;
             const pt = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, t, cfg.conveyorStyle);
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, dotRadius, 0, Math.PI * 2);
-            ctx.fillStyle = '#FEF3C7';
-            ctx.fill();
-            ctx.strokeStyle = '#D97706';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
+
+            if (itemImg && cam.zoom >= 0.58) {
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, 7.5, 0, Math.PI * 2);
+              ctx.fillStyle = '#0F172A';
+              ctx.fill();
+              ctx.strokeStyle = itemColor;
+              ctx.lineWidth = 1.4;
+              ctx.stroke();
+              ctx.drawImage(itemImg, pt.x - 6, pt.y - 6, 12, 12);
+            } else {
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
+              ctx.fillStyle = '#F8FAFC';
+              ctx.fill();
+              ctx.strokeStyle = itemColor;
+              ctx.lineWidth = 1.8;
+              ctx.stroke();
+            }
           }
         }
 
-        // Only draw inline rate badges in detail zoom mode so macro view stays clean
         if (!macroMode && cfg.showPortRates && conn.itemName) {
           const mid = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, 0.5, cfg.conveyorStyle);
           const badgeText = `${conn.ratePerMin}/m`;
           ctx.font = '600 10px "JetBrains Mono", monospace';
-          const tw = ctx.measureText(badgeText).width + 12;
-          drawRoundedRect(ctx, mid.x - tw / 2, mid.y - 9, tw, 18, 4);
+          const itemImg = getCanvasItemImage(conn.itemName);
+          const iconPad = itemImg ? 14 : 0;
+          const tw = ctx.measureText(badgeText).width + 12 + iconPad;
+          drawRoundedRect(ctx, mid.x - tw / 2, mid.y - 9.5, tw, 19, 4.5);
           ctx.fillStyle = '#0F172A';
           ctx.fill();
-          ctx.strokeStyle = isFlowing ? '#F59E0B' : '#334155';
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = isFlowing ? itemColor : '#334155';
+          ctx.lineWidth = 1.1;
           ctx.stroke();
 
-          ctx.fillStyle = isFlowing ? '#FDE68A' : '#94A3B8';
+          if (itemImg) {
+            ctx.drawImage(itemImg, mid.x - tw / 2 + 4, mid.y - 6, 12, 12);
+          }
+
+          ctx.fillStyle = isFlowing ? '#F8FAFC' : '#94A3B8';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(badgeText, mid.x, mid.y);
+          ctx.fillText(badgeText, mid.x + iconPad * 0.45, mid.y);
         }
       }
 
@@ -671,10 +640,15 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.setLineDash([]);
       }
 
-      // 4. Render Machine Nodes (Upload Labs Macro Icon Boxes when zoomed far out vs Detailed Node Windows)
+      // 4. Render Machine Nodes & Natural World Resource Deposits
       for (const node of nodesRef.current) {
         const bDef = BUILDINGS[node.buildingId];
-        const accent = bDef?.accentColor ?? '#F59E0B';
+        const isDeposit = node.buildingId === 'resource_deposit';
+        const purityKey = node.purity ?? 'normal';
+        const purityInfo = PURITY_CONFIG[purityKey];
+        const accent = isDeposit
+          ? purityInfo.badgeColor
+          : bDef?.accentColor ?? '#F59E0B';
         const isSelected = node.id === curSelectedId;
         const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
 
@@ -687,13 +661,89 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           statusColor = '#EF4444';
         }
 
+        const buildingImg = getCanvasBuildingImage(node.buildingId, node.recipeId);
+        const primaryItemId =
+          recipe?.outputs[0]?.itemId ??
+          recipe?.outputs[0]?.itemName ??
+          node.outputs[0]?.itemName ??
+          node.inputs[0]?.itemName;
+        const primaryItemImg = getCanvasItemImage(primaryItemId);
+
         if (macroMode) {
           // =========================================================================
-          // UPLOAD LABS MACRO ICON BOX MODE (cam.zoom < 0.55)
-          // Displays compact boxes with bold borders & large centered machine icon!
+          // MACRO ZOOM MODE (cam.zoom < 0.25)
+          // Resource Deposits render as Circular Satisfactory Map Pins (Green/Orange/Red)
+          // Player Machines render as Upload Labs Macro Icon Boxes
           // =========================================================================
+          const cx = node.x + node.width * 0.5;
+          const cy = node.y + node.height * 0.5;
+
+          if (isDeposit) {
+            const pinRadius = 116;
+            const stemEndX = cx + pinRadius * 0.72;
+            const stemEndY = cy + pinRadius * 1.28;
+
+            // Diagonal Pin Stem + Small Ground Anchor Ring (matches Satisfactory interactive map)
+            ctx.beginPath();
+            ctx.moveTo(cx + pinRadius * 0.35, cy + pinRadius * 0.65);
+            ctx.lineTo(stemEndX, stemEndY);
+            ctx.strokeStyle = '#E2E8F0';
+            ctx.lineWidth = Math.min(18, Math.max(4, 1.8 / cam.zoom));
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(stemEndX, stemEndY, pinRadius * 0.16, 0, Math.PI * 2);
+            ctx.fillStyle = '#0B0F17';
+            ctx.fill();
+            ctx.strokeStyle = '#E2E8F0';
+            ctx.lineWidth = Math.min(14, Math.max(3, 1.4 / cam.zoom));
+            ctx.stroke();
+
+            // Circular Map Pin Shadow
+            ctx.beginPath();
+            ctx.arc(cx + 6, cy + 10, pinRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fill();
+
+            // Circular Map Pin Filled with Purity Color (Green Pure / Orange Normal / Red Impure)
+            ctx.beginPath();
+            ctx.arc(cx, cy, pinRadius, 0, Math.PI * 2);
+            ctx.fillStyle = purityInfo.badgeColor;
+            ctx.fill();
+            ctx.strokeStyle = isSelected ? '#FACC15' : '#F8FAFC';
+            ctx.lineWidth = isSelected
+              ? Math.min(28, Math.max(8, 3.2 / cam.zoom))
+              : Math.min(20, Math.max(5, 2.1 / cam.zoom));
+            ctx.stroke();
+
+            // Official Satisfactory Ore Icon Centered Inside Pin
+            const pinIcon = primaryItemImg ?? buildingImg;
+            if (pinIcon) {
+              const iconDim = pinRadius * 1.28;
+              ctx.drawImage(
+                pinIcon,
+                cx - iconDim * 0.5,
+                cy - iconDim * 0.5,
+                iconDim,
+                iconDim
+              );
+            } else {
+              drawMachineVectorIcon(
+                ctx,
+                node.buildingId,
+                cx,
+                cy,
+                pinRadius * 0.9,
+                '#FFFFFF'
+              );
+            }
+            continue;
+          }
+
+          // Upload Labs Macro Icon Box for Player-Built Machines
           drawRoundedRect(ctx, node.x + 4, node.y + 8, node.width, node.height, 16);
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
           ctx.fill();
 
           drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
@@ -702,17 +752,13 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
           drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
           ctx.strokeStyle = isSelected ? '#FFFFFF' : accent;
-          ctx.lineWidth = isSelected ? Math.max(4, 3.2 / cam.zoom) : Math.max(2.5, 2 / cam.zoom);
+          ctx.lineWidth = isSelected ? Math.max(4, 3.2 / cam.zoom) : Math.max(2.6, 2.1 / cam.zoom);
           ctx.stroke();
 
-          // Top Accent Bar
           ctx.fillStyle = accent;
           ctx.fillRect(node.x + 18, node.y, node.width - 36, Math.max(5, 3 / cam.zoom));
 
-          // Centered Icon Box Medallion
-          const cx = node.x + node.width * 0.5;
-          const cy = node.y + node.height * 0.5;
-          const medallionSize = Math.min(node.width, node.height) * 0.62;
+          const medallionSize = Math.min(node.width, node.height) * 0.66;
 
           drawRoundedRect(
             ctx,
@@ -728,73 +774,52 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ctx.lineWidth = Math.max(2, 1.5 / cam.zoom);
           ctx.stroke();
 
-          drawMachineVectorIcon(
-            ctx,
-            node.buildingId,
-            cx,
-            cy,
-            medallionSize * 0.68,
-            accent
-          );
+          const macroImg = buildingImg ?? primaryItemImg;
+          if (macroImg) {
+            const imgSize = medallionSize * 0.78;
+            ctx.drawImage(
+              macroImg,
+              cx - imgSize * 0.5,
+              cy - imgSize * 0.5,
+              imgSize,
+              imgSize
+            );
+          } else {
+            drawMachineVectorIcon(
+              ctx,
+              node.buildingId,
+              cx,
+              cy,
+              medallionSize * 0.68,
+              accent
+            );
+          }
 
-          // High-Visibility Status LED Dot in Top-Right Corner
+          // Top-Right Status LED
           ctx.beginPath();
-          ctx.arc(node.x + node.width - 22, node.y + 22, 9, 0, Math.PI * 2);
+          ctx.arc(node.x + node.width - 22, node.y + 22, 9.5, 0, Math.PI * 2);
           ctx.fillStyle = statusColor;
           ctx.fill();
           ctx.strokeStyle = '#0B0F17';
           ctx.lineWidth = 2.5;
           ctx.stroke();
-
-          // Simplified Macro Port Nubs (No Cluttered Text)
-          for (let i = 0; i < node.inputs.length; i++) {
-            const port = node.inputs[i];
-            const pt = getPortWorldCoords(node, 'input', i, node.inputs.length);
-            const isConnected = connectionsRef.current.some(
-              (c) => c.toNodeId === node.id && c.toPortId === port.id
-            );
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, 9, 0, Math.PI * 2);
-            ctx.fillStyle = isConnected ? '#06B6D4' : '#0B0F17';
-            ctx.fill();
-            ctx.strokeStyle = '#38BDF8';
-            ctx.lineWidth = 2.5;
-            ctx.stroke();
-          }
-
-          for (let i = 0; i < node.outputs.length; i++) {
-            const port = node.outputs[i];
-            const pt = getPortWorldCoords(node, 'output', i, node.outputs.length);
-            const isConnected = connectionsRef.current.some(
-              (c) => c.fromNodeId === node.id && c.fromPortId === port.id
-            );
-            const isTapSelected =
-              curTapPort?.nodeId === node.id && curTapPort?.portId === port.id;
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, isTapSelected ? 11 : 9, 0, Math.PI * 2);
-            ctx.fillStyle = isConnected || isTapSelected ? '#F59E0B' : '#0B0F17';
-            ctx.fill();
-            ctx.strokeStyle = '#FBBF24';
-            ctx.lineWidth = 2.5;
-            ctx.stroke();
-          }
           continue;
         }
 
         // =========================================================================
-        // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.55)
+        // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.34)
         // =========================================================================
         drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
         ctx.fill();
 
         drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
-        ctx.fillStyle = '#131B2E';
+        ctx.fillStyle = isDeposit ? '#0E1924' : '#131B2E';
         ctx.fill();
 
         drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
-        ctx.strokeStyle = isSelected ? '#F59E0B' : '#26334D';
-        ctx.lineWidth = isSelected ? 2.2 : 1.2;
+        ctx.strokeStyle = isSelected ? '#F59E0B' : isDeposit ? accent : '#26334D';
+        ctx.lineWidth = isSelected ? 2.4 : isDeposit ? 1.6 : 1.2;
         ctx.stroke();
 
         ctx.save();
@@ -807,48 +832,70 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.lineTo(node.x, node.y + 10);
         ctx.quadraticCurveTo(node.x, node.y, node.x + 10, node.y);
         ctx.closePath();
-        ctx.fillStyle = '#1A2540';
+        ctx.fillStyle = isDeposit ? '#132433' : '#1A2540';
         ctx.fill();
 
         ctx.fillStyle = accent;
         ctx.fillRect(node.x + 10, node.y, node.width - 20, 2.5);
         ctx.restore();
 
-        // Small Header Machine Icon + Title
-        drawMachineVectorIcon(ctx, node.buildingId, node.x + 20, node.y + 18, 15, accent);
+        // Top-Left Official Satisfactory Wiki Building or Ore Icon
+        if (buildingImg) {
+          ctx.drawImage(buildingImg, node.x + 10, node.y + 8, 19, 19);
+        } else {
+          drawMachineVectorIcon(ctx, node.buildingId, node.x + 20, node.y + 18, 15, accent);
+        }
 
         ctx.fillStyle = '#F8FAFC';
-        ctx.font = '700 13px "Outfit", sans-serif';
+        ctx.font = '700 12.5px "Outfit", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(node.title, node.x + 34, node.y + 18);
 
-        let statusText = 'IDLE';
-        if (node.status === 'optimal') {
-          statusText = `${node.efficiency}% OPTIMAL`;
-        } else if (node.status === 'working') {
-          statusText = `${node.efficiency}% ACTIVE`;
-        } else if (node.status === 'starved') {
-          statusText = 'STARVED';
+        if (isDeposit) {
+          // Purity Quality Pill on Natural World Deposit Header
+          const pText = `${purityInfo.label} · ${purityInfo.ratePerMin}/m`;
+          ctx.font = '700 9.5px "JetBrains Mono", monospace';
+          ctx.fillStyle = purityInfo.badgeColor;
+          ctx.textAlign = 'right';
+          ctx.fillText(pText, node.x + node.width - 10, node.y + 18);
+        } else {
+          let statusText = 'IDLE';
+          if (node.status === 'optimal') {
+            statusText = `${node.efficiency}% OPTIMAL`;
+          } else if (node.status === 'working') {
+            statusText = `${node.efficiency}% ACTIVE`;
+          } else if (node.status === 'starved') {
+            statusText = 'STARVED';
+          }
+
+          ctx.font = '600 10px "JetBrains Mono", monospace';
+          ctx.fillStyle = statusColor;
+          ctx.textAlign = 'right';
+          ctx.fillText(statusText, node.x + node.width - 12, node.y + 18);
         }
 
-        ctx.font = '600 10px "JetBrains Mono", monospace';
-        ctx.fillStyle = statusColor;
-        ctx.textAlign = 'right';
-        ctx.fillText(statusText, node.x + node.width - 12, node.y + 18);
+        const recipeTitle = isDeposit
+          ? `${recipe?.outputs[0]?.itemName ?? 'Ore'} Vein (${purityInfo.multiplier}x Purity)`
+          : recipe?.name ??
+            (node.buildingId === 'the_hub'
+              ? `Stored: ${Math.floor(node.storedCount)} Parts`
+              : node.buildingId === 'storage_container'
+              ? `Buffer: ${Math.floor(node.storedCount)} Items`
+              : 'Logistics Pass-Through');
 
-        const recipeTitle =
-          recipe?.name ??
-          (node.buildingId === 'the_hub'
-            ? `Stored: ${Math.floor(node.storedCount)} Parts`
-            : node.buildingId === 'storage_container'
-            ? `Buffer: ${Math.floor(node.storedCount)} Items`
-            : 'Logistics Pass-Through');
-
-        ctx.font = '500 11.5px "Plus Jakarta Sans", sans-serif';
-        ctx.fillStyle = '#CBD5E1';
-        ctx.textAlign = 'left';
-        ctx.fillText(recipeTitle, node.x + 14, node.y + 50);
+        if (primaryItemImg) {
+          ctx.drawImage(primaryItemImg, node.x + 14, node.y + 40, 20, 20);
+          ctx.font = '600 11.5px "Plus Jakarta Sans", sans-serif';
+          ctx.fillStyle = '#E2E8F0';
+          ctx.textAlign = 'left';
+          ctx.fillText(recipeTitle, node.x + 38, node.y + 50);
+        } else {
+          ctx.font = '500 11.5px "Plus Jakarta Sans", sans-serif';
+          ctx.fillStyle = '#CBD5E1';
+          ctx.textAlign = 'left';
+          ctx.fillText(recipeTitle, node.x + 14, node.y + 50);
+        }
 
         const barX = node.x + 14;
         const barY = node.y + node.height - 20;
@@ -863,6 +910,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.stroke();
 
         const fillRatio =
+          isDeposit ||
           node.buildingId === 'splitter' ||
           node.buildingId === 'merger' ||
           node.buildingId === 'storage_container' ||
@@ -878,13 +926,14 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ctx.fill();
         }
 
-        // Input Port Dots & Stacked Rate Readouts
+        // Input Port Dots, Official Resource Icons & Stacked Rate Readouts
         for (let i = 0; i < node.inputs.length; i++) {
           const port = node.inputs[i];
           const pt = getPortWorldCoords(node, 'input', i, node.inputs.length);
           const isConnected = connectionsRef.current.some(
             (c) => c.toNodeId === node.id && c.toPortId === port.id
           );
+          const portImg = getCanvasItemImage(port.itemName ?? port.label);
 
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, 7.5, 0, Math.PI * 2);
@@ -899,28 +948,34 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ctx.fillStyle = isConnected ? '#FFFFFF' : '#38BDF8';
           ctx.fill();
 
+          let textOffsetX = pt.x + 12;
+          if (portImg) {
+            ctx.drawImage(portImg, pt.x + 11, pt.y - 7, 14, 14);
+            textOffsetX = pt.x + 28;
+          }
+
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
           if (cfg.showPortRates) {
             ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
             ctx.fillStyle = '#CBD5E1';
-            ctx.fillText(port.label, pt.x + 13, pt.y - 6);
+            ctx.fillText(port.label, textOffsetX, pt.y - 6);
 
             ctx.font = '600 9.5px "JetBrains Mono", monospace';
             ctx.fillStyle = '#38BDF8';
             ctx.fillText(
               `${port.actualRatePerMin}/${port.targetRatePerMin}/m`,
-              pt.x + 13,
+              textOffsetX,
               pt.y + 7
             );
           } else {
             ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
             ctx.fillStyle = '#CBD5E1';
-            ctx.fillText(port.label, pt.x + 13, pt.y);
+            ctx.fillText(port.label, textOffsetX, pt.y);
           }
         }
 
-        // Output Port Dots & Stacked Rate Readouts
+        // Output Port Dots, Official Resource Icons & Stacked Rate Readouts
         for (let i = 0; i < node.outputs.length; i++) {
           const port = node.outputs[i];
           const pt = getPortWorldCoords(node, 'output', i, node.outputs.length);
@@ -929,6 +984,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           );
           const isTapSelected =
             curTapPort?.nodeId === node.id && curTapPort?.portId === port.id;
+          const portImg = getCanvasItemImage(port.itemName ?? port.label);
 
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, isTapSelected ? 9.5 : 7.5, 0, Math.PI * 2);
@@ -947,20 +1003,26 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ctx.fillStyle = isConnected || isTapSelected ? '#0B0F17' : '#FBBF24';
           ctx.fill();
 
+          let textRightX = pt.x - 12;
+          if (portImg) {
+            ctx.drawImage(portImg, pt.x - 25, pt.y - 7, 14, 14);
+            textRightX = pt.x - 28;
+          }
+
           ctx.textAlign = 'right';
           ctx.textBaseline = 'middle';
           if (cfg.showPortRates) {
             ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
             ctx.fillStyle = '#F8FAFC';
-            ctx.fillText(port.label, pt.x - 13, pt.y - 6);
+            ctx.fillText(port.label, textRightX, pt.y - 6);
 
             ctx.font = '600 9.5px "JetBrains Mono", monospace';
             ctx.fillStyle = '#FBBF24';
-            ctx.fillText(`${port.actualRatePerMin}/m`, pt.x - 13, pt.y + 7);
+            ctx.fillText(`${port.actualRatePerMin}/m`, textRightX, pt.y + 7);
           } else {
             ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
             ctx.fillStyle = '#F8FAFC';
-            ctx.fillText(port.label, pt.x - 13, pt.y);
+            ctx.fillText(port.label, textRightX, pt.y);
           }
         }
       }
@@ -976,7 +1038,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const targetW = Math.max(1, Math.floor(rect.width * dpr));
       const targetH = Math.max(1, Math.floor(rect.height * dpr));
-      // Only touch canvas.width/height when dimensions actually change to prevent buffer clear flicker!
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
@@ -1010,16 +1071,16 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       nodesRef.current = simResult.nodes;
       connectionsRef.current = simResult.connections;
 
-      interactionRef.current.pulsePhase = (interactionRef.current.pulsePhase + dt * 0.85) % 1;
+      interactionRef.current.elapsedTime += dt;
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
 
       if (modeRef.current === 'background') {
-        cameraRef.current.x = 60 + Math.sin(now * 0.00025) * 90;
-        cameraRef.current.y = 60 + Math.cos(now * 0.0002) * 35;
-        cameraRef.current.zoom = 0.78;
+        cameraRef.current.x = -1820 + Math.sin(now * 0.00025) * 90;
+        cameraRef.current.y = -1920 + Math.cos(now * 0.0002) * 35;
+        cameraRef.current.zoom = 0.74;
       } else if (interactionRef.current.smoothZoomTarget !== null) {
         const curZ = cameraRef.current.zoom;
         const targetZ = interactionRef.current.smoothZoomTarget;
@@ -1092,8 +1153,16 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   };
 
   const findNodeAtWorld = (wx: number, wy: number): MachineNode | null => {
+    const macro = isMacroIconZoom(cameraRef.current.zoom);
     for (let i = nodesRef.current.length - 1; i >= 0; i--) {
       const n = nodesRef.current[i];
+      if (macro && n.buildingId === 'resource_deposit') {
+        const cx = n.x + n.width * 0.5;
+        const cy = n.y + n.height * 0.5;
+        if (Math.hypot(wx - cx, wy - cy) <= 125) {
+          return n;
+        }
+      }
       if (wx >= n.x && wx <= n.x + n.width && wy >= n.y && wy <= n.y + n.height) {
         return n;
       }
@@ -1129,7 +1198,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       toPortId,
       itemName: null,
       ratePerMin: 0,
-      maxCapacityPerMin: 60,
+      maxCapacityPerMin: 120,
     };
     connectionsRef.current = [...connectionsRef.current, newConn];
     playSynthSfx('connect', settingsRef.current);
@@ -1151,7 +1220,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.activePointers.set(e.pointerId, { x: sx, y: sy });
     interactionRef.current.smoothZoomTarget = null;
 
-    // Google Maps 2-Finger Pinch-to-Zoom Initiation
     if (interactionRef.current.activePointers.size === 2) {
       const pts = Array.from(interactionRef.current.activePointers.values());
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
@@ -1172,7 +1240,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.pointerWorldY = world.y;
     interactionRef.current.pointerMoved = false;
 
-    // 1. Place Pending Building from Build Menu (clamped to Sector Bounds)
+    // 1. Place Pending Building from Build Menu
     if (pendingBuildRef.current) {
       const bId = pendingBuildRef.current;
       const bDef = BUILDINGS[bId];
@@ -1248,20 +1316,31 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }
     }
 
-    // 3. Node Card Body Drag / Select
+    // 3. Node Card Body Drag / Select (World Resource Deposits are fixed on the map!)
     const hitNode = findNodeAtWorld(world.x, world.y);
     if (hitNode) {
-      interactionRef.current.draggingNodeId = hitNode.id;
-      interactionRef.current.dragOffsetX = world.x - hitNode.x;
-      interactionRef.current.dragOffsetY = world.y - hitNode.y;
       if (selectedNodeIdRef.current !== hitNode.id) {
         setSelectedNodeId(hitNode.id);
       }
       setSelectedNodeSnapshot({ ...hitNode });
+
+      if (hitNode.buildingId === 'resource_deposit' || hitNode.isWorldDeposit) {
+        // Fixed natural deposit: select it, and allow panning the camera if dragged
+        interactionRef.current.isPanning = true;
+        interactionRef.current.panStartX = e.clientX;
+        interactionRef.current.panStartY = e.clientY;
+        interactionRef.current.camStartX = cameraRef.current.x;
+        interactionRef.current.camStartY = cameraRef.current.y;
+        return;
+      }
+
+      interactionRef.current.draggingNodeId = hitNode.id;
+      interactionRef.current.dragOffsetX = world.x - hitNode.x;
+      interactionRef.current.dragOffsetY = world.y - hitNode.y;
       return;
     }
 
-    // 4. Empty Canvas: Check for Google Maps Double-Tap / Double-Tap-Hold-Drag Zoom!
+    // 4. Empty Canvas Double-Tap Zoom
     const now = performance.now();
     const dtTap = now - interactionRef.current.lastTapTime;
     const tapDist = Math.hypot(
@@ -1309,7 +1388,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       interactionRef.current.activePointers.set(e.pointerId, { x: sx, y: sy });
     }
 
-    // 1. Google Maps 2-Finger Pinch-to-Zoom + Simultaneous Midpoint Pan
     if (interactionRef.current.activePointers.size === 2) {
       const pts = Array.from(interactionRef.current.activePointers.values());
       const dist = Math.max(10, Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y));
@@ -1341,7 +1419,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       return;
     }
 
-    // 2. Google Maps 1-Finger Double-Tap + Hold Vertical Drag Zoom
     if (interactionRef.current.isDoubleTapZooming) {
       const dy = sy - interactionRef.current.doubleTapStartY;
       if (Math.abs(dy) > 4) {
@@ -1478,6 +1555,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   const selectedBuildingDef = selectedNodeSnapshot
     ? BUILDINGS[selectedNodeSnapshot.buildingId]
     : null;
+  const isSelectedWorldDeposit =
+    selectedNodeSnapshot?.buildingId === 'resource_deposit' ||
+    Boolean(selectedNodeSnapshot?.isWorldDeposit);
+  const selectedIconUrl = selectedNodeSnapshot
+    ? getBuildingIconUrl(selectedNodeSnapshot.buildingId, selectedNodeSnapshot.recipeId)
+    : null;
 
   return (
     <div className="relative w-full h-full overflow-hidden">
@@ -1535,20 +1618,29 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         </div>
       )}
 
-      {/* Selected Machine Node Recipe & Action Popover (Compact Android Landscape Dock) */}
+      {/* Selected Machine Node / Natural Deposit Inspector Popover */}
       {mode === 'interactive' && selectedNodeSnapshot && selectedBuildingDef && (
         <div
           style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom right' }}
-          className="fixed bottom-3 right-3 z-20 w-72 max-h-[calc(100vh-24px)] overflow-y-auto rounded-2xl bg-[#131B2E] border border-[#26334D] shadow-2xl p-3"
+          className="fixed bottom-3 right-3 z-20 w-76 max-h-[calc(100vh-24px)] overflow-y-auto rounded-2xl bg-[#131B2E] border border-[#26334D] shadow-2xl p-3"
         >
           <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#26334D]">
-            <div className="min-w-0">
-              <h3 className="text-xs font-bold font-display text-white truncate">
-                {selectedNodeSnapshot.title}
-              </h3>
-              <p className="text-[11px] text-slate-400 truncate">
-                {selectedBuildingDef.subcategory}
-              </p>
+            <div className="flex items-center gap-2.5 min-w-0">
+              {selectedIconUrl && (
+                <img
+                  src={selectedIconUrl}
+                  alt={selectedNodeSnapshot.title}
+                  className="w-8 h-8 rounded-lg bg-[#0B0F17] p-1 border border-[#26334D] object-contain shrink-0"
+                />
+              )}
+              <div className="min-w-0">
+                <h3 className="text-xs font-bold font-display text-white truncate">
+                  {selectedNodeSnapshot.title}
+                </h3>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {selectedBuildingDef.subcategory}
+                </p>
+              </div>
             </div>
             <button
               type="button"
@@ -1560,47 +1652,107 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             </button>
           </div>
 
-          {selectedBuildingDef.availableRecipeIds.length > 0 && (
-            <div className="mt-2">
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Active Machine Recipe
-              </label>
-              <div className="grid grid-cols-1 gap-1 max-h-28 overflow-y-auto pr-1">
-                {selectedBuildingDef.availableRecipeIds.map((rId) => {
-                  const r = RECIPES[rId];
-                  if (!r) return null;
-                  const active = selectedNodeSnapshot.recipeId === rId;
-                  return (
-                    <button
-                      key={rId}
-                      type="button"
-                      onClick={() => {
-                        nodesRef.current = nodesRef.current.map((n) =>
-                          n.id === selectedNodeSnapshot.id ? changeNodeRecipe(n, rId) : n
-                        );
-                        const updated =
-                          nodesRef.current.find((n) => n.id === selectedNodeSnapshot.id) ??
-                          null;
-                        setSelectedNodeSnapshot(updated ? { ...updated } : null);
-                        playSynthSfx('click', settings);
-                        onGraphMutated();
-                        drawNowRef.current?.();
+          {isSelectedWorldDeposit ? (
+            <div className="mt-2.5 space-y-2">
+              {(() => {
+                const purityKey = selectedNodeSnapshot.purity ?? 'normal';
+                const pCfg = PURITY_CONFIG[purityKey];
+                const depRecipe = selectedNodeSnapshot.recipeId
+                  ? RECIPES[selectedNodeSnapshot.recipeId]
+                  : RECIPES.deposit_iron;
+                const oreName = depRecipe?.outputs[0]?.itemName ?? 'Iron Ore';
+                const oreIcon = getItemIconUrl(oreName);
+                return (
+                  <div className="p-2.5 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {oreIcon && (
+                        <img
+                          src={oreIcon}
+                          alt={oreName}
+                          className="w-7 h-7 object-contain shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white truncate">
+                          {oreName} Vein
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Purity Modifier: {pCfg.multiplier}×
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className="px-2 py-1 rounded-md text-[10px] font-mono font-bold whitespace-nowrap shrink-0"
+                      style={{
+                        backgroundColor: `${pCfg.badgeColor}22`,
+                        color: pCfg.badgeColor,
+                        border: `1px solid ${pCfg.badgeColor}66`,
                       }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium ${
-                        active
-                          ? 'bg-amber-500/20 border border-amber-500 text-amber-200'
-                          : 'bg-[#0B0F17] border border-[#26334D] text-slate-300 hover:border-slate-600'
-                      }`}
                     >
-                      <span className="truncate">{r.name}</span>
-                      <span className="font-mono tabular-nums text-[10px] text-slate-400 shrink-0 ml-2">
-                        {r.outputs[0]?.ratePerMin ?? 0}/m
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                      {pCfg.label} · {pCfg.ratePerMin}/m
+                    </span>
+                  </div>
+                );
+              })()}
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Fixed planetary deposit. Connect its output port to a{' '}
+                <strong className="text-slate-200">Miner Mk.1</strong> to extract ore.
+              </p>
             </div>
+          ) : (
+            selectedBuildingDef.availableRecipeIds.length > 0 && (
+              <div className="mt-2">
+                <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                  Active Machine Recipe
+                </label>
+                <div className="grid grid-cols-1 gap-1 max-h-32 overflow-y-auto pr-1">
+                  {selectedBuildingDef.availableRecipeIds.map((rId) => {
+                    const r = RECIPES[rId];
+                    if (!r) return null;
+                    const active = selectedNodeSnapshot.recipeId === rId;
+                    const outItem = r.outputs[0];
+                    const itemIcon = getItemIconUrl(outItem?.itemId ?? outItem?.itemName);
+                    return (
+                      <button
+                        key={rId}
+                        type="button"
+                        onClick={() => {
+                          nodesRef.current = nodesRef.current.map((n) =>
+                            n.id === selectedNodeSnapshot.id ? changeNodeRecipe(n, rId) : n
+                          );
+                          const updated =
+                            nodesRef.current.find((n) => n.id === selectedNodeSnapshot.id) ??
+                            null;
+                          setSelectedNodeSnapshot(updated ? { ...updated } : null);
+                          playSynthSfx('click', settings);
+                          onGraphMutated();
+                          drawNowRef.current?.();
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium ${
+                          active
+                            ? 'bg-amber-500/20 border border-amber-500 text-amber-200'
+                            : 'bg-[#0B0F17] border border-[#26334D] text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          {itemIcon && (
+                            <img
+                              src={itemIcon}
+                              alt={r.name}
+                              className="w-4 h-4 object-contain shrink-0"
+                            />
+                          )}
+                          <span className="truncate">{r.name}</span>
+                        </span>
+                        <span className="font-mono tabular-nums text-[10px] text-slate-400 shrink-0 ml-2">
+                          {outItem?.ratePerMin ?? 0}/m
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )
           )}
 
           <div className="mt-2.5 pt-2 border-t border-[#26334D] flex items-center justify-between gap-2">
@@ -1619,26 +1771,28 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
               }}
               className="flex-1 min-h-[36px] px-2.5 py-1.5 rounded-lg bg-[#0B0F17] hover:bg-slate-800 border border-[#26334D] text-xs font-medium text-slate-300 whitespace-nowrap"
             >
-              Unwire
+              Unwire Belt
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                const targetId = selectedNodeSnapshot.id;
-                nodesRef.current = nodesRef.current.filter((n) => n.id !== targetId);
-                connectionsRef.current = connectionsRef.current.filter(
-                  (c) => c.fromNodeId !== targetId && c.toNodeId !== targetId
-                );
-                setSelectedNodeId(null);
-                playSynthSfx('disconnect', settings);
-                onGraphMutated();
-                showToast('Machine dismantled');
-                drawNowRef.current?.();
-              }}
-              className="flex-1 min-h-[36px] px-2.5 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/70 border border-red-800/60 text-xs font-medium text-red-200 whitespace-nowrap"
-            >
-              Dismantle
-            </button>
+            {!isSelectedWorldDeposit && (
+              <button
+                type="button"
+                onClick={() => {
+                  const targetId = selectedNodeSnapshot.id;
+                  nodesRef.current = nodesRef.current.filter((n) => n.id !== targetId);
+                  connectionsRef.current = connectionsRef.current.filter(
+                    (c) => c.fromNodeId !== targetId && c.toNodeId !== targetId
+                  );
+                  setSelectedNodeId(null);
+                  playSynthSfx('disconnect', settings);
+                  onGraphMutated();
+                  showToast('Machine dismantled');
+                  drawNowRef.current?.();
+                }}
+                className="flex-1 min-h-[36px] px-2.5 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/70 border border-red-800/60 text-xs font-medium text-red-200 whitespace-nowrap"
+              >
+                Dismantle
+              </button>
+            )}
           </div>
         </div>
       )}

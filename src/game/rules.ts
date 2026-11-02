@@ -1,22 +1,52 @@
-import { BUILDINGS, RECIPES } from './catalog';
+import {
+  BUILDINGS,
+  PURITY_CONFIG,
+  RECIPES,
+  SECTOR_01_DEPOSIT_SPECS,
+} from './catalog';
 import {
   CameraState,
   ConveyorConnection,
   MachineNode,
   PortSocket,
+  ResourcePurity,
   SaveSlot,
 } from './types';
 
-// Initial Sector 01 Map Boundaries (Large 3840x2160 sector, expandable in future updates)
-export const WORLD_WIDTH = 3840;
-export const WORLD_HEIGHT = 2160;
-export const MIN_ZOOM = 0.15;
+// Expanded Sector 01 Map Boundaries (12000x8000 regional sector with clustered deposits)
+export const WORLD_WIDTH = 12000;
+export const WORLD_HEIGHT = 8000;
+export const MIN_ZOOM = 0.06;
 export const MAX_ZOOM = 1.85;
-export const LOD_ICON_BOX_ZOOM_THRESHOLD = 0.55;
+// Require zooming out past 0.25x before switching to Macro Icon Box / Map Pin view
+export const LOD_ICON_BOX_ZOOM_THRESHOLD = 0.25;
 export const WORLD_PADDING = 24;
 
 export function isMacroIconZoom(zoom: number): boolean {
   return zoom < LOD_ICON_BOX_ZOOM_THRESHOLD;
+}
+
+/**
+ * Computes strictly adaptive conveyor belt packet speed, density, and size down to single-digit
+ * flow rates (e.g., 1/m, 2/m, 3/m, 4/m, 5/m ... up to 120/m) without a floor clamp.
+ */
+export function computeConveyorBeltFlowVisuals(ratePerMin: number): {
+  speedMultiplier: number;
+  dotCount: number;
+  dotRadius: number;
+  spacingRatio: number;
+} {
+  if (ratePerMin <= 0) {
+    return { speedMultiplier: 0, dotCount: 0, dotRadius: 0, spacingRatio: 1 };
+  }
+  const clampedRate = Math.min(240, Math.max(0.1, ratePerMin));
+  // Un-clamped linear speed so 1/m, 2/m, 3/m, 4/m, 5/m ... each move at their exact proportional speed
+  const speedMultiplier = Number((clampedRate / 60).toFixed(4));
+  // Continuous packet count and spacing that scales across single digits and high throughput
+  const dotCount = Math.max(1, Math.min(12, Math.ceil(clampedRate / 8)));
+  const dotRadius = Number((3.2 + Math.min(120, clampedRate) * 0.015).toFixed(3));
+  const spacingRatio = Number((1 / (clampedRate + 1)).toFixed(5));
+  return { speedMultiplier, dotCount, dotRadius, spacingRatio };
 }
 
 export function snapToGrid(value: number, gridSize: number, enabled: boolean): number {
@@ -59,7 +89,6 @@ export function clampCameraToWorld(
   let minX: number;
   let maxX: number;
   if (scaledWorldW + marginX * 2 <= viewportWidth) {
-    // Center if zoomed out enough that entire sector width fits inside viewport
     minX = (viewportWidth - scaledWorldW) / 2;
     maxX = minX;
   } else {
@@ -87,13 +116,15 @@ export function clampCameraToWorld(
 export function buildNodePorts(
   nodeId: string,
   buildingId: string,
-  recipeId: string | null
+  recipeId: string | null,
+  purity?: ResourcePurity
 ): { inputs: PortSocket[]; outputs: PortSocket[] } {
   const bDef = BUILDINGS[buildingId];
   if (!bDef) {
     return { inputs: [], outputs: [] };
   }
   const recipe = recipeId ? RECIPES[recipeId] : null;
+  const purityRate = purity ? PURITY_CONFIG[purity].ratePerMin : null;
 
   const inputs: PortSocket[] = [];
   for (let i = 0; i < bDef.inputPortCount; i++) {
@@ -112,13 +143,19 @@ export function buildNodePorts(
   const outputs: PortSocket[] = [];
   for (let i = 0; i < bDef.outputPortCount; i++) {
     const out = recipe?.outputs[i] ?? null;
+    const rate =
+      buildingId === 'resource_deposit' && purityRate !== null
+        ? purityRate
+        : out
+        ? out.ratePerMin
+        : 60;
     outputs.push({
       id: `${nodeId}_out_${i}`,
       index: i,
       side: 'output',
       label: out ? out.itemName : `OUT ${i + 1}`,
       itemName: out ? out.itemName : null,
-      targetRatePerMin: out ? out.ratePerMin : 60,
+      targetRatePerMin: rate,
       actualRatePerMin: 0,
     });
   }
@@ -131,22 +168,31 @@ export function createMachineNode(
   x: number,
   y: number,
   customId?: string,
-  customRecipeId?: string | null
+  customRecipeId?: string | null,
+  options?: {
+    purity?: ResourcePurity;
+    isWorldDeposit?: boolean;
+    customTitle?: string;
+  }
 ): MachineNode {
   const bDef = BUILDINGS[buildingId] ?? BUILDINGS.smelter;
   const id = customId ?? `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const recipeId = customRecipeId !== undefined ? customRecipeId : bDef.defaultRecipeId;
-  const { inputs, outputs } = buildNodePorts(id, bDef.id, recipeId);
+  const purity =
+    options?.purity ?? (buildingId === 'resource_deposit' ? 'normal' : undefined);
+  const { inputs, outputs } = buildNodePorts(id, bDef.id, recipeId, purity);
 
   return {
     id,
     buildingId: bDef.id,
-    title: bDef.name,
+    title: options?.customTitle ?? bDef.name,
     x,
     y,
     width: bDef.width,
     height: bDef.height,
     recipeId,
+    purity,
+    isWorldDeposit: options?.isWorldDeposit ?? buildingId === 'resource_deposit',
     status: 'idle',
     efficiency: 0,
     progress: 0,
@@ -156,8 +202,63 @@ export function createMachineNode(
   };
 }
 
+export function createSectorWorldDeposits(): MachineNode[] {
+  return SECTOR_01_DEPOSIT_SPECS.map((spec) =>
+    createMachineNode('resource_deposit', spec.x, spec.y, spec.id, spec.recipeId, {
+      purity: spec.purity,
+      isWorldDeposit: true,
+      customTitle: spec.title,
+    })
+  );
+}
+
+export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] {
+  const validSpecIds = new Set(SECTOR_01_DEPOSIT_SPECS.map((s) => s.id));
+  // Keep player-built machines and known Sector 01 deposits (upgrading their positions/purities to current map)
+  const filtered = nodes.filter(
+    (n) => n.buildingId !== 'resource_deposit' || validSpecIds.has(n.id)
+  );
+
+  const result = filtered.map((n) => {
+    if (n.buildingId === 'resource_deposit') {
+      const spec = SECTOR_01_DEPOSIT_SPECS.find((s) => s.id === n.id);
+      if (spec) {
+        return {
+          ...n,
+          title: spec.title,
+          recipeId: spec.recipeId,
+          purity: spec.purity,
+          x: spec.x,
+          y: spec.y,
+          isWorldDeposit: true,
+        };
+      }
+    }
+    return n;
+  });
+
+  const existingIds = new Set(result.map((n) => n.id));
+  for (const spec of SECTOR_01_DEPOSIT_SPECS) {
+    if (!existingIds.has(spec.id)) {
+      result.push(
+        createMachineNode('resource_deposit', spec.x, spec.y, spec.id, spec.recipeId, {
+          purity: spec.purity,
+          isWorldDeposit: true,
+          customTitle: spec.title,
+        })
+      );
+    }
+  }
+  return result;
+}
+
 export function changeNodeRecipe(node: MachineNode, newRecipeId: string | null): MachineNode {
-  const { inputs, outputs } = buildNodePorts(node.id, node.buildingId, newRecipeId);
+  const { inputs, outputs } = buildNodePorts(
+    node.id,
+    node.buildingId,
+    newRecipeId,
+    node.purity
+  );
   return {
     ...node,
     recipeId: newRecipeId,
@@ -219,7 +320,10 @@ export function stepSimulation(
     inputs: n.inputs.map((p) => ({ ...p, actualRatePerMin: 0 })),
     outputs: n.outputs.map((p) => ({ ...p, actualRatePerMin: 0 })),
   }));
-  const nextConns: ConveyorConnection[] = connections.map((c) => ({ ...c }));
+  const nextConns: ConveyorConnection[] = connections.map((c) => ({
+    ...c,
+    maxCapacityPerMin: Math.max(120, c.maxCapacityPerMin || 120),
+  }));
 
   const nodeMap = new Map<string, MachineNode>();
   for (const n of nextNodes) {
@@ -235,7 +339,8 @@ export function stepSimulation(
 
       if (node.buildingId === 'resource_deposit') {
         const outRecipe = recipe ?? RECIPES.deposit_iron;
-        const rate = outRecipe.outputs[0]?.ratePerMin ?? 60;
+        const purityKey = node.purity ?? 'normal';
+        const rate = PURITY_CONFIG[purityKey]?.ratePerMin ?? 60;
         const item = outRecipe.outputs[0]?.itemName ?? 'Iron Ore';
         if (node.outputs[0]) {
           node.outputs[0].actualRatePerMin = rate;
@@ -245,6 +350,48 @@ export function stepSimulation(
         }
         node.efficiency = 100;
         node.status = 'optimal';
+      } else if (node.buildingId === 'miner_mk1') {
+        // Miner Mk.1 adapts to the connected Resource Deposit's ore type & purity (30/60/120 per min)
+        const inPort = node.inputs[0];
+        const outPort = node.outputs[0];
+        const hasConn =
+          inPort && nextConns.some((c) => c.toNodeId === node.id && c.toPortId === inPort.id);
+
+        if (inPort && outPort && hasConn && inPort.actualRatePerMin > 0 && inPort.itemName) {
+          const suppliedRate = inPort.actualRatePerMin;
+          const oreName = inPort.itemName;
+          if (oreName.toLowerCase().includes('copper')) {
+            node.recipeId = 'mine_copper';
+          } else if (oreName.toLowerCase().includes('limestone')) {
+            node.recipeId = 'mine_limestone';
+          } else {
+            node.recipeId = 'mine_iron';
+          }
+          inPort.label = oreName;
+          inPort.targetRatePerMin = suppliedRate;
+
+          outPort.itemName = oreName;
+          outPort.label = oreName;
+          outPort.targetRatePerMin = suppliedRate;
+          outPort.actualRatePerMin = suppliedRate;
+
+          node.efficiency = 100;
+          node.status = 'optimal';
+        } else {
+          const fallbackOre = recipe?.outputs[0]?.itemName ?? 'Iron Ore';
+          if (inPort) {
+            inPort.label = fallbackOre;
+            inPort.targetRatePerMin = 60;
+          }
+          if (outPort) {
+            outPort.label = fallbackOre;
+            outPort.itemName = fallbackOre;
+            outPort.targetRatePerMin = 60;
+            outPort.actualRatePerMin = 0;
+          }
+          node.efficiency = 0;
+          node.status = hasConn ? 'starved' : 'idle';
+        }
       } else if (node.buildingId === 'splitter') {
         const inRate = node.inputs[0]?.actualRatePerMin ?? 0;
         const inItem = node.inputs[0]?.itemName ?? null;
@@ -301,7 +448,7 @@ export function stepSimulation(
         node.efficiency = totalIn > 0 ? 100 : 0;
         node.status = totalIn > 0 ? 'optimal' : 'idle';
       } else if (recipe) {
-        // Production machine with recipe (Miner, Smelter, Constructor, Assembler)
+        // Production machine with recipe (Smelter, Constructor, Assembler)
         let limitingRatio = 1.0;
         let anyInputConnected = false;
 
@@ -315,7 +462,6 @@ export function stepSimulation(
           const hasConn = nextConns.some((c) => c.toNodeId === node.id && c.toPortId === port.id);
           if (hasConn) anyInputConnected = true;
 
-          // Match item compatibility
           const itemMatches =
             !port.itemName ||
             port.itemName.toLowerCase() === req.itemName.toLowerCase();
@@ -396,28 +542,39 @@ export function createStarterFactory(): {
   nodes: MachineNode[];
   connections: ConveyorConnection[];
 } {
-  const deposit = createMachineNode('resource_deposit', 48, 216, 'starter_deposit', 'deposit_iron');
-  const miner = createMachineNode('miner_mk1', 408, 216, 'starter_miner', 'mine_iron');
-  const smelter = createMachineNode('smelter', 792, 216, 'starter_smelter', 'smelt_iron');
+  const worldDeposits = createSectorWorldDeposits();
+  const starterDeposit = worldDeposits.find((d) => d.id === 'starter_deposit')!;
+
+  const baseX = starterDeposit.x;
+  const baseY = starterDeposit.y;
+
+  const miner = createMachineNode('miner_mk1', baseX + 336, baseY, 'starter_miner', 'mine_iron');
+  const smelter = createMachineNode(
+    'smelter',
+    baseX + 696,
+    baseY,
+    'starter_smelter',
+    'smelt_iron'
+  );
   const constructorNode = createMachineNode(
     'constructor',
-    1176,
-    216,
+    baseX + 1056,
+    baseY,
     'starter_constructor',
     'construct_iron_plate'
   );
-  const hub = createMachineNode('the_hub', 1560, 216, 'starter_hub', null);
+  const hub = createMachineNode('the_hub', baseX + 1416, baseY - 12, 'starter_hub', null);
 
   const rawConns: ConveyorConnection[] = [
     {
       id: 'conn_starter_1',
-      fromNodeId: deposit.id,
-      fromPortId: deposit.outputs[0].id,
+      fromNodeId: starterDeposit.id,
+      fromPortId: starterDeposit.outputs[0].id,
       toNodeId: miner.id,
       toPortId: miner.inputs[0].id,
       itemName: 'Iron Ore',
       ratePerMin: 60,
-      maxCapacityPerMin: 60,
+      maxCapacityPerMin: 120,
     },
     {
       id: 'conn_starter_2',
@@ -427,7 +584,7 @@ export function createStarterFactory(): {
       toPortId: smelter.inputs[0].id,
       itemName: 'Iron Ore',
       ratePerMin: 60,
-      maxCapacityPerMin: 60,
+      maxCapacityPerMin: 120,
     },
     {
       id: 'conn_starter_3',
@@ -437,7 +594,7 @@ export function createStarterFactory(): {
       toPortId: constructorNode.inputs[0].id,
       itemName: 'Iron Ingot',
       ratePerMin: 30,
-      maxCapacityPerMin: 60,
+      maxCapacityPerMin: 120,
     },
     {
       id: 'conn_starter_4',
@@ -447,11 +604,15 @@ export function createStarterFactory(): {
       toPortId: hub.inputs[0].id,
       itemName: 'Iron Plate',
       ratePerMin: 20,
-      maxCapacityPerMin: 60,
+      maxCapacityPerMin: 120,
     },
   ];
 
-  return stepSimulation([deposit, miner, smelter, constructorNode, hub], rawConns, 0.016);
+  return stepSimulation(
+    [...worldDeposits, miner, smelter, constructorNode, hub],
+    rawConns,
+    0.016
+  );
 }
 
 export function serializeSaveExport(slot: SaveSlot): string {
@@ -480,7 +641,7 @@ export function parseSaveImport(rawJson: string): { slot?: SaveSlot; error?: str
           : 'Imported Save',
       kind: 'manual',
       updatedAt: now,
-      nodes: parsed.nodes,
+      nodes: ensureWorldDepositsPresent(parsed.nodes),
       connections: parsed.connections,
       camera: parsed.camera ?? { x: 40, y: 80, zoom: 0.9 },
     };

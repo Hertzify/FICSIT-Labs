@@ -1,4 +1,9 @@
-import { createStarterFactory } from './rules';
+import {
+  createSectorWorldDeposits,
+  createStarterFactory,
+  ensureWorldDepositsPresent,
+  stepSimulation,
+} from './rules';
 import { SaveSlot, SettingsConfig } from './types';
 
 const SETTINGS_KEY = 'ficsit_node_labs_settings_v1';
@@ -48,7 +53,7 @@ export function createInitialSeedSaveSlot(
 ): SaveSlot {
   const starter = withStarterNodes
     ? createStarterFactory()
-    : { nodes: [], connections: [] };
+    : stepSimulation(createSectorWorldDeposits(), [], 0.016);
   return {
     id: `slot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     sessionName,
@@ -57,7 +62,8 @@ export function createInitialSeedSaveSlot(
     updatedAt: Date.now(),
     nodes: starter.nodes,
     connections: starter.connections,
-    camera: { x: 36, y: 120, zoom: 0.76 },
+    // Focus initial camera on the Starter Basin cluster at (2544, 2784)
+    camera: { x: -1820, y: -1920, zoom: 0.74 },
   };
 }
 
@@ -75,7 +81,34 @@ export function loadSaveSlots(): SaveSlot[] {
       localStorage.setItem(SAVES_KEY, JSON.stringify([seed]));
       return [seed];
     }
-    return parsed.sort((a: SaveSlot, b: SaveSlot) => b.updatedAt - a.updatedAt);
+    return parsed
+      .map((slot: SaveSlot) => {
+        const syncedNodes = ensureWorldDepositsPresent(slot.nodes ?? []);
+        // If legacy starter_miner is still at old (408, 216) while starter_deposit moved to (2544, 2784), relocate starter chain
+        const legacyMiner = syncedNodes.find(
+          (n) => n.id === 'starter_miner' && n.x === 408 && n.y === 216
+        );
+        let finalNodes = syncedNodes;
+        let finalCamera = slot.camera;
+        if (legacyMiner) {
+          const offsets: Record<string, { x: number; y: number }> = {
+            starter_miner: { x: 2544 + 336, y: 2784 },
+            starter_smelter: { x: 2544 + 696, y: 2784 },
+            starter_constructor: { x: 2544 + 1056, y: 2784 },
+            starter_hub: { x: 2544 + 1416, y: 2772 },
+          };
+          finalNodes = syncedNodes.map((n) =>
+            offsets[n.id] ? { ...n, x: offsets[n.id].x, y: offsets[n.id].y } : n
+          );
+          finalCamera = { x: -1820, y: -1920, zoom: 0.74 };
+        }
+        return {
+          ...slot,
+          nodes: finalNodes,
+          camera: finalCamera,
+        };
+      })
+      .sort((a: SaveSlot, b: SaveSlot) => b.updatedAt - a.updatedAt);
   } catch {
     const seed = createInitialSeedSaveSlot('Rocky Desert Sector 01', true);
     return [seed];

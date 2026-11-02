@@ -5,6 +5,7 @@ import {
   BUILDINGS,
   RECIPES,
 } from '../game/catalog';
+import { getBuildingIconUrl, getItemIconUrl } from '../game/icons';
 import { BuildCategory, SettingsConfig } from '../game/types';
 
 interface BuildMenuModalProps {
@@ -19,19 +20,15 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
   onClose,
 }) => {
   const [activeCategory, setActiveCategory] = useState<BuildCategory>('production');
-  const [selectedBuildingId, setSelectedBuildingId] = useState<string>('smelter');
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string>('miner_mk1');
 
   const categoryBuildings = BUILDING_LIST.filter((b) => b.category === activeCategory);
-  const selectedDef = BUILDINGS[selectedBuildingId] ?? categoryBuildings[0] ?? BUILDING_LIST[0];
+  const selectedDef =
+    categoryBuildings.find((b) => b.id === selectedBuildingId) ??
+    categoryBuildings[0] ??
+    BUILDING_LIST[0];
 
-  const groupedBySub = categoryBuildings.reduce<Record<string, typeof categoryBuildings>>(
-    (acc, item) => {
-      if (!acc[item.subcategory]) acc[item.subcategory] = [];
-      acc[item.subcategory].push(item);
-      return acc;
-    },
-    {}
-  );
+  const selectedBuildingIcon = getBuildingIconUrl(selectedDef.id, selectedDef.defaultRecipeId);
 
   return (
     <div
@@ -81,33 +78,42 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
 
         {/* Always-Horizontal 12-Column Split for Widescreen Android Landscape */}
         <div className="flex-1 grid grid-cols-12 min-h-0 overflow-hidden">
-          {/* Left 7 Columns: Unified 3-Column Landscape Machine Grid (Fits 390px height without scrolling) */}
+          {/* Left 7 Columns: Unified 2/3-Column Landscape Machine Grid with Official Satisfactory Wiki Icons */}
           <div className="col-span-7 p-3 overflow-y-auto border-r border-[#26334D]">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {categoryBuildings.map((b) => {
                 const isPicked = selectedDef.id === b.id;
+                const bIcon = getBuildingIconUrl(b.id, b.defaultRecipeId);
                 return (
                   <button
                     key={b.id}
                     type="button"
                     onClick={() => setSelectedBuildingId(b.id)}
                     onDoubleClick={() => onSelectBuildingToPlace(b.id)}
-                    className={`min-h-[76px] p-2.5 rounded-xl text-left flex flex-col justify-between ${
+                    className={`min-h-[88px] p-2.5 rounded-xl text-left flex flex-col justify-between ${
                       isPicked
                         ? 'bg-[#1B2744] border-2 border-amber-500 shadow-md'
                         : 'bg-[#0B0F17] border border-[#26334D] hover:border-slate-600'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1">
-                      <span
-                        className="w-2.5 h-2.5 rounded-sm shrink-0"
-                        style={{ backgroundColor: b.accentColor }}
-                      />
+                    <div className="flex items-center justify-between gap-1.5">
+                      {bIcon ? (
+                        <img
+                          src={bIcon}
+                          alt={b.name}
+                          className="w-8 h-8 object-contain rounded-md bg-[#131B2E] p-0.5 border border-[#26334D] shrink-0"
+                        />
+                      ) : (
+                        <span
+                          className="w-3 h-3 rounded-sm shrink-0"
+                          style={{ backgroundColor: b.accentColor }}
+                        />
+                      )}
                       <span className="font-mono tabular-nums text-[10px] text-slate-400">
                         {b.inputPortCount}IN·{b.outputPortCount}OUT
                       </span>
                     </div>
-                    <div className="mt-1.5">
+                    <div className="mt-2">
                       <div className="text-xs font-display font-bold text-white truncate">
                         {b.name}
                       </div>
@@ -121,7 +127,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
             </div>
           </div>
 
-          {/* Right 5 Columns: Upload Labs Node Blueprint Inspector */}
+          {/* Right 5 Columns: Upload Labs Node Blueprint Inspector with Official Satisfactory Wiki Icons */}
           <div className="col-span-5 p-3 bg-[#0E1525] flex flex-col justify-between min-h-0 overflow-hidden">
             <div className="overflow-y-auto pr-1 space-y-2.5">
               {/* Visual Upload Labs Node Card Preview */}
@@ -132,14 +138,28 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                 />
                 <div className="p-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-sm font-display font-bold text-white truncate">
-                      {selectedDef.name}
-                    </h2>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {selectedBuildingIcon && (
+                        <img
+                          src={selectedBuildingIcon}
+                          alt={selectedDef.name}
+                          className="w-9 h-9 object-contain rounded-lg bg-[#0B0F17] p-1 border border-[#26334D] shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-display font-bold text-white truncate">
+                          {selectedDef.name}
+                        </h2>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {selectedDef.subcategory}
+                        </div>
+                      </div>
+                    </div>
                     <span className="text-[11px] font-mono tabular-nums text-amber-400 shrink-0">
                       {selectedDef.powerMw > 0 ? `${selectedDef.powerMw} MW` : 'PASSIVE'}
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-300 leading-snug">
+                  <p className="mt-1.5 text-[11px] text-slate-300 leading-snug">
                     {selectedDef.description}
                   </p>
 
@@ -151,7 +171,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                 </div>
               </div>
 
-              {/* Compatible Recipes List */}
+              {/* Compatible Recipes List with Satisfactory Wiki Item Icons */}
               {selectedDef.availableRecipeIds.length > 0 && (
                 <div>
                   <div className="text-[11px] font-semibold text-slate-300 mb-1">
@@ -161,14 +181,27 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                     {selectedDef.availableRecipeIds.map((rId) => {
                       const r = RECIPES[rId];
                       if (!r) return null;
+                      const outSpec = r.outputs[0];
+                      const outIcon = getItemIconUrl(outSpec?.itemId ?? outSpec?.itemName);
                       return (
                         <div
                           key={rId}
                           className="px-2.5 py-1.5 rounded-lg bg-[#0B0F17] border border-[#26334D] flex items-center justify-between text-[11px]"
                         >
-                          <span className="text-slate-200 font-medium truncate">{r.name}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {outIcon && (
+                              <img
+                                src={outIcon}
+                                alt={r.name}
+                                className="w-4 h-4 object-contain shrink-0"
+                              />
+                            )}
+                            <span className="text-slate-200 font-medium truncate">
+                              {r.name}
+                            </span>
+                          </div>
                           <span className="font-mono tabular-nums text-amber-300 shrink-0 ml-2">
-                            {r.outputs[0]?.ratePerMin ?? 0}/min
+                            {outSpec?.ratePerMin ?? 0}/min
                           </span>
                         </div>
                       );

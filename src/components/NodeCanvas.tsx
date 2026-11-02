@@ -7,6 +7,7 @@ import {
   clampCameraToWorld,
   clampNodeToWorld,
   createMachineNode,
+  isMacroIconZoom,
   MAX_ZOOM,
   MIN_ZOOM,
   snapToGrid,
@@ -76,6 +77,203 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
+/**
+ * Draws a bespoke vector icon for each machine building type.
+ * Used both in Upload Labs-style zoomed-out Macro Icon Boxes and in close-up headers.
+ */
+function drawMachineVectorIcon(
+  ctx: CanvasRenderingContext2D,
+  buildingId: string,
+  cx: number,
+  cy: number,
+  size: number,
+  color: string
+) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(2, size * 0.11);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const r = size * 0.5;
+
+  switch (buildingId) {
+    case 'the_hub': {
+      // Command Beacon Tower + Signal Waves
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.55, cy + r * 0.75);
+      ctx.lineTo(cx, cy - r * 0.55);
+      ctx.lineTo(cx + r * 0.55, cy + r * 0.75);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.55, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.55, r * 0.48, -Math.PI * 0.8, -Math.PI * 0.2);
+      ctx.stroke();
+      break;
+    }
+
+    case 'resource_deposit': {
+      // Faceted Hexagonal Ore Crystal
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = (Math.PI / 3) * i - Math.PI / 6;
+        const px = cx + Math.cos(ang) * r * 0.85;
+        const py = cy + Math.sin(ang) * r * 0.85;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'miner_mk1': {
+      // Rotary Auger Drill Head pointing down into ore
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.65, cy - r * 0.65);
+      ctx.lineTo(cx + r * 0.65, cy - r * 0.65);
+      ctx.lineTo(cx + r * 0.35, cy + r * 0.1);
+      ctx.lineTo(cx, cy + r * 0.8);
+      ctx.lineTo(cx - r * 0.35, cy + r * 0.1);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.42, cy - r * 0.25);
+      ctx.lineTo(cx + r * 0.42, cy - r * 0.25);
+      ctx.moveTo(cx - r * 0.25, cy + r * 0.15);
+      ctx.lineTo(cx + r * 0.25, cy + r * 0.15);
+      ctx.stroke();
+      break;
+    }
+
+    case 'smelter': {
+      // Industrial Furnace / Flame Silhouette
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.82);
+      ctx.bezierCurveTo(cx + r * 0.75, cy - r * 0.2, cx + r * 0.65, cy + r * 0.55, cx, cy + r * 0.82);
+      ctx.bezierCurveTo(cx - r * 0.65, cy + r * 0.55, cx - r * 0.75, cy - r * 0.2, cx, cy - r * 0.82);
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy + r * 0.22, r * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'constructor': {
+      // Precision 8-Tooth Industrial Gear
+      const outerR = r * 0.82;
+      const innerR = r * 0.55;
+      ctx.beginPath();
+      ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      for (let i = 0; i < 8; i++) {
+        const ang = (Math.PI / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(ang) * innerR, cy + Math.sin(ang) * innerR);
+        ctx.lineTo(cx + Math.cos(ang) * outerR, cy + Math.sin(ang) * outerR);
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'assembler': {
+      // Dual Interlocking Gears
+      const g1x = cx - r * 0.32;
+      const g1y = cy - r * 0.22;
+      const g2x = cx + r * 0.34;
+      const g2y = cy + r * 0.26;
+      ctx.beginPath();
+      ctx.arc(g1x, g1y, r * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(g1x, g1y, r * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(g2x, g2y, r * 0.36, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(g2x, g2y, r * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'splitter': {
+      // 1-to-3 Diverging Flow Arrows
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.75, cy);
+      ctx.lineTo(cx - r * 0.1, cy);
+      ctx.moveTo(cx - r * 0.1, cy);
+      ctx.lineTo(cx + r * 0.65, cy - r * 0.55);
+      ctx.moveTo(cx - r * 0.1, cy);
+      ctx.lineTo(cx + r * 0.75, cy);
+      ctx.moveTo(cx - r * 0.1, cy);
+      ctx.lineTo(cx + r * 0.65, cy + r * 0.55);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx - r * 0.1, cy, r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'merger': {
+      // 3-to-1 Converging Flow Arrows
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.65, cy - r * 0.55);
+      ctx.lineTo(cx + r * 0.1, cy);
+      ctx.moveTo(cx - r * 0.75, cy);
+      ctx.lineTo(cx + r * 0.1, cy);
+      ctx.moveTo(cx - r * 0.65, cy + r * 0.55);
+      ctx.lineTo(cx + r * 0.1, cy);
+      ctx.moveTo(cx + r * 0.1, cy);
+      ctx.lineTo(cx + r * 0.78, cy);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx + r * 0.1, cy, r * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'storage_container':
+    default: {
+      // Industrial Storage Vault Container
+      drawRoundedRect(ctx, cx - r * 0.72, cy - r * 0.6, r * 1.44, r * 1.2, r * 0.2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.72, cy);
+      ctx.lineTo(cx + r * 0.72, cy);
+      ctx.moveTo(cx - r * 0.22, cy - r * 0.25);
+      ctx.lineTo(cx + r * 0.22, cy - r * 0.25);
+      ctx.moveTo(cx - r * 0.22, cy + r * 0.28);
+      ctx.lineTo(cx + r * 0.22, cy + r * 0.28);
+      ctx.stroke();
+      break;
+    }
+  }
+
+  ctx.restore();
+}
+
 export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   mode,
   nodesRef,
@@ -87,6 +285,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   onGraphMutated,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Keep reactive props in mutable refs so the canvas render loop is created ONCE
+  // and NEVER tears down or clears canvas.width/height when clicking nodes or switching menus!
+  const modeRef = useRef<'background' | 'interactive'>(mode);
+  modeRef.current = mode;
+
   const settingsRef = useRef<SettingsConfig>(settings);
   settingsRef.current = settings;
 
@@ -94,13 +298,25 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   pendingBuildRef.current = pendingBuildId;
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const selectedNodeIdRef = useRef<string | null>(null);
+  selectedNodeIdRef.current = selectedNodeId;
+
   const [selectedNodeSnapshot, setSelectedNodeSnapshot] = useState<MachineNode | null>(null);
+
   const [tapSourcePort, setTapSourcePort] = useState<{
     nodeId: string;
     portId: string;
     label: string;
   } | null>(null);
+  const tapSourcePortRef = useRef<{
+    nodeId: string;
+    portId: string;
+    label: string;
+  } | null>(null);
+  tapSourcePortRef.current = tapSourcePort;
+
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const drawNowRef = useRef<(() => void) | null>(null);
 
   const interactionRef = useRef<{
     isPanning: boolean;
@@ -170,18 +386,24 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   useEffect(() => {
     if (!statusToast) return;
-    const t = window.setTimeout(() => setStatusToast(null), 2600);
+    const t = window.setTimeout(() => setStatusToast(null), 2400);
     return () => window.clearTimeout(t);
   }, [statusToast]);
 
   useEffect(() => {
     if (!selectedNodeId) {
       setSelectedNodeSnapshot(null);
-      return;
+    } else {
+      const found = nodesRef.current.find((n) => n.id === selectedNodeId) ?? null;
+      setSelectedNodeSnapshot(found ? { ...found } : null);
     }
-    const found = nodesRef.current.find((n) => n.id === selectedNodeId) ?? null;
-    setSelectedNodeSnapshot(found ? { ...found } : null);
+    // Redraw immediately on the same frame so selection border never lags or flickers
+    drawNowRef.current?.();
   }, [selectedNodeId, nodesRef]);
+
+  useEffect(() => {
+    drawNowRef.current?.();
+  }, [tapSourcePort, mode, settings]);
 
   const applyZoomAboutScreenPoint = (
     nextZoomRaw: number,
@@ -202,84 +424,28 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     cameraRef.current = clampCameraToWorld(rawCam, viewportW, viewportH);
   };
 
+  // Single persistent Canvas loop: never torn down on state changes, eliminating buffer-reset flicker
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
     let animationFrameId = 0;
+    let timerId = 0;
     let lastTime = performance.now();
 
-    const resizeCanvas = () => {
-      const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-      if (mode === 'interactive') {
-        cameraRef.current = clampCameraToWorld(
-          cameraRef.current,
-          rect.width,
-          rect.height
-        );
-      }
-    };
-
-    resizeCanvas();
-    const ro = new ResizeObserver(resizeCanvas);
-    ro.observe(canvas);
-
-    let timerId = 0;
-    const scheduleNext = () => {
-      timerId = window.setTimeout(() => {
-        animationFrameId = window.requestAnimationFrame(renderLoop);
-      }, 28);
-    };
-
-    const renderLoop = (now: number) => {
-      const rawDt = (now - lastTime) / 1000;
-      lastTime = now;
-      const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
-
-      const simResult = stepSimulation(nodesRef.current, connectionsRef.current, dt);
-      nodesRef.current = simResult.nodes;
-      connectionsRef.current = simResult.connections;
-
-      interactionRef.current.pulsePhase = (interactionRef.current.pulsePhase + dt * 0.85) % 1;
-
+    const drawScene = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
+      if (width <= 0 || height <= 0) return;
 
-      // Ambient pan in background mode, or smooth Google Maps-like zoom interpolation in interactive mode
-      if (mode === 'background') {
-        cameraRef.current.x = 60 + Math.sin(now * 0.00025) * 90;
-        cameraRef.current.y = 80 + Math.cos(now * 0.0002) * 35;
-        cameraRef.current.zoom = 0.82;
-      } else if (interactionRef.current.smoothZoomTarget !== null) {
-        const curZ = cameraRef.current.zoom;
-        const targetZ = interactionRef.current.smoothZoomTarget;
-        const diff = targetZ - curZ;
-        if (Math.abs(diff) < 0.002) {
-          applyZoomAboutScreenPoint(
-            targetZ,
-            interactionRef.current.smoothZoomAnchorX,
-            interactionRef.current.smoothZoomAnchorY,
-            width,
-            height
-          );
-          interactionRef.current.smoothZoomTarget = null;
-        } else {
-          const stepZ = curZ + diff * Math.min(1, dt * 14);
-          applyZoomAboutScreenPoint(
-            stepZ,
-            interactionRef.current.smoothZoomAnchorX,
-            interactionRef.current.smoothZoomAnchorY,
-            width,
-            height
-          );
-        }
-      }
+      const cam = cameraRef.current;
+      const cfg = settingsRef.current;
+      const curSelectedId = selectedNodeIdRef.current;
+      const curTapPort = tapSourcePortRef.current;
+      const macroMode = isMacroIconZoom(cam.zoom);
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -287,9 +453,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       // 1. Out-of-Bounds Deep Void Fill
       ctx.fillStyle = '#06090F';
       ctx.fillRect(0, 0, width, height);
-
-      const cam = cameraRef.current;
-      const cfg = settingsRef.current;
 
       ctx.save();
       ctx.translate(cam.x, cam.y);
@@ -299,7 +462,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       ctx.fillStyle = '#0B0F17';
       ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-      // Bounded Blueprint Coordinate Grid (strictly inside Sector Bounds)
+      // Bounded Blueprint Coordinate Grid (adaptive density when zoomed far out)
       const gridStep = cfg.gridSize || 24;
       const majorStep = gridStep * 4;
       const startWorldX = Math.max(
@@ -320,17 +483,19 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       );
 
       ctx.lineWidth = 1 / cam.zoom;
-      ctx.strokeStyle = '#131B2A';
-      ctx.beginPath();
-      for (let gx = startWorldX; gx <= endWorldX; gx += gridStep) {
-        ctx.moveTo(gx, startWorldY);
-        ctx.lineTo(gx, endWorldY);
+      if (!macroMode) {
+        ctx.strokeStyle = '#131B2A';
+        ctx.beginPath();
+        for (let gx = startWorldX; gx <= endWorldX; gx += gridStep) {
+          ctx.moveTo(gx, startWorldY);
+          ctx.lineTo(gx, endWorldY);
+        }
+        for (let gy = startWorldY; gy <= endWorldY; gy += gridStep) {
+          ctx.moveTo(startWorldX, gy);
+          ctx.lineTo(endWorldX, gy);
+        }
+        ctx.stroke();
       }
-      for (let gy = startWorldY; gy <= endWorldY; gy += gridStep) {
-        ctx.moveTo(startWorldX, gy);
-        ctx.lineTo(endWorldX, gy);
-      }
-      ctx.stroke();
 
       ctx.strokeStyle = '#1B263B';
       ctx.beginPath();
@@ -346,17 +511,17 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
       // Sector Perimeter Border & Corner Telemetry Markers
       ctx.strokeStyle = '#F59E0B';
-      ctx.lineWidth = 2 / cam.zoom;
+      ctx.lineWidth = Math.max(2, 2.2 / cam.zoom);
       ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-      ctx.font = '600 12px "JetBrains Mono", monospace';
+      ctx.font = `600 ${Math.max(12, Math.round(12 / Math.min(1, cam.zoom * 1.4)))}px "JetBrains Mono", monospace`;
       ctx.fillStyle = '#64748B';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(
-        `SECTOR 01 BOUNDARY [0, 0 — ${WORLD_WIDTH} × ${WORLD_HEIGHT}] · EXPANDABLE`,
-        16,
-        14
+        `SECTOR 01 BOUNDARY [0, 0 — ${WORLD_WIDTH} × ${WORLD_HEIGHT}]`,
+        20,
+        16
       );
 
       // 3. Render Conveyor Connections (Curved Bezier vs 90-Degree Orthogonal)
@@ -444,23 +609,24 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
         ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = 6;
+        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 6;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
         ctx.strokeStyle = isFlowing ? '#F59E0B' : '#475569';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2.5;
         ctx.stroke();
 
         if (isFlowing) {
-          const pulseCount = 4;
+          const pulseCount = macroMode ? 3 : 4;
+          const dotRadius = macroMode ? Math.max(4.5, 3 / cam.zoom) : 4;
           for (let i = 0; i < pulseCount; i++) {
             const t = (interactionRef.current.pulsePhase + i / pulseCount) % 1;
             const pt = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, t, cfg.conveyorStyle);
             ctx.beginPath();
-            ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+            ctx.arc(pt.x, pt.y, dotRadius, 0, Math.PI * 2);
             ctx.fillStyle = '#FEF3C7';
             ctx.fill();
             ctx.strokeStyle = '#D97706';
@@ -469,7 +635,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           }
         }
 
-        if (cfg.showPortRates && conn.itemName) {
+        // Only draw inline rate badges in detail zoom mode so macro view stays clean
+        if (!macroMode && cfg.showPortRates && conn.itemName) {
           const mid = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, 0.5, cfg.conveyorStyle);
           const badgeText = `${conn.ratePerMin}/m`;
           ctx.font = '600 10px "JetBrains Mono", monospace';
@@ -498,19 +665,125 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           cfg.conveyorStyle
         );
         ctx.strokeStyle = '#06B6D4';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3 / Math.min(1, cam.zoom);
         ctx.setLineDash([6, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
-      // 4. Render Upload Labs-Style Machine Node Cards
+      // 4. Render Machine Nodes (Upload Labs Macro Icon Boxes when zoomed far out vs Detailed Node Windows)
       for (const node of nodesRef.current) {
         const bDef = BUILDINGS[node.buildingId];
         const accent = bDef?.accentColor ?? '#F59E0B';
-        const isSelected = node.id === selectedNodeId;
+        const isSelected = node.id === curSelectedId;
         const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
 
+        let statusColor = '#64748B';
+        if (node.status === 'optimal') {
+          statusColor = '#10B981';
+        } else if (node.status === 'working') {
+          statusColor = '#F59E0B';
+        } else if (node.status === 'starved') {
+          statusColor = '#EF4444';
+        }
+
+        if (macroMode) {
+          // =========================================================================
+          // UPLOAD LABS MACRO ICON BOX MODE (cam.zoom < 0.55)
+          // Displays compact boxes with bold borders & large centered machine icon!
+          // =========================================================================
+          drawRoundedRect(ctx, node.x + 4, node.y + 8, node.width, node.height, 16);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.fill();
+
+          drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
+          ctx.fillStyle = '#111A2E';
+          ctx.fill();
+
+          drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
+          ctx.strokeStyle = isSelected ? '#FFFFFF' : accent;
+          ctx.lineWidth = isSelected ? Math.max(4, 3.2 / cam.zoom) : Math.max(2.5, 2 / cam.zoom);
+          ctx.stroke();
+
+          // Top Accent Bar
+          ctx.fillStyle = accent;
+          ctx.fillRect(node.x + 18, node.y, node.width - 36, Math.max(5, 3 / cam.zoom));
+
+          // Centered Icon Box Medallion
+          const cx = node.x + node.width * 0.5;
+          const cy = node.y + node.height * 0.5;
+          const medallionSize = Math.min(node.width, node.height) * 0.62;
+
+          drawRoundedRect(
+            ctx,
+            cx - medallionSize * 0.5,
+            cy - medallionSize * 0.5,
+            medallionSize,
+            medallionSize,
+            14
+          );
+          ctx.fillStyle = '#0B0F17';
+          ctx.fill();
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = Math.max(2, 1.5 / cam.zoom);
+          ctx.stroke();
+
+          drawMachineVectorIcon(
+            ctx,
+            node.buildingId,
+            cx,
+            cy,
+            medallionSize * 0.68,
+            accent
+          );
+
+          // High-Visibility Status LED Dot in Top-Right Corner
+          ctx.beginPath();
+          ctx.arc(node.x + node.width - 22, node.y + 22, 9, 0, Math.PI * 2);
+          ctx.fillStyle = statusColor;
+          ctx.fill();
+          ctx.strokeStyle = '#0B0F17';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          // Simplified Macro Port Nubs (No Cluttered Text)
+          for (let i = 0; i < node.inputs.length; i++) {
+            const port = node.inputs[i];
+            const pt = getPortWorldCoords(node, 'input', i, node.inputs.length);
+            const isConnected = connectionsRef.current.some(
+              (c) => c.toNodeId === node.id && c.toPortId === port.id
+            );
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 9, 0, Math.PI * 2);
+            ctx.fillStyle = isConnected ? '#06B6D4' : '#0B0F17';
+            ctx.fill();
+            ctx.strokeStyle = '#38BDF8';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+
+          for (let i = 0; i < node.outputs.length; i++) {
+            const port = node.outputs[i];
+            const pt = getPortWorldCoords(node, 'output', i, node.outputs.length);
+            const isConnected = connectionsRef.current.some(
+              (c) => c.fromNodeId === node.id && c.fromPortId === port.id
+            );
+            const isTapSelected =
+              curTapPort?.nodeId === node.id && curTapPort?.portId === port.id;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, isTapSelected ? 11 : 9, 0, Math.PI * 2);
+            ctx.fillStyle = isConnected || isTapSelected ? '#F59E0B' : '#0B0F17';
+            ctx.fill();
+            ctx.strokeStyle = '#FBBF24';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+          continue;
+        }
+
+        // =========================================================================
+        // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.55)
+        // =========================================================================
         drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
         ctx.fill();
@@ -541,23 +814,22 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.fillRect(node.x + 10, node.y, node.width - 20, 2.5);
         ctx.restore();
 
+        // Small Header Machine Icon + Title
+        drawMachineVectorIcon(ctx, node.buildingId, node.x + 20, node.y + 18, 15, accent);
+
         ctx.fillStyle = '#F8FAFC';
         ctx.font = '700 13px "Outfit", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(node.title, node.x + 12, node.y + 18);
+        ctx.fillText(node.title, node.x + 34, node.y + 18);
 
         let statusText = 'IDLE';
-        let statusColor = '#64748B';
         if (node.status === 'optimal') {
           statusText = `${node.efficiency}% OPTIMAL`;
-          statusColor = '#10B981';
         } else if (node.status === 'working') {
           statusText = `${node.efficiency}% ACTIVE`;
-          statusColor = '#F59E0B';
         } else if (node.status === 'starved') {
           statusText = 'STARVED';
-          statusColor = '#EF4444';
         }
 
         ctx.font = '600 10px "JetBrains Mono", monospace';
@@ -656,7 +928,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             (c) => c.fromNodeId === node.id && c.fromPortId === port.id
           );
           const isTapSelected =
-            tapSourcePort?.nodeId === node.id && tapSourcePort?.portId === port.id;
+            curTapPort?.nodeId === node.id && curTapPort?.portId === port.id;
 
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, isTapSelected ? 9.5 : 7.5, 0, Math.PI * 2);
@@ -695,17 +967,96 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
       ctx.restore();
       ctx.restore();
+    };
 
+    drawNowRef.current = drawScene;
+
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const targetW = Math.max(1, Math.floor(rect.width * dpr));
+      const targetH = Math.max(1, Math.floor(rect.height * dpr));
+      // Only touch canvas.width/height when dimensions actually change to prevent buffer clear flicker!
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+      if (modeRef.current === 'interactive') {
+        cameraRef.current = clampCameraToWorld(
+          cameraRef.current,
+          rect.width,
+          rect.height
+        );
+      }
+      drawScene();
+    };
+
+    resizeCanvas();
+    const ro = new ResizeObserver(resizeCanvas);
+    ro.observe(canvas);
+
+    const scheduleNext = () => {
+      timerId = window.setTimeout(() => {
+        animationFrameId = window.requestAnimationFrame(renderLoop);
+      }, 28);
+    };
+
+    const renderLoop = (now: number) => {
+      const rawDt = (now - lastTime) / 1000;
+      lastTime = now;
+      const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
+
+      const simResult = stepSimulation(nodesRef.current, connectionsRef.current, dt);
+      nodesRef.current = simResult.nodes;
+      connectionsRef.current = simResult.connections;
+
+      interactionRef.current.pulsePhase = (interactionRef.current.pulsePhase + dt * 0.85) % 1;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = canvas.width / dpr;
+      const height = canvas.height / dpr;
+
+      if (modeRef.current === 'background') {
+        cameraRef.current.x = 60 + Math.sin(now * 0.00025) * 90;
+        cameraRef.current.y = 60 + Math.cos(now * 0.0002) * 35;
+        cameraRef.current.zoom = 0.78;
+      } else if (interactionRef.current.smoothZoomTarget !== null) {
+        const curZ = cameraRef.current.zoom;
+        const targetZ = interactionRef.current.smoothZoomTarget;
+        const diff = targetZ - curZ;
+        if (Math.abs(diff) < 0.002) {
+          applyZoomAboutScreenPoint(
+            targetZ,
+            interactionRef.current.smoothZoomAnchorX,
+            interactionRef.current.smoothZoomAnchorY,
+            width,
+            height
+          );
+          interactionRef.current.smoothZoomTarget = null;
+        } else {
+          const stepZ = curZ + diff * Math.min(1, dt * 14);
+          applyZoomAboutScreenPoint(
+            stepZ,
+            interactionRef.current.smoothZoomAnchorX,
+            interactionRef.current.smoothZoomAnchorY,
+            width,
+            height
+          );
+        }
+      }
+
+      drawScene();
       scheduleNext();
     };
 
     animationFrameId = window.requestAnimationFrame(renderLoop);
     return () => {
+      drawNowRef.current = null;
       window.clearTimeout(timerId);
       window.cancelAnimationFrame(animationFrameId);
       ro.disconnect();
     };
-  }, [mode, nodesRef, connectionsRef, cameraRef, selectedNodeId, tapSourcePort]);
+  }, [nodesRef, connectionsRef, cameraRef]);
 
   const screenToWorld = (clientX: number, clientY: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
@@ -721,7 +1072,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   };
 
   const findPortAtWorld = (wx: number, wy: number): PortHit | null => {
-    const hitRadius = 18;
+    const hitRadius = isMacroIconZoom(cameraRef.current.zoom) ? 24 : 18;
     for (let nIdx = nodesRef.current.length - 1; nIdx >= 0; nIdx--) {
       const node = nodesRef.current[nIdx];
       for (let i = 0; i < node.outputs.length; i++) {
@@ -784,6 +1135,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     playSynthSfx('connect', settingsRef.current);
     onGraphMutated();
     showToast('Conveyor line connected');
+    drawNowRef.current?.();
     return true;
   };
 
@@ -843,6 +1195,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         onGraphMutated();
         setSelectedNodeId(newNode.id);
         showToast(`Placed ${bDef.name}`);
+        drawNowRef.current?.();
       }
       return;
     }
@@ -874,6 +1227,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           playSynthSfx('disconnect', settingsRef.current);
           onGraphMutated();
           showToast('Conveyor line disconnected');
+          drawNowRef.current?.();
           return;
         }
       }
@@ -900,7 +1254,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       interactionRef.current.draggingNodeId = hitNode.id;
       interactionRef.current.dragOffsetX = world.x - hitNode.x;
       interactionRef.current.dragOffsetY = world.y - hitNode.y;
-      setSelectedNodeId(hitNode.id);
+      if (selectedNodeIdRef.current !== hitNode.id) {
+        setSelectedNodeId(hitNode.id);
+      }
       setSelectedNodeSnapshot({ ...hitNode });
       return;
     }
@@ -914,7 +1270,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     );
 
     if (dtTap < 320 && tapDist < 36) {
-      // Enter Google Maps one-finger Double-Tap + Vertical Drag Zoom mode
       interactionRef.current.isDoubleTapZooming = true;
       interactionRef.current.doubleTapAnchorX = sx;
       interactionRef.current.doubleTapAnchorY = sy;
@@ -929,8 +1284,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.lastTapY = sy;
 
     // 5. Standard Pan
-    setSelectedNodeId(null);
-    setTapSourcePort(null);
+    if (selectedNodeIdRef.current !== null) {
+      setSelectedNodeId(null);
+    }
+    if (tapSourcePortRef.current !== null) {
+      setTapSourcePort(null);
+    }
     interactionRef.current.isPanning = true;
     interactionRef.current.panStartX = e.clientX;
     interactionRef.current.panStartY = e.clientY;
@@ -965,7 +1324,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const cam = cameraRef.current;
       const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * scaleRatio));
 
-      // Anchor zoom at previous pinch midpoint and translate by midpoint movement
       const worldMidX = (prevMidX - cam.x) / cam.zoom;
       const worldMidY = (prevMidY - cam.y) / cam.zoom;
 
@@ -979,6 +1337,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       interactionRef.current.lastPinchDist = dist;
       interactionRef.current.lastPinchMidX = midX;
       interactionRef.current.lastPinchMidY = midY;
+      drawNowRef.current?.();
       return;
     }
 
@@ -988,7 +1347,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       if (Math.abs(dy) > 4) {
         interactionRef.current.pointerMoved = true;
       }
-      // Dragging down zooms IN, dragging up zooms OUT (Google Maps convention)
       const zoomFactor = Math.pow(1.006, dy);
       const nextZoom = interactionRef.current.doubleTapStartZoom * zoomFactor;
       applyZoomAboutScreenPoint(
@@ -998,6 +1356,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         rect.width,
         rect.height
       );
+      drawNowRef.current?.();
       return;
     }
 
@@ -1007,6 +1366,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
     if (interactionRef.current.wiringFrom) {
       interactionRef.current.pointerMoved = true;
+      drawNowRef.current?.();
       return;
     }
 
@@ -1031,6 +1391,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const clamped = clampNodeToWorld(snappedX, snappedY, n.width, n.height);
         return { ...n, x: clamped.x, y: clamped.y };
       });
+      drawNowRef.current?.();
       return;
     }
 
@@ -1049,6 +1410,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         rect.width,
         rect.height
       );
+      drawNowRef.current?.();
     }
   };
 
@@ -1062,7 +1424,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       interactionRef.current.lastPinchMidY = null;
     }
 
-    // If user double-tapped without dragging vertically, smoothly zoom in 1.35x toward tap point
     if (interactionRef.current.isDoubleTapZooming) {
       if (!interactionRef.current.pointerMoved) {
         const nextTarget = Math.min(MAX_ZOOM, cameraRef.current.zoom * 1.35);
@@ -1085,6 +1446,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         setTapSourcePort(null);
       }
       interactionRef.current.wiringFrom = null;
+      drawNowRef.current?.();
     }
 
     if (interactionRef.current.draggingNodeId && interactionRef.current.pointerMoved) {
@@ -1105,7 +1467,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
     const baseZoom =
       interactionRef.current.smoothZoomTarget ?? cameraRef.current.zoom;
-    const factor = Math.exp(-e.deltaY * 0.0016);
+    const factor = Math.exp(-e.deltaY * 0.0018);
     const nextTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, baseZoom * factor));
 
     interactionRef.current.smoothZoomTarget = nextTarget;
@@ -1136,10 +1498,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       {mode === 'interactive' && pendingBuildId && BUILDINGS[pendingBuildId] && (
         <div
           style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-[#131B2E] border border-amber-500/60 shadow-xl"
+          className="fixed top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3.5 py-1.5 rounded-xl bg-[#131B2E] border border-amber-500/70 shadow-xl"
         >
           <span className="text-xs font-medium text-amber-300 whitespace-nowrap">
-            Tap anywhere inside Sector 01 to place{' '}
+            Tap inside Sector 01 to place{' '}
             <strong className="font-display text-white">
               {BUILDINGS[pendingBuildId].name}
             </strong>
@@ -1158,10 +1520,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       {mode === 'interactive' && tapSourcePort && !pendingBuildId && (
         <div
           style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2 rounded-xl bg-[#131B2E] border border-cyan-500/60 shadow-xl"
+          className="fixed top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3.5 py-1.5 rounded-xl bg-[#131B2E] border border-cyan-500/70 shadow-xl"
         >
           <span className="text-xs text-cyan-200 whitespace-nowrap">
-            Wiring Output ({tapSourcePort.label}) · Tap any Left Input Port to connect
+            Wiring Output ({tapSourcePort.label}) · Tap any Input Port
           </span>
           <button
             type="button"
@@ -1173,35 +1535,37 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         </div>
       )}
 
-      {/* Selected Machine Node Recipe & Action Popover */}
+      {/* Selected Machine Node Recipe & Action Popover (Compact Android Landscape Dock) */}
       {mode === 'interactive' && selectedNodeSnapshot && selectedBuildingDef && (
         <div
           style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom right' }}
-          className="fixed bottom-4 right-4 z-20 w-80 rounded-2xl bg-[#131B2E] border border-[#26334D] shadow-2xl p-4"
+          className="fixed bottom-3 right-3 z-20 w-72 max-h-[calc(100vh-24px)] overflow-y-auto rounded-2xl bg-[#131B2E] border border-[#26334D] shadow-2xl p-3"
         >
-          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-[#26334D]">
-            <div>
-              <h3 className="text-sm font-bold font-display text-white">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#26334D]">
+            <div className="min-w-0">
+              <h3 className="text-xs font-bold font-display text-white truncate">
                 {selectedNodeSnapshot.title}
               </h3>
-              <p className="text-xs text-slate-400">{selectedBuildingDef.subcategory}</p>
+              <p className="text-[11px] text-slate-400 truncate">
+                {selectedBuildingDef.subcategory}
+              </p>
             </div>
             <button
               type="button"
               aria-label="Close Node Inspector"
               onClick={() => setSelectedNodeId(null)}
-              className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/70"
+              className="min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/70 shrink-0"
             >
               ✕
             </button>
           </div>
 
           {selectedBuildingDef.availableRecipeIds.length > 0 && (
-            <div className="mt-3">
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <div className="mt-2">
+              <label className="block text-[11px] font-medium text-slate-300 mb-1">
                 Active Machine Recipe
               </label>
-              <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 gap-1 max-h-28 overflow-y-auto pr-1">
                 {selectedBuildingDef.availableRecipeIds.map((rId) => {
                   const r = RECIPES[rId];
                   if (!r) return null;
@@ -1220,15 +1584,16 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                         setSelectedNodeSnapshot(updated ? { ...updated } : null);
                         playSynthSfx('click', settings);
                         onGraphMutated();
+                        drawNowRef.current?.();
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium ${
                         active
                           ? 'bg-amber-500/20 border border-amber-500 text-amber-200'
                           : 'bg-[#0B0F17] border border-[#26334D] text-slate-300 hover:border-slate-600'
                       }`}
                     >
                       <span className="truncate">{r.name}</span>
-                      <span className="font-mono tabular-nums text-[11px] text-slate-400 shrink-0 ml-2">
+                      <span className="font-mono tabular-nums text-[10px] text-slate-400 shrink-0 ml-2">
                         {r.outputs[0]?.ratePerMin ?? 0}/m
                       </span>
                     </button>
@@ -1238,7 +1603,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             </div>
           )}
 
-          <div className="mt-3 pt-3 border-t border-[#26334D] flex items-center justify-between gap-2">
+          <div className="mt-2.5 pt-2 border-t border-[#26334D] flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => {
@@ -1250,10 +1615,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 playSynthSfx('disconnect', settings);
                 onGraphMutated();
                 showToast('Cleared attached conveyor lines');
+                drawNowRef.current?.();
               }}
-              className="flex-1 min-h-[40px] px-3 py-2 rounded-lg bg-[#0B0F17] hover:bg-slate-800 border border-[#26334D] text-xs font-medium text-slate-300 whitespace-nowrap"
+              className="flex-1 min-h-[36px] px-2.5 py-1.5 rounded-lg bg-[#0B0F17] hover:bg-slate-800 border border-[#26334D] text-xs font-medium text-slate-300 whitespace-nowrap"
             >
-              Unwire Ports
+              Unwire
             </button>
             <button
               type="button"
@@ -1267,8 +1633,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 playSynthSfx('disconnect', settings);
                 onGraphMutated();
                 showToast('Machine dismantled');
+                drawNowRef.current?.();
               }}
-              className="flex-1 min-h-[40px] px-3 py-2 rounded-lg bg-red-950/60 hover:bg-red-900/70 border border-red-800/60 text-xs font-medium text-red-200 whitespace-nowrap"
+              className="flex-1 min-h-[36px] px-2.5 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/70 border border-red-800/60 text-xs font-medium text-red-200 whitespace-nowrap"
             >
               Dismantle
             </button>
@@ -1277,7 +1644,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       )}
 
       {statusToast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-lg bg-[#131B2E] border border-[#26334D] text-xs text-slate-200 shadow-lg pointer-events-none whitespace-nowrap">
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-lg bg-[#131B2E] border border-[#26334D] text-xs text-slate-200 shadow-lg pointer-events-none whitespace-nowrap">
           {statusToast}
         </div>
       )}

@@ -7,6 +7,7 @@ import {
   clampNodeToWorld,
   createMachineNode,
   createStarterFactory,
+  isMacroIconZoom,
   parseSaveImport,
   serializeSaveExport,
   snapToGrid,
@@ -32,9 +33,12 @@ test('clampNodeToWorld keeps nodes inside bounded sector limits', () => {
   assert.equal(far.y, WORLD_HEIGHT - 140 - 24);
 });
 
-test('clampCameraToWorld constrains zoom and pan within sector bounds', () => {
+test('clampCameraToWorld constrains zoom and pan within sector bounds and isMacroIconZoom detects LOD', () => {
   const zoomedOut = clampCameraToWorld({ x: -99999, y: -99999, zoom: 0.05 }, 1440, 900);
-  assert.equal(zoomedOut.zoom, 0.35);
+  assert.equal(zoomedOut.zoom, 0.15);
+  assert.equal(isMacroIconZoom(0.15), true);
+  assert.equal(isMacroIconZoom(0.45), true);
+  assert.equal(isMacroIconZoom(0.75), false);
   assert.ok(zoomedOut.x > -5000);
   assert.ok(zoomedOut.y > -5000);
 });
@@ -134,9 +138,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot cleanly', () 
   assert.equal(parsed.slot.nodes.length, 5);
 });
 
-test('version tracking matches 0.0.02 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.02');
-  assert.equal(APP_BUILD_TAG, '0.0.02 dev build');
+test('version tracking matches 0.0.03 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.03');
+  assert.equal(APP_BUILD_TAG, '0.0.03 dev build');
 });
 
 

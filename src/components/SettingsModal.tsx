@@ -43,7 +43,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(encoded).catch(() => {});
     }
-    setDataFeedback('Current factory save JSON exported to the text box below (and clipboard).');
+    setDataFeedback('Current factory save JSON exported to box below (and clipboard).');
   };
 
   const handleImportSave = () => {
@@ -64,79 +64,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     <div
       role="dialog"
       aria-label="Settings Menu"
-      className="fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-4 md:p-6"
+      className="fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-2.5 sm:p-4"
     >
+      {/* Widescreen Landscape Sidebar + 2-Column Content Split */}
       <div
         style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'center center' }}
-        className="w-full max-w-3xl h-[84vh] max-h-[580px] rounded-2xl bg-[#131B2E] border border-[#26334D] shadow-2xl flex flex-col overflow-hidden"
+        className="w-[96vw] max-w-4xl h-[92vh] max-h-[460px] rounded-2xl bg-[#131B2E] border border-[#26334D] shadow-2xl flex flex-row overflow-hidden"
       >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-[#0B0F17] border-b border-[#26334D]">
+        {/* Left Navigation Sidebar (Saves vertical space on landscape phones) */}
+        <div className="w-48 shrink-0 bg-[#0B0F17] border-r border-[#26334D] p-3 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-display font-bold text-white">System Settings</h2>
-              <span className="text-xs font-mono tabular-nums text-amber-400">
+            <div className="pb-2.5 mb-2.5 border-b border-[#26334D]">
+              <h2 className="text-sm font-display font-bold text-white">System Settings</h2>
+              <span className="text-[10px] font-mono tabular-nums text-amber-400">
                 {APP_BUILD_TAG}
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Configure Upload Labs node visuals, Android touch wiring, audio, and save data
-            </p>
+
+            <div className="flex flex-col gap-1.5">
+              {(
+                [
+                  { id: 'visuals', label: 'Visuals & Node Cards' },
+                  { id: 'controls', label: 'Touch & Startup' },
+                  { id: 'audio', label: 'Audio & Haptics' },
+                  { id: 'data', label: 'Save & Factory Reset' },
+                ] as { id: SettingsTab; label: string }[]
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-display font-semibold text-left whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'bg-[#131B2E] text-slate-300 hover:text-white border border-[#26334D]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
+
           <button
             type="button"
             aria-label="Close Settings"
             onClick={onClose}
-            className="min-w-[44px] min-h-[44px] px-3.5 rounded-xl bg-[#131B2E] hover:bg-slate-800 border border-[#26334D] text-xs font-semibold text-slate-300 hover:text-white whitespace-nowrap"
+            className="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-[#131B2E] hover:bg-slate-800 border border-[#26334D] text-xs font-semibold text-slate-200 hover:text-white whitespace-nowrap"
           >
             Done
           </button>
         </div>
 
-        {/* Category Tabs */}
-        <div className="flex items-center gap-2 px-6 py-3 bg-[#0E1525] border-b border-[#26334D] overflow-x-auto">
-          {(
-            [
-              { id: 'visuals', label: 'Visuals & Node Cards' },
-              { id: 'controls', label: 'Touch & Startup' },
-              { id: 'audio', label: 'Audio & Haptics' },
-              { id: 'data', label: 'Save & Factory Reset' },
-            ] as { id: SettingsTab; label: string }[]
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[40px] px-4 py-2 rounded-xl text-xs font-display font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                activeTab === tab.id
-                  ? 'bg-amber-500 text-slate-950 font-bold'
-                  : 'bg-[#131B2E] text-slate-300 hover:text-white border border-[#26334D]'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab Body */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-4">
+        {/* Right Widescreen Content Pane */}
+        <div className="flex-1 p-3.5 overflow-y-auto">
           {activeTab === 'visuals' && (
-            <>
+            <div className="grid grid-cols-2 gap-2.5">
               {/* 1. Conveyor Line Style: Curved vs 90-Degree */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-xs font-semibold text-white">
                     Conveyor Line Routing Style
                   </div>
-                  <div className="text-xs text-slate-400">
-                    Choose between smooth Upload Labs Bezier curves or 90-degree circuit lines
+                  <div className="text-[11px] text-slate-400">
+                    Smooth Upload Labs Bezier curves or 90-degree circuit lines
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => updateField('conveyorStyle', 'bezier')}
-                    className={`min-h-[42px] px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                    className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
                       settings.conveyorStyle === 'bezier'
                         ? 'bg-amber-500 text-slate-950'
                         : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
@@ -147,7 +145,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => updateField('conveyorStyle', 'orthogonal')}
-                    className={`min-h-[42px] px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                    className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
                       settings.conveyorStyle === 'orthogonal'
                         ? 'bg-amber-500 text-slate-950'
                         : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
@@ -159,13 +157,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* 2. Show Port Item Rate Numbers Toggle */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-4">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-xs font-semibold text-white">
                     Show Item Rate Numbers on Ports
                   </div>
-                  <div className="text-xs text-slate-400">
-                    Display live items/min throughput numbers next to input and output port dots
+                  <div className="text-[11px] text-slate-400">
+                    Live items/min throughput next to port dots
                   </div>
                 </div>
                 <input
@@ -173,18 +171,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="checkbox"
                   checked={settings.showPortRates}
                   onChange={(e) => updateField('showPortRates', e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer shrink-0"
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
               </div>
 
               {/* 3. Grid Snapping Toggle */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-4">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-xs font-semibold text-white">
                     Blueprint Grid Snapping
                   </div>
-                  <div className="text-xs text-slate-400">
-                    Align machine node cards cleanly to the 24px coordinate blueprint grid
+                  <div className="text-[11px] text-slate-400">
+                    Align machine nodes to 24px blueprint grid
                   </div>
                 </div>
                 <input
@@ -192,17 +190,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="checkbox"
                   checked={settings.gridSnap}
                   onChange={(e) => updateField('gridSnap', e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer shrink-0"
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
               </div>
 
               {/* 4. UI Scale Slider */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D]">
-                <div className="flex items-center justify-between mb-2">
+              <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D]">
+                <div className="flex items-center justify-between mb-1.5">
                   <div>
-                    <div className="text-sm font-semibold text-white">Interface UI Scale</div>
-                    <div className="text-xs text-slate-400">
-                      Adjust menu and popover sizing for your Android phone or tablet screen
+                    <div className="text-xs font-semibold text-white">Interface UI Scale</div>
+                    <div className="text-[11px] text-slate-400">
+                      Adjust menu and popover sizing for your Android screen
                     </div>
                   </div>
                   <span className="font-mono tabular-nums text-xs font-bold text-amber-400">
@@ -220,22 +218,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full accent-amber-500 cursor-pointer"
                 />
               </div>
-            </>
+            </div>
           )}
 
           {activeTab === 'controls' && (
-            <>
+            <div className="grid grid-cols-2 gap-2.5">
               {/* 1. Touch Wiring Mode: Drag vs Tap-to-Tap */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-xs font-semibold text-white">
                     Port Connection Wiring Mode
                   </div>
-                  <div className="text-xs text-slate-400">
-                    Connect output ports to input ports by dragging, tapping sequentially, or both
+                  <div className="text-[11px] text-slate-400">
+                    Connect output ports to input ports by dragging, tapping, or both
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {(
                     [
                       { id: 'both', label: 'Both (Hybrid)' },
@@ -247,7 +245,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       key={opt.id}
                       type="button"
                       onClick={() => updateField('wiringMode', opt.id)}
-                      className={`min-h-[42px] px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                      className={`min-h-[36px] px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
                         settings.wiringMode === opt.id
                           ? 'bg-amber-500 text-slate-950'
                           : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
@@ -260,13 +258,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* 2. Skip Main Menu directly to Latest Save */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-4">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">
-                    Skip Main Menu Directly to Latest Save
+                  <div className="text-xs font-semibold text-white">
+                    Skip Main Menu to Latest Save
                   </div>
-                  <div className="text-xs text-slate-400">
-                    When enabled, launching the game boots straight into your most recent save slot
+                  <div className="text-[11px] text-slate-400">
+                    Boot straight into your most recent factory save
                   </div>
                 </div>
                 <input
@@ -274,18 +272,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="checkbox"
                   checked={settings.skipMainMenu}
                   onChange={(e) => updateField('skipMainMenu', e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer shrink-0"
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
               </div>
 
               {/* 3. Auto-Save Toggle */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-4">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-xs font-semibold text-white">
                     Automatic Background Auto-Save
                   </div>
-                  <div className="text-xs text-slate-400">
-                    Periodically saves your active factory into a dedicated session Auto-Save slot
+                  <div className="text-[11px] text-slate-400">
+                    Periodically saves your active factory session
                   </div>
                 </div>
                 <input
@@ -293,20 +291,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="checkbox"
                   checked={settings.autoSaveEnabled}
                   onChange={(e) => updateField('autoSaveEnabled', e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer shrink-0"
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
               </div>
-            </>
+            </div>
           )}
 
           {activeTab === 'audio' && (
-            <>
+            <div className="grid grid-cols-2 gap-2.5">
               {/* Mute Toggle */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-4">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">Mute All Audio</div>
-                  <div className="text-xs text-slate-400">
-                    Silence all synthesized interface and connection sound effects
+                  <div className="text-xs font-semibold text-white">Mute All Audio</div>
+                  <div className="text-[11px] text-slate-400">
+                    Silence all synthesized SFX
                   </div>
                 </div>
                 <input
@@ -314,14 +312,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="checkbox"
                   checked={settings.muted}
                   onChange={(e) => updateField('muted', e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer shrink-0"
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
+                />
+              </div>
+
+              {/* Android Haptic Vibration Toggle */}
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Android Haptic Vibration Feedback
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Tactile pulses when snapping &amp; wiring
+                  </div>
+                </div>
+                <input
+                  aria-label="Android Haptic Vibration Feedback"
+                  type="checkbox"
+                  checked={settings.hapticsEnabled}
+                  onChange={(e) => updateField('hapticsEnabled', e.target.checked)}
+                  className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
               </div>
 
               {/* Master Volume Slider */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-white">Master Volume</span>
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold text-white">Master Volume</span>
                   <span className="font-mono tabular-nums text-xs text-amber-400">
                     {settings.masterVolume}%
                   </span>
@@ -338,9 +355,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* SFX Volume Slider */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-white">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold text-white">
                     Interface &amp; Conveyor SFX Volume
                   </span>
                   <span className="font-mono tabular-nums text-xs text-amber-400">
@@ -357,52 +374,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full accent-amber-500 cursor-pointer"
                 />
               </div>
-
-              {/* Android Haptic Vibration Toggle */}
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-sm font-semibold text-white">
-                    Android Haptic Vibration Feedback
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    Trigger subtle tactile vibration pulses when snapping nodes and wiring ports
-                  </div>
-                </div>
-                <input
-                  aria-label="Android Haptic Vibration Feedback"
-                  type="checkbox"
-                  checked={settings.hapticsEnabled}
-                  onChange={(e) => updateField('hapticsEnabled', e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer shrink-0"
-                />
-              </div>
-            </>
+            </div>
           )}
 
           {activeTab === 'data' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-[#0B0F17] border border-[#26334D]">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="space-y-2.5">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D]">
+                <div className="flex items-center justify-between gap-2 mb-2">
                   <div>
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-xs font-semibold text-white">
                       Save Export &amp; Import
                     </div>
-                    <div className="text-xs text-slate-400">
-                      Backup your active session as a JSON string or paste a saved string to import
+                    <div className="text-[11px] text-slate-400">
+                      Backup active session as JSON or paste a saved string to import
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={handleExportCurrentSave}
-                      className="min-h-[40px] px-3.5 py-2 rounded-lg bg-[#131B2E] hover:bg-slate-800 border border-[#26334D] text-xs font-semibold text-amber-300 whitespace-nowrap"
+                      className="min-h-[34px] px-3 py-1 rounded-lg bg-[#131B2E] hover:bg-slate-800 border border-[#26334D] text-xs font-semibold text-amber-300 whitespace-nowrap"
                     >
                       Export Current Save
                     </button>
                     <button
                       type="button"
                       onClick={handleImportSave}
-                      className="min-h-[40px] px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 whitespace-nowrap"
+                      className="min-h-[34px] px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 whitespace-nowrap"
                     >
                       Import Save JSON
                     </button>
@@ -411,25 +409,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <textarea
                   aria-label="Save Data JSON"
-                  rows={4}
+                  rows={3}
                   value={saveCodeBuffer}
                   onChange={(e) => setSaveCodeBuffer(e.target.value)}
                   placeholder="Click 'Export Current Save' or paste a save JSON string here..."
-                  className="w-full p-3 rounded-lg bg-[#131B2E] border border-[#26334D] font-mono text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  className="w-full p-2 rounded-lg bg-[#131B2E] border border-[#26334D] font-mono text-[11px] text-slate-200 focus:outline-none focus:border-amber-500"
                 />
 
                 {dataFeedback && (
-                  <p className="mt-2 text-xs text-amber-300">{dataFeedback}</p>
+                  <p className="mt-1.5 text-[11px] text-amber-300">{dataFeedback}</p>
                 )}
               </div>
 
               {/* Factory Reset */}
-              <div className="p-4 rounded-xl bg-red-950/30 border border-red-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="p-3 rounded-xl bg-red-950/30 border border-red-900/50 flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-red-200">
+                  <div className="text-xs font-semibold text-red-200">
                     Factory Reset All Saves &amp; Settings
                   </div>
-                  <div className="text-xs text-red-300/70">
+                  <div className="text-[11px] text-red-300/70">
                     Clears all save slots and restores default settings
                   </div>
                 </div>
@@ -437,26 +435,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setConfirmReset(true)}
-                    className="min-h-[42px] px-4 py-2 rounded-lg bg-red-900/70 hover:bg-red-800 text-xs font-bold text-white whitespace-nowrap shrink-0"
+                    className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-red-900/70 hover:bg-red-800 text-xs font-bold text-white whitespace-nowrap shrink-0"
                   >
                     Factory Reset
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => {
                         setConfirmReset(false);
                         onFactoryReset();
                       }}
-                      className="min-h-[42px] px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-bold text-white whitespace-nowrap"
+                      className="min-h-[36px] px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-bold text-white whitespace-nowrap"
                     >
                       Confirm Wipe
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmReset(false)}
-                      className="min-h-[42px] px-3 py-2 rounded-lg bg-[#131B2E] text-xs text-slate-300 whitespace-nowrap"
+                      className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-[#131B2E] text-xs text-slate-300 whitespace-nowrap"
                     >
                       Cancel
                     </button>

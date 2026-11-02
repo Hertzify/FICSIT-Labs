@@ -10,9 +10,14 @@ import {
 // Initial Sector 01 Map Boundaries (Large 3840x2160 sector, expandable in future updates)
 export const WORLD_WIDTH = 3840;
 export const WORLD_HEIGHT = 2160;
-export const MIN_ZOOM = 0.35;
+export const MIN_ZOOM = 0.15;
 export const MAX_ZOOM = 1.85;
+export const LOD_ICON_BOX_ZOOM_THRESHOLD = 0.55;
 export const WORLD_PADDING = 24;
+
+export function isMacroIconZoom(zoom: number): boolean {
+  return zoom < LOD_ICON_BOX_ZOOM_THRESHOLD;
+}
 
 export function snapToGrid(value: number, gridSize: number, enabled: boolean): number {
   if (!enabled || gridSize <= 0) return Math.round(value);

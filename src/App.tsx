@@ -297,7 +297,7 @@ export default function App() {
           {/* Top-Left Session Name & Pause Menu Button */}
           <div
             style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}
-            className="fixed top-4 left-4 pointer-events-auto flex items-center gap-2"
+            className="fixed top-2.5 left-3 pointer-events-auto flex items-center gap-2"
           >
             <button
               type="button"
@@ -305,7 +305,7 @@ export default function App() {
                 playSynthSfx('click', settings);
                 setGameState('paused');
               }}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] border border-[#26334D] text-xs font-display font-bold text-white shadow-lg flex items-center gap-2 whitespace-nowrap"
+              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] border border-[#26334D] text-xs font-display font-bold text-white shadow-lg flex items-center gap-1.5 whitespace-nowrap"
             >
               <span>Menu</span>
               <span className="text-[10px] font-mono text-slate-400">[Esc]</span>
@@ -317,13 +317,13 @@ export default function App() {
                 playSynthSfx('click', settings);
                 setShowSettingsModal(true);
               }}
-              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] border border-[#26334D] text-xs font-display font-semibold text-slate-200 shadow-lg whitespace-nowrap"
+              className="min-h-[40px] px-3 py-1.5 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] border border-[#26334D] text-xs font-display font-semibold text-slate-200 shadow-lg whitespace-nowrap"
             >
               Settings
             </button>
 
             {autoSaveNotice && (
-              <span className="px-3 py-1.5 rounded-lg bg-[#131B2E]/95 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 whitespace-nowrap">
+              <span className="px-2.5 py-1 rounded-lg bg-[#131B2E] border border-emerald-500/40 text-[11px] font-mono text-emerald-300 whitespace-nowrap">
                 {autoSaveNotice}
               </span>
             )}
@@ -332,7 +332,7 @@ export default function App() {
           {/* Bottom-Left Android Thumb-Zone Build Menu Trigger */}
           <div
             style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom left' }}
-            className="fixed bottom-4 left-4 pointer-events-auto flex items-center gap-2"
+            className="fixed bottom-3 left-3 pointer-events-auto flex items-center gap-2"
           >
             <button
               type="button"
@@ -340,79 +340,81 @@ export default function App() {
                 playSynthSfx('click', settings);
                 setShowBuildMenu(true);
               }}
-              className="min-h-[48px] px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm shadow-xl flex items-center gap-2.5 transition-transform active:scale-[0.98] whitespace-nowrap"
+              className="min-h-[44px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs shadow-xl flex items-center gap-2 active:scale-[0.98] whitespace-nowrap"
             >
               <span>Build Menu</span>
-              <span className="text-xs font-mono opacity-80">[Q]</span>
+              <span className="text-[11px] font-mono opacity-80">[Q]</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* STATE 3: IN-GAME PAUSE / SYSTEM MENU */}
+      {/* STATE 3: IN-GAME PAUSE / SYSTEM MENU (Widescreen 2x2 Landscape Layout) */}
       {gameState === 'paused' && (
         <div
           role="dialog"
           aria-label="Pause Menu"
-          className="fixed inset-0 z-30 bg-black/75 flex items-center justify-center p-4"
+          className="fixed inset-0 z-30 bg-black/80 flex items-center justify-center p-3"
         >
           <div
             style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'center center' }}
-            className="w-full max-w-sm rounded-2xl bg-[#131B2E] border border-[#26334D] p-6 shadow-2xl space-y-3"
+            className="w-full max-w-md rounded-2xl bg-[#131B2E] border border-[#26334D] p-4 shadow-2xl"
           >
-            <div className="pb-3 border-b border-[#26334D]">
-              <h2 className="text-lg font-display font-bold text-white">
+            <div className="pb-2.5 mb-3 border-b border-[#26334D] flex items-center justify-between gap-2">
+              <h2 className="text-sm font-display font-bold text-white">
                 Factory Paused
               </h2>
-              <p className="text-xs text-slate-400 truncate">
+              <p className="text-xs font-mono text-slate-400 truncate">
                 {activeSlot.sessionName} · {nodesRef.current.length} Nodes
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                playSynthSfx('click', settings);
-                setGameState('playing');
-              }}
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm whitespace-nowrap"
-            >
-              Resume Factory
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  playSynthSfx('click', settings);
+                  setGameState('playing');
+                }}
+                className="col-span-2 min-h-[42px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs whitespace-nowrap"
+              >
+                Resume Factory
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                playSynthSfx('click', settings);
-                setSaveLoadModalMode('save_and_load');
-              }}
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1C2742] border border-[#26334D] text-white font-display font-semibold text-sm whitespace-nowrap"
-            >
-              Save / Load Game
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playSynthSfx('click', settings);
+                  setSaveLoadModalMode('save_and_load');
+                }}
+                className="min-h-[42px] px-3.5 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1C2742] border border-[#26334D] text-white font-display font-semibold text-xs whitespace-nowrap"
+              >
+                Save / Load Game
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                playSynthSfx('click', settings);
-                setShowSettingsModal(true);
-              }}
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-[#1C2742] border border-[#26334D] text-white font-display font-semibold text-sm whitespace-nowrap"
-            >
-              Settings
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playSynthSfx('click', settings);
+                  setShowSettingsModal(true);
+                }}
+                className="min-h-[42px] px-3.5 py-2 rounded-xl bg-[#0B0F17] hover:bg-[#1C2742] border border-[#26334D] text-white font-display font-semibold text-xs whitespace-nowrap"
+              >
+                Settings
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerSessionAutoSave(false);
-                playSynthSfx('click', settings);
-                setGameState('title');
-              }}
-              className="w-full min-h-[46px] px-4 py-2.5 rounded-xl bg-[#0B0F17] hover:bg-slate-800 border border-[#26334D] text-slate-300 hover:text-white font-display font-semibold text-sm whitespace-nowrap"
-            >
-              Exit to Main Menu
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerSessionAutoSave(false);
+                  playSynthSfx('click', settings);
+                  setGameState('title');
+                }}
+                className="col-span-2 min-h-[40px] px-3.5 py-2 rounded-xl bg-[#0B0F17] hover:bg-slate-800 border border-[#26334D] text-slate-300 hover:text-white font-display font-semibold text-xs whitespace-nowrap"
+              >
+                Exit to Main Menu
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -65,7 +65,7 @@ export interface PortSocket {
   actualRatePerMin: number;
 }
 
-export type MachineStatus = 'optimal' | 'working' | 'starved' | 'backed_up' | 'idle';
+export type MachineStatus = 'optimal' | 'working' | 'waiting' | 'starved' | 'backed_up' | 'idle';
 
 export interface MachineNode {
   id: string;
@@ -86,15 +86,43 @@ export interface MachineNode {
   outputs: PortSocket[];
 }
 
+export type ConveyorBeltTier = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface ConveyorBeltTierDef {
+  tier: ConveyorBeltTier;
+  id: string;
+  name: string;
+  shortLabel: string;
+  capacityPerMin: number;
+  speedPxPerSec: number;
+  accentColor: string;
+  ingredientName: string;
+  unlockTier: string;
+  description: string;
+}
+
+export interface BeltItemPacket {
+  id: string;
+  itemName: string;
+  distancePx: number; // 0 .. lengthPx along the belt path
+}
+
 export interface ConveyorConnection {
   id: string;
   fromNodeId: string;
   fromPortId: string;
   toNodeId: string;
   toPortId: string;
+  beltTier?: ConveyorBeltTier; // 1 = 60/m, 2 = 120/m, 3 = 270/m, 4 = 480/m, 5 = 780/m, 6 = 1200/m
   itemName: string | null;
-  ratePerMin: number;
+  ratePerMin: number; // Delivered throughput arriving at the destination input port
+  sourceRatePerMin?: number; // Rate entering the belt at the source output port
   maxCapacityPerMin: number;
+  lengthPx?: number; // Physical belt path length in world pixels
+  travelTimeSec?: number; // Time in seconds for an item to travel from output port to input port
+  spawnAccumulator?: number; // 0..1 fractional item spawn progress at belt entrance
+  inFlightItems?: BeltItemPacket[]; // Discrete physical items currently traveling along the belt
+  firstItemArrived?: boolean; // True once the leading item packet has physically reached the destination port
 }
 
 export interface CameraState {

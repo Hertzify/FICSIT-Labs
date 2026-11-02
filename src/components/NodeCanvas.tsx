@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BUILDINGS, PURITY_CONFIG, RECIPES } from '../game/catalog';
+import {
+  BUILDINGS,
+  CONVEYOR_BELT_TIER_LIST,
+  PURITY_CONFIG,
+  RECIPES,
+} from '../game/catalog';
 import { playSynthSfx } from '../game/audio';
 import {
   getBuildingIconUrl,
@@ -14,17 +19,21 @@ import {
   clampCameraToWorld,
   clampNodeToWorld,
   computeConveyorBeltFlowVisuals,
+  createConveyorConnection,
   createMachineNode,
+  getBeltTierDef,
   isMacroIconZoom,
   MAX_ZOOM,
   MIN_ZOOM,
   snapToGrid,
   stepSimulation,
+  upgradeConveyorBeltTier,
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from '../game/rules';
 import {
   CameraState,
+  ConveyorBeltTier,
   ConveyorConnection,
   MachineNode,
   PortSocket,
@@ -37,6 +46,7 @@ interface NodeCanvasProps {
   connectionsRef: React.MutableRefObject<ConveyorConnection[]>;
   cameraRef: React.MutableRefObject<CameraState>;
   settings: SettingsConfig;
+  activeBeltTier: ConveyorBeltTier;
   pendingBuildId: string | null;
   onClearPendingBuild: () => void;
   onGraphMutated: () => void;
@@ -188,6 +198,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   connectionsRef,
   cameraRef,
   settings,
+  activeBeltTier,
   pendingBuildId,
   onClearPendingBuild,
   onGraphMutated,
@@ -199,6 +210,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   const settingsRef = useRef<SettingsConfig>(settings);
   settingsRef.current = settings;
+
+  const activeBeltTierRef = useRef<ConveyorBeltTier>(activeBeltTier);
+  activeBeltTierRef.current = activeBeltTier;
 
   const pendingBuildRef = useRef<string | null>(pendingBuildId);
   pendingBuildRef.current = pendingBuildId;
@@ -549,42 +563,51 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const p1 = getPortWorldCoords(fromNode, 'output', outIdx, fromNode.outputs.length);
         const p2 = getPortWorldCoords(toNode, 'input', inIdx, toNode.inputs.length);
 
+        const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
+        const enteringRate = conn.sourceRatePerMin ?? conn.ratePerMin;
         const isFlowing = conn.ratePerMin > 0;
+        const isInTransit = !conn.firstItemArrived && enteringRate > 0;
         const itemColor = getItemAccentColor(conn.itemName);
+        const lengthPx = Math.max(72, conn.lengthPx ?? 240);
 
+        // Outer Conveyor Track Casing (tinted by Belt Tier)
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
-        ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 6.5;
+        ctx.strokeStyle = tierDef.tier >= 2 ? `${tierDef.accentColor}55` : '#1E293B';
+        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 7;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
+        // Inner Conveyor Track Line
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
-        ctx.strokeStyle = isFlowing ? itemColor : '#475569';
-        ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2.5;
+        ctx.strokeStyle = isFlowing
+          ? itemColor
+          : isInTransit
+          ? '#38BDF8'
+          : '#475569';
+        ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2.6;
         ctx.stroke();
 
-        // Fully Adaptive Moving Belt Packets (scales down to single-digit 1/m..9/m rates)
-        if (isFlowing) {
-          const flowVis = computeConveyorBeltFlowVisuals(conn.ratePerMin);
-          const beltPhase =
-            (interactionRef.current.elapsedTime * 0.68 * flowVis.speedMultiplier) % 1;
+        // Render Physical Discrete Item Packets Traveling Along the Belt (`conn.inFlightItems`)
+        const packets = conn.inFlightItems ?? [];
+        if (packets.length > 0) {
+          const flowVis = computeConveyorBeltFlowVisuals(enteringRate || 60);
           const itemImg = !macroMode ? getCanvasItemImage(conn.itemName) : null;
           const dotR = macroMode
             ? Math.max(4.5, 3 / cam.zoom)
             : flowVis.dotRadius;
 
-          for (let i = 0; i < flowVis.dotCount; i++) {
-            const t = (beltPhase + i / flowVis.dotCount) % 1;
+          for (const pkt of packets) {
+            const t = Math.max(0, Math.min(1, pkt.distancePx / lengthPx));
             const pt = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, t, cfg.conveyorStyle);
 
-            if (itemImg && cam.zoom >= 0.58) {
+            if (itemImg && cam.zoom >= 0.55) {
               ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 7.5, 0, Math.PI * 2);
+              ctx.arc(pt.x, pt.y, 7.8, 0, Math.PI * 2);
               ctx.fillStyle = '#0F172A';
               ctx.fill();
-              ctx.strokeStyle = itemColor;
-              ctx.lineWidth = 1.4;
+              ctx.strokeStyle = tierDef.tier >= 2 ? tierDef.accentColor : itemColor;
+              ctx.lineWidth = 1.5;
               ctx.stroke();
               ctx.drawImage(itemImg, pt.x - 6, pt.y - 6, 12, 12);
             } else {
@@ -599,25 +622,42 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           }
         }
 
-        if (!macroMode && cfg.showPortRates && conn.itemName) {
+        if (!macroMode && cfg.showPortRates) {
           const mid = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, 0.5, cfg.conveyorStyle);
-          const badgeText = `${conn.ratePerMin}/m`;
-          ctx.font = '600 10px "JetBrains Mono", monospace';
+          const leadingDist =
+            packets.length > 0 ? Math.max(...packets.map((p) => p.distancePx)) : 0;
+          const transitPct = Math.min(99, Math.round((leadingDist / lengthPx) * 100));
+
+          const badgeText = isInTransit
+            ? `${tierDef.shortLabel} · Transit ${transitPct}%`
+            : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}/m`;
+
+          ctx.font = '600 9.5px "JetBrains Mono", monospace';
           const itemImg = getCanvasItemImage(conn.itemName);
           const iconPad = itemImg ? 14 : 0;
           const tw = ctx.measureText(badgeText).width + 12 + iconPad;
           drawRoundedRect(ctx, mid.x - tw / 2, mid.y - 9.5, tw, 19, 4.5);
           ctx.fillStyle = '#0F172A';
           ctx.fill();
-          ctx.strokeStyle = isFlowing ? itemColor : '#334155';
-          ctx.lineWidth = 1.1;
+          ctx.strokeStyle = isInTransit
+            ? '#38BDF8'
+            : tierDef.tier >= 2
+            ? tierDef.accentColor
+            : isFlowing
+            ? itemColor
+            : '#334155';
+          ctx.lineWidth = 1.2;
           ctx.stroke();
 
           if (itemImg) {
             ctx.drawImage(itemImg, mid.x - tw / 2 + 4, mid.y - 6, 12, 12);
           }
 
-          ctx.fillStyle = isFlowing ? '#F8FAFC' : '#94A3B8';
+          ctx.fillStyle = isInTransit
+            ? '#38BDF8'
+            : isFlowing
+            ? '#F8FAFC'
+            : '#94A3B8';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(badgeText, mid.x + iconPad * 0.45, mid.y);
@@ -626,6 +666,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
       if (interactionRef.current.wiringFrom) {
         const wf = interactionRef.current.wiringFrom;
+        const activeTierDef = getBeltTierDef(activeBeltTierRef.current);
         drawConveyorPath(
           wf.x,
           wf.y,
@@ -633,7 +674,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           interactionRef.current.pointerWorldY,
           cfg.conveyorStyle
         );
-        ctx.strokeStyle = '#06B6D4';
+        ctx.strokeStyle = activeTierDef.accentColor;
         ctx.lineWidth = 3 / Math.min(1, cam.zoom);
         ctx.setLineDash([6, 4]);
         ctx.stroke();
@@ -657,6 +698,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           statusColor = '#10B981';
         } else if (node.status === 'working') {
           statusColor = '#F59E0B';
+        } else if (node.status === 'waiting') {
+          statusColor = '#38BDF8';
         } else if (node.status === 'starved') {
           statusColor = '#EF4444';
         }
@@ -807,7 +850,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
 
         // =========================================================================
-        // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.34)
+        // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.25)
         // =========================================================================
         drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
@@ -865,6 +908,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             statusText = `${node.efficiency}% OPTIMAL`;
           } else if (node.status === 'working') {
             statusText = `${node.efficiency}% ACTIVE`;
+          } else if (node.status === 'waiting') {
+            statusText = 'WAITING';
           } else if (node.status === 'starved') {
             statusText = 'STARVED';
           }
@@ -1190,20 +1235,18 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       return false;
     }
 
-    const newConn: ConveyorConnection = {
-      id: `conn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    const tierDef = getBeltTierDef(activeBeltTierRef.current);
+    const newConn = createConveyorConnection(
       fromNodeId,
       fromPortId,
       toNodeId,
       toPortId,
-      itemName: null,
-      ratePerMin: 0,
-      maxCapacityPerMin: 120,
-    };
+      tierDef.tier
+    );
     connectionsRef.current = [...connectionsRef.current, newConn];
     playSynthSfx('connect', settingsRef.current);
     onGraphMutated();
-    showToast('Conveyor line connected');
+    showToast(`Connected ${tierDef.name} (${tierDef.capacityPerMin}/m)`);
     drawNowRef.current?.();
     return true;
   };
@@ -1754,6 +1797,60 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
               </div>
             )
           )}
+
+          {/* Connected Conveyor Belt Tier Upgrade Controls */}
+          <div className="mt-2 pt-2 border-t border-[#26334D]">
+            <label className="block text-[11px] font-medium text-slate-300 mb-1">
+              Connected Belt Tier (Capacity & Speed)
+            </label>
+            <div className="grid grid-cols-3 gap-1">
+              {CONVEYOR_BELT_TIER_LIST.map((bt) => {
+                const attachedConns = connectionsRef.current.filter(
+                  (c) =>
+                    c.fromNodeId === selectedNodeSnapshot.id ||
+                    c.toNodeId === selectedNodeSnapshot.id
+                );
+                const isCurrentTier =
+                  attachedConns.length > 0 &&
+                  attachedConns.every((c) => (c.beltTier ?? 1) === bt.tier);
+                return (
+                  <button
+                    key={bt.id}
+                    type="button"
+                    onClick={() => {
+                      let count = 0;
+                      connectionsRef.current = connectionsRef.current.map((c) => {
+                        if (
+                          c.fromNodeId === selectedNodeSnapshot.id ||
+                          c.toNodeId === selectedNodeSnapshot.id
+                        ) {
+                          count++;
+                          return upgradeConveyorBeltTier(c, bt.tier);
+                        }
+                        return c;
+                      });
+                      playSynthSfx('click', settings);
+                      onGraphMutated();
+                      showToast(
+                        count > 0
+                          ? `Upgraded ${count} belt(s) to ${bt.shortLabel} (${bt.capacityPerMin}/m)`
+                          : `Connect a belt first to upgrade to ${bt.shortLabel}`
+                      );
+                      drawNowRef.current?.();
+                    }}
+                    className={`px-1.5 py-1 rounded-lg text-[10px] font-mono font-semibold flex items-center justify-between ${
+                      isCurrentTier
+                        ? 'bg-amber-500/20 border border-amber-500 text-amber-200'
+                        : 'bg-[#0B0F17] border border-[#26334D] text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    <span>{bt.shortLabel}</span>
+                    <span className="text-[9px] text-slate-400">{bt.capacityPerMin}/m</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="mt-2.5 pt-2 border-t border-[#26334D] flex items-center justify-between gap-2">
             <button

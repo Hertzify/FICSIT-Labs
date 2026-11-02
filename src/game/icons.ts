@@ -25,6 +25,12 @@ export const BUILDING_ICON_PATHS: Record<string, string> = {
   splitter: './icons/buildings/splitter.png',
   merger: './icons/buildings/merger.png',
   storage_container: './icons/buildings/storage_container.png',
+  conveyor_belt_mk1: './icons/buildings/conveyor_belt_mk1.png',
+  conveyor_belt_mk2: './icons/buildings/conveyor_belt_mk2.png',
+  conveyor_belt_mk3: './icons/buildings/conveyor_belt_mk3.png',
+  conveyor_belt_mk4: './icons/buildings/conveyor_belt_mk4.png',
+  conveyor_belt_mk5: './icons/buildings/conveyor_belt_mk5.png',
+  conveyor_belt_mk6: './icons/buildings/conveyor_belt_mk6.png',
 };
 
 const NAME_TO_ITEM_ID: Record<string, string> = {

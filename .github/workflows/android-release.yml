@@ -88,6 +88,10 @@ jobs:
           ./gradlew assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk "../${{ steps.pkg.outputs.apk_name }}"
 
+      - name: Generate Release Notes from CHANGELOG.md
+        run: |
+          node scripts/extract-release-notes.mjs
+
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -98,11 +102,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.pkg.outputs.tag }}
-          name: ${{ github.event.inputs.release_title || format('{0} dev build', steps.pkg.outputs.version) }}
-          body: |
-            ## FICSIT Node Labs — ${{ steps.pkg.outputs.version }} dev build
-            - **Platform**: Android (Landscape Widescreen APK) + Web
-            - **Package**: `${{ steps.pkg.outputs.apk_name }}`
-            - Download and install `${{ steps.pkg.outputs.apk_name }}` directly on your Android device.
+          name: ${{ github.event.inputs.release_title || format('{0} dev build — FICSIT Node Labs', steps.pkg.outputs.version) }}
+          body_path: ./RELEASE_NOTES.md
           prerelease: true
           files: ./${{ steps.pkg.outputs.apk_name }}

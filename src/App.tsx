@@ -5,9 +5,11 @@ import { NodeCanvas } from './components/NodeCanvas';
 import { SaveLoadModal } from './components/SaveLoadModal';
 import { SettingsModal } from './components/SettingsModal';
 import { playSynthSfx } from './game/audio';
+import { CONVEYOR_BELT_TIER_LIST } from './game/catalog';
+import { getBuildingIconUrl } from './game/icons';
 import {
   createInitialSeedSaveSlot,
-   DEFAULT_SETTINGS,
+  DEFAULT_SETTINGS,
   deleteSaveSlotById,
   loadSaveSlots,
   loadSettings,
@@ -18,6 +20,7 @@ import {
 } from './game/storage';
 import {
   CameraState,
+  ConveyorBeltTier,
   ConveyorConnection,
   GameState,
   MachineNode,
@@ -46,13 +49,14 @@ export default function App() {
     return 'title';
   });
 
-  // Active Modals
+  // Active Modals & Belt Tier Selection
   const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [saveLoadModalMode, setSaveLoadModalMode] = useState<
     'load' | 'save_and_load' | null
   >(null);
   const [pendingBuildId, setPendingBuildId] = useState<string | null>(null);
+  const [activeBeltTier, setActiveBeltTier] = useState<ConveyorBeltTier>(1);
   const [autoSaveNotice, setAutoSaveNotice] = useState<string | null>(null);
 
   // Mutable refs for 60fps canvas engine
@@ -267,6 +271,7 @@ export default function App() {
         connectionsRef={connectionsRef}
         cameraRef={cameraRef}
         settings={settings}
+        activeBeltTier={activeBeltTier}
         pendingBuildId={pendingBuildId}
         onClearPendingBuild={() => setPendingBuildId(null)}
         onGraphMutated={() => triggerSessionAutoSave(false)}
@@ -291,7 +296,7 @@ export default function App() {
         />
       )}
 
-      {/* STATE 2: PLAYING WORKSPACE CORNER TRIGGERS (HUD deferred for next step as requested) */}
+      {/* STATE 2: PLAYING WORKSPACE CORNER TRIGGERS */}
       {gameState === 'playing' && (
         <div className="fixed inset-0 z-10 pointer-events-none">
           {/* Top-Left Session Name & Pause Menu Button */}
@@ -329,7 +334,7 @@ export default function App() {
             )}
           </div>
 
-          {/* Bottom-Left Android Thumb-Zone Build Menu Trigger */}
+          {/* Bottom-Left Android Thumb-Zone Build Menu Trigger + Conveyor Belt Tier Selector */}
           <div
             style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom left' }}
             className="fixed bottom-3 left-3 pointer-events-auto flex items-center gap-2"
@@ -345,6 +350,42 @@ export default function App() {
               <span>Build Menu</span>
               <span className="text-[11px] font-mono opacity-80">[Q]</span>
             </button>
+
+            {/* Quick Belt Tier Selector (Mk.1 60/m, Mk.2 120/m, Mk.3 270/m, etc.) */}
+            <div className="min-h-[44px] px-2 py-1 rounded-xl bg-[#131B2E]/95 border border-[#26334D] shadow-xl flex items-center gap-1">
+              {CONVEYOR_BELT_TIER_LIST.map((bt) => {
+                const isSelected = activeBeltTier === bt.tier;
+                const iconUrl = getBuildingIconUrl(bt.id);
+                return (
+                  <button
+                    key={bt.id}
+                    type="button"
+                    onClick={() => {
+                      playSynthSfx('click', settings);
+                      setActiveBeltTier(bt.tier);
+                      setAutoSaveNotice(`Belt: ${bt.name} (${bt.capacityPerMin}/m)`);
+                    }}
+                    className={`min-h-[34px] px-2 py-1 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'bg-[#0B0F17] text-slate-300 hover:text-white border border-[#26334D]'
+                    }`}
+                  >
+                    {iconUrl && (
+                      <img
+                        src={iconUrl}
+                        alt={bt.shortLabel}
+                        className="w-4 h-4 object-contain shrink-0"
+                      />
+                    )}
+                    <span>{bt.shortLabel}</span>
+                    <span className={isSelected ? 'text-slate-900' : 'text-slate-400'}>
+                      {bt.capacityPerMin}/m
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -423,6 +464,12 @@ export default function App() {
       {showBuildMenu && (
         <BuildMenuModal
           settings={settings}
+          activeBeltTier={activeBeltTier}
+          onSelectBeltTier={(tier) => {
+            playSynthSfx('click', settings);
+            setActiveBeltTier(tier);
+            setAutoSaveNotice(`Equipped Conveyor Belt Mk.${tier}`);
+          }}
           onSelectBuildingToPlace={(buildingId) => {
             playSynthSfx('click', settings);
             setPendingBuildId(buildingId);

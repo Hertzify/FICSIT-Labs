@@ -1,7 +1,7 @@
 {
   "name": "ficsit-node-labs",
   "private": true,
-  "version": "0.0.05",
+  "version": "0.0.06",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",

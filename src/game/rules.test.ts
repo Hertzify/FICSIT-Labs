@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUILDING_LIST } from './catalog';
-import { ITEM_ICON_PATHS, getItemIconUrl } from './icons';
+import { BUILDING_LIST, CONVEYOR_BELT_TIERS } from './catalog';
+import { BUILDING_ICON_PATHS, ITEM_ICON_PATHS, getItemIconUrl } from './icons';
 import {
   canConnectPorts,
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
   computeConveyorBeltFlowVisuals,
+  createConveyorConnection,
   createMachineNode,
   createStarterFactory,
   isMacroIconZoom,
@@ -15,6 +16,7 @@ import {
   serializeSaveExport,
   snapToGrid,
   stepSimulation,
+  upgradeConveyorBeltTier,
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './rules';
@@ -99,41 +101,83 @@ test('32 natural world resource deposits are scattered in clusters with Impure (
   assert.equal(impureDep.outputs[0].actualRatePerMin, 30);
   assert.equal(normalDep.outputs[0].actualRatePerMin, 60);
   assert.equal(pureDep.outputs[0].actualRatePerMin, 120);
-
-  // Connecting a Miner Mk.1 to a Pure Copper Deposit extracts 120/min Copper Ore
-  const pureCopper = deposits.find(
-    (d) => d.purity === 'pure' && d.recipeId === 'deposit_copper'
-  )!;
-  const miner = createMachineNode('miner_mk1', 2900, 384, 'test_pure_miner');
-  const sim = stepSimulation(
-    [pureCopper, miner],
-    [
-      {
-        id: 'c_pure',
-        fromNodeId: pureCopper.id,
-        fromPortId: pureCopper.outputs[0].id,
-        toNodeId: miner.id,
-        toPortId: miner.inputs[0].id,
-        itemName: null,
-        ratePerMin: 0,
-        maxCapacityPerMin: 120,
-      },
-    ],
-    0.016
-  );
-  const updatedMiner = sim.nodes.find((n) => n.id === miner.id)!;
-  assert.equal(updatedMiner.efficiency, 100);
-  assert.equal(updatedMiner.outputs[0].itemName, 'Copper Ore');
-  assert.equal(updatedMiner.outputs[0].actualRatePerMin, 120);
 });
 
-test('all 13 Satisfactory Wiki resource and part icons resolve cleanly', () => {
+test('Satisfactory Conveyor Belt tiers (Mk.1 60/m, Mk.2 120/m .. Mk.6 1200/m) enforce capacity and physical travel delay', () => {
+  assert.equal(CONVEYOR_BELT_TIERS[1].capacityPerMin, 60);
+  assert.equal(CONVEYOR_BELT_TIERS[2].capacityPerMin, 120);
+  assert.equal(CONVEYOR_BELT_TIERS[3].capacityPerMin, 270);
+  assert.equal(CONVEYOR_BELT_TIERS[4].capacityPerMin, 480);
+  assert.equal(CONVEYOR_BELT_TIERS[5].capacityPerMin, 780);
+  assert.equal(CONVEYOR_BELT_TIERS[6].capacityPerMin, 1200);
+  assert.ok(CONVEYOR_BELT_TIERS[2].speedPxPerSec > CONVEYOR_BELT_TIERS[1].speedPxPerSec);
+
+  const starter = createStarterFactory();
+  const pureCopper = starter.nodes.find(
+    (d) => d.buildingId === 'resource_deposit' && d.purity === 'pure' && d.recipeId === 'deposit_copper'
+  )!;
+  // Place a Miner far away from the Pure Copper deposit so items must travel across the belt
+  const miner = createMachineNode('miner_mk1', pureCopper.x + 1200, pureCopper.y, 'distant_miner');
+
+  // Connect using a Mk.1 belt (60/min capacity, 96 px/s speed)
+  const mk1Conn = createConveyorConnection(
+    pureCopper.id,
+    pureCopper.outputs[0].id,
+    miner.id,
+    miner.inputs[0].id,
+    1,
+    'conn_mk1_distant'
+  );
+  assert.equal(mk1Conn.beltTier, 1);
+  assert.equal(mk1Conn.maxCapacityPerMin, 60);
+  assert.equal(mk1Conn.firstItemArrived, false);
+
+  // Step 1 second: items are spawned and moving in-flight, but have NOT reached the distant miner yet!
+  const stepEarly = stepSimulation([pureCopper, miner], [mk1Conn], 1.0);
+  const connEarly = stepEarly.connections[0];
+  const minerEarly = stepEarly.nodes.find((n) => n.id === miner.id)!;
+  assert.ok((connEarly.lengthPx ?? 0) > 900);
+  assert.equal(connEarly.firstItemArrived, false);
+  assert.equal(connEarly.ratePerMin, 0);
+  assert.equal(connEarly.sourceRatePerMin, 60); // Capped by Mk.1 belt at 60/m even though deposit is Pure 120/m
+  assert.ok((connEarly.inFlightItems?.length ?? 0) > 0);
+  assert.equal(minerEarly.status, 'waiting');
+  assert.equal(minerEarly.outputs[0].actualRatePerMin, 0);
+
+  // Step enough seconds for the leading packet to travel the full belt length at 96 px/s
+  let simNodes = stepEarly.nodes;
+  let simConns = stepEarly.connections;
+  for (let i = 0; i < 20; i++) {
+    const next = stepSimulation(simNodes, simConns, 1.0);
+    simNodes = next.nodes;
+    simConns = next.connections;
+  }
+
+  const connArrived = simConns[0];
+  const minerArrived = simNodes.find((n) => n.id === miner.id)!;
+  assert.equal(connArrived.firstItemArrived, true);
+  assert.equal(connArrived.ratePerMin, 60); // Mk.1 bottlenecked to 60/min
+  assert.equal(minerArrived.outputs[0].actualRatePerMin, 60);
+
+  // Upgrade the belt to Mk.2 (120/min capacity, 192 px/s speed)
+  const upgradedConn = upgradeConveyorBeltTier(connArrived, 2);
+  const afterUpgrade = stepSimulation(simNodes, [upgradedConn], 0.5);
+  const minerMk2 = afterUpgrade.nodes.find((n) => n.id === miner.id)!;
+  assert.equal(afterUpgrade.connections[0].maxCapacityPerMin, 120);
+  assert.equal(afterUpgrade.connections[0].ratePerMin, 120);
+  assert.equal(minerMk2.outputs[0].actualRatePerMin, 120);
+});
+
+test('all 13 Satisfactory Wiki resource/part icons and 6 Conveyor Belt Mk.1-Mk.6 icons resolve cleanly', () => {
   assert.equal(Object.keys(ITEM_ICON_PATHS).length, 13);
   assert.ok(getItemIconUrl('Iron Ore')?.endsWith('iron_ore.png'));
   assert.ok(getItemIconUrl('Copper Ingot')?.endsWith('copper_ingot.png'));
   assert.ok(getItemIconUrl('Screws')?.endsWith('screw.png'));
   assert.ok(getItemIconUrl('Reinforced Plate')?.endsWith('reinforced_plate.png'));
   assert.ok(getItemIconUrl('Rotor')?.endsWith('rotor.png'));
+  assert.ok(BUILDING_ICON_PATHS.conveyor_belt_mk1?.endsWith('conveyor_belt_mk1.png'));
+  assert.ok(BUILDING_ICON_PATHS.conveyor_belt_mk2?.endsWith('conveyor_belt_mk2.png'));
+  assert.ok(BUILDING_ICON_PATHS.conveyor_belt_mk6?.endsWith('conveyor_belt_mk6.png'));
 });
 
 test('canConnectPorts and changeNodeRecipe work as expected', () => {
@@ -183,7 +227,7 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.05 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.05');
-  assert.equal(APP_BUILD_TAG, '0.0.05 dev build');
+test('version tracking matches 0.0.06 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.06');
+  assert.equal(APP_BUILD_TAG, '0.0.06 dev build');
 });

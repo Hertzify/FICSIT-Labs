@@ -1,11 +1,15 @@
 import {
   BUILDINGS,
+  CONVEYOR_BELT_TIERS,
   PURITY_CONFIG,
   RECIPES,
   SECTOR_01_DEPOSIT_SPECS,
 } from './catalog';
 import {
+  BeltItemPacket,
   CameraState,
+  ConveyorBeltTier,
+  ConveyorBeltTierDef,
   ConveyorConnection,
   MachineNode,
   PortSocket,
@@ -21,9 +25,92 @@ export const MAX_ZOOM = 1.85;
 // Require zooming out past 0.25x before switching to Macro Icon Box / Map Pin view
 export const LOD_ICON_BOX_ZOOM_THRESHOLD = 0.25;
 export const WORLD_PADDING = 24;
+// Physical spacing on a full belt: 1 item every 96 world pixels
+export const BELT_ITEM_SLOT_PX = 96;
 
 export function isMacroIconZoom(zoom: number): boolean {
   return zoom < LOD_ICON_BOX_ZOOM_THRESHOLD;
+}
+
+export function getBeltTierDef(
+  beltTier?: ConveyorBeltTier,
+  maxCapacityPerMin?: number
+): ConveyorBeltTierDef {
+  if (beltTier && CONVEYOR_BELT_TIERS[beltTier]) {
+    return CONVEYOR_BELT_TIERS[beltTier];
+  }
+  const cap = maxCapacityPerMin ?? 60;
+  if (cap <= 60) return CONVEYOR_BELT_TIERS[1];
+  if (cap <= 120) return CONVEYOR_BELT_TIERS[2];
+  if (cap <= 270) return CONVEYOR_BELT_TIERS[3];
+  if (cap <= 480) return CONVEYOR_BELT_TIERS[4];
+  if (cap <= 780) return CONVEYOR_BELT_TIERS[5];
+  return CONVEYOR_BELT_TIERS[6];
+}
+
+export function getPortWorldPosition(
+  node: MachineNode,
+  side: 'input' | 'output',
+  index: number,
+  total: number
+): { x: number; y: number } {
+  const topArea = 56;
+  const bottomArea = node.height - 24;
+  const usableHeight = Math.max(32, bottomArea - topArea);
+  const step = usableHeight / (total + 1);
+  const py = node.y + topArea + step * (index + 1);
+  const px = side === 'input' ? node.x : node.x + node.width;
+  return { x: px, y: py };
+}
+
+export function computeConveyorLengthPx(
+  fromNode: MachineNode,
+  outIdx: number,
+  toNode: MachineNode,
+  inIdx: number
+): number {
+  const p1 = getPortWorldPosition(fromNode, 'output', Math.max(0, outIdx), fromNode.outputs.length);
+  const p2 = getPortWorldPosition(toNode, 'input', Math.max(0, inIdx), toNode.inputs.length);
+  const straightDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  return Math.max(72, Math.round(straightDist * 1.08));
+}
+
+export function createConveyorConnection(
+  fromNodeId: string,
+  fromPortId: string,
+  toNodeId: string,
+  toPortId: string,
+  beltTier: ConveyorBeltTier = 1,
+  customId?: string
+): ConveyorConnection {
+  const tierDef = CONVEYOR_BELT_TIERS[beltTier] ?? CONVEYOR_BELT_TIERS[1];
+  return {
+    id: customId ?? `conn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    fromNodeId,
+    fromPortId,
+    toNodeId,
+    toPortId,
+    beltTier: tierDef.tier,
+    itemName: null,
+    ratePerMin: 0,
+    sourceRatePerMin: 0,
+    maxCapacityPerMin: tierDef.capacityPerMin,
+    spawnAccumulator: 1, // Emit first resource packet immediately at output port (distancePx = 0)
+    inFlightItems: [],
+    firstItemArrived: false,
+  };
+}
+
+export function upgradeConveyorBeltTier(
+  conn: ConveyorConnection,
+  newTier: ConveyorBeltTier
+): ConveyorConnection {
+  const tierDef = CONVEYOR_BELT_TIERS[newTier] ?? CONVEYOR_BELT_TIERS[1];
+  return {
+    ...conn,
+    beltTier: tierDef.tier,
+    maxCapacityPerMin: tierDef.capacityPerMin,
+  };
 }
 
 /**
@@ -39,11 +126,11 @@ export function computeConveyorBeltFlowVisuals(ratePerMin: number): {
   if (ratePerMin <= 0) {
     return { speedMultiplier: 0, dotCount: 0, dotRadius: 0, spacingRatio: 1 };
   }
-  const clampedRate = Math.min(240, Math.max(0.1, ratePerMin));
+  const clampedRate = Math.min(1200, Math.max(0.1, ratePerMin));
   // Un-clamped linear speed so 1/m, 2/m, 3/m, 4/m, 5/m ... each move at their exact proportional speed
   const speedMultiplier = Number((clampedRate / 60).toFixed(4));
   // Continuous packet count and spacing that scales across single digits and high throughput
-  const dotCount = Math.max(1, Math.min(12, Math.ceil(clampedRate / 8)));
+  const dotCount = Math.max(1, Math.min(16, Math.ceil(clampedRate / 8)));
   const dotRadius = Number((3.2 + Math.min(120, clampedRate) * 0.015).toFixed(3));
   const spacingRatio = Number((1 / (clampedRate + 1)).toFixed(5));
   return { speedMultiplier, dotCount, dotRadius, spacingRatio };
@@ -214,7 +301,6 @@ export function createSectorWorldDeposits(): MachineNode[] {
 
 export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] {
   const validSpecIds = new Set(SECTOR_01_DEPOSIT_SPECS.map((s) => s.id));
-  // Keep player-built machines and known Sector 01 deposits (upgrading their positions/purities to current map)
   const filtered = nodes.filter(
     (n) => n.buildingId !== 'resource_deposit' || validSpecIds.has(n.id)
   );
@@ -305,24 +391,24 @@ export function canConnectPorts(
 }
 
 /**
- * Pure simulation tick: computes throughput along conveyor lines, updates machine
- * efficiency, status, progress bars, and storage counts.
+ * Pure simulation tick:
+ * - Enforces Satisfactory Conveyor Belt Tier capacities (Mk.1 = 60/m, Mk.2 = 120/m, Mk.3 = 270/m, etc.)
+ * - Simulates discrete physical item packets traveling along each belt's world length (`lengthPx`)
+ *   at the belt tier's physical speed (`speedPxPerSec`).
+ * - When two connected nodes are far apart, destination nodes wait for the leading item packet
+ *   to physically reach the input port (`distancePx >= lengthPx`) before receiving resources!
  */
 export function stepSimulation(
   nodes: MachineNode[],
   connections: ConveyorConnection[],
   rawDt: number
 ): { nodes: MachineNode[]; connections: ConveyorConnection[] } {
-  const dt = Math.min(Math.max(rawDt, 0), 0.05);
+  const dt = Math.min(Math.max(rawDt, 0), 1.0);
 
   const nextNodes: MachineNode[] = nodes.map((n) => ({
     ...n,
     inputs: n.inputs.map((p) => ({ ...p, actualRatePerMin: 0 })),
     outputs: n.outputs.map((p) => ({ ...p, actualRatePerMin: 0 })),
-  }));
-  const nextConns: ConveyorConnection[] = connections.map((c) => ({
-    ...c,
-    maxCapacityPerMin: Math.max(120, c.maxCapacityPerMin || 120),
   }));
 
   const nodeMap = new Map<string, MachineNode>();
@@ -330,10 +416,49 @@ export function stepSimulation(
     nodeMap.set(n.id, n);
   }
 
-  // Multi-pass flow propagation so multi-stage chains update deterministically
+  // Normalize connections with Belt Tier metadata & physical belt length
+  const nextConns: ConveyorConnection[] = connections.map((c) => {
+    const tierDef = getBeltTierDef(c.beltTier, c.maxCapacityPerMin);
+    const fromNode = nodeMap.get(c.fromNodeId);
+    const toNode = nodeMap.get(c.toNodeId);
+    const outIdx = fromNode ? fromNode.outputs.findIndex((p) => p.id === c.fromPortId) : 0;
+    const inIdx = toNode ? toNode.inputs.findIndex((p) => p.id === c.toPortId) : 0;
+    const lengthPx =
+      fromNode && toNode
+        ? computeConveyorLengthPx(fromNode, outIdx, toNode, inIdx)
+        : c.lengthPx ?? 240;
+    const travelTimeSec = Number((lengthPx / tierDef.speedPxPerSec).toFixed(2));
+
+    // If a node was dragged further away, items on the belt must travel the additional distance
+    const wasStretchedFurther =
+      c.lengthPx !== undefined && lengthPx > c.lengthPx + 36;
+    const isLegacyInstantConn =
+      c.firstItemArrived === undefined && c.inFlightItems === undefined;
+
+    let inFlightItems: BeltItemPacket[] = c.inFlightItems
+      ? c.inFlightItems.map((pkt) => ({ ...pkt }))
+      : [];
+
+    let firstItemArrived = wasStretchedFurther
+      ? false
+      : c.firstItemArrived ?? isLegacyInstantConn;
+
+    return {
+      ...c,
+      beltTier: tierDef.tier,
+      maxCapacityPerMin: tierDef.capacityPerMin,
+      lengthPx,
+      travelTimeSec,
+      spawnAccumulator: c.spawnAccumulator ?? (isLegacyInstantConn ? 0.5 : 1),
+      inFlightItems,
+      firstItemArrived,
+    };
+  });
+
+  // Multi-pass flow propagation for settled belts
   const maxPasses = Math.max(5, nextNodes.length);
   for (let pass = 0; pass < maxPasses; pass++) {
-    // Pass A: compute each node's output rates from its current input rates
+    // Pass A: compute each node's output rates from its current arriving input rates
     for (const node of nextNodes) {
       const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
 
@@ -351,13 +476,18 @@ export function stepSimulation(
         node.efficiency = 100;
         node.status = 'optimal';
       } else if (node.buildingId === 'miner_mk1') {
-        // Miner Mk.1 adapts to the connected Resource Deposit's ore type & purity (30/60/120 per min)
         const inPort = node.inputs[0];
         const outPort = node.outputs[0];
-        const hasConn =
-          inPort && nextConns.some((c) => c.toNodeId === node.id && c.toPortId === inPort.id);
+        const incomingConn =
+          inPort && nextConns.find((c) => c.toNodeId === node.id && c.toPortId === inPort.id);
 
-        if (inPort && outPort && hasConn && inPort.actualRatePerMin > 0 && inPort.itemName) {
+        if (
+          inPort &&
+          outPort &&
+          incomingConn &&
+          inPort.actualRatePerMin > 0 &&
+          inPort.itemName
+        ) {
           const suppliedRate = inPort.actualRatePerMin;
           const oreName = inPort.itemName;
           if (oreName.toLowerCase().includes('copper')) {
@@ -390,11 +520,21 @@ export function stepSimulation(
             outPort.actualRatePerMin = 0;
           }
           node.efficiency = 0;
-          node.status = hasConn ? 'starved' : 'idle';
+          const isInTransit = Boolean(
+            incomingConn &&
+              (incomingConn.sourceRatePerMin ?? 0) > 0 &&
+              !incomingConn.firstItemArrived
+          );
+          node.status = isInTransit ? 'waiting' : incomingConn ? 'starved' : 'idle';
         }
       } else if (node.buildingId === 'splitter') {
         const inRate = node.inputs[0]?.actualRatePerMin ?? 0;
         const inItem = node.inputs[0]?.itemName ?? null;
+        const incomingConn =
+          node.inputs[0] &&
+          nextConns.find(
+            (c) => c.toNodeId === node.id && c.toPortId === node.inputs[0].id
+          );
         if (node.inputs[0]) {
           node.inputs[0].label = inItem ?? 'IN 1';
         }
@@ -410,18 +550,30 @@ export function stepSimulation(
           outPort.label = inItem ?? `OUT ${outPort.index + 1}`;
         }
         node.efficiency = inRate > 0 ? 100 : 0;
-        node.status = inRate > 0 ? 'optimal' : 'idle';
+        const isInTransit = Boolean(
+          incomingConn &&
+            (incomingConn.sourceRatePerMin ?? 0) > 0 &&
+            !incomingConn.firstItemArrived
+        );
+        node.status = inRate > 0 ? 'optimal' : isInTransit ? 'waiting' : 'idle';
       } else if (node.buildingId === 'merger') {
         let totalIn = 0;
         let dominantItem: string | null = null;
+        let anyInTransit = false;
         for (const inPort of node.inputs) {
           totalIn += inPort.actualRatePerMin;
           if (inPort.itemName && !dominantItem) {
             dominantItem = inPort.itemName;
           }
           inPort.label = inPort.itemName ?? `IN ${inPort.index + 1}`;
+          const c = nextConns.find(
+            (conn) => conn.toNodeId === node.id && conn.toPortId === inPort.id
+          );
+          if (c && (c.sourceRatePerMin ?? 0) > 0 && !c.firstItemArrived) {
+            anyInTransit = true;
+          }
         }
-        const cappedOut = Math.min(120, totalIn);
+        const cappedOut = Math.min(1200, totalIn);
         if (node.outputs[0]) {
           node.outputs[0].actualRatePerMin = cappedOut;
           node.outputs[0].targetRatePerMin = 60;
@@ -429,16 +581,23 @@ export function stepSimulation(
           node.outputs[0].label = dominantItem ?? 'OUT 1';
         }
         node.efficiency = cappedOut > 0 ? 100 : 0;
-        node.status = cappedOut > 0 ? 'optimal' : 'idle';
+        node.status = cappedOut > 0 ? 'optimal' : anyInTransit ? 'waiting' : 'idle';
       } else if (node.buildingId === 'storage_container' || node.buildingId === 'the_hub') {
         let totalIn = 0;
         let itemLabel: string | null = null;
+        let anyInTransit = false;
         for (const inPort of node.inputs) {
           totalIn += inPort.actualRatePerMin;
           if (inPort.itemName && !itemLabel) {
             itemLabel = inPort.itemName;
           }
           inPort.label = inPort.itemName ?? `IN ${inPort.index + 1}`;
+          const c = nextConns.find(
+            (conn) => conn.toNodeId === node.id && conn.toPortId === inPort.id
+          );
+          if (c && (c.sourceRatePerMin ?? 0) > 0 && !c.firstItemArrived) {
+            anyInTransit = true;
+          }
         }
         if (node.outputs[0]) {
           node.outputs[0].actualRatePerMin = totalIn;
@@ -446,11 +605,11 @@ export function stepSimulation(
           node.outputs[0].label = itemLabel ?? 'OUT 1';
         }
         node.efficiency = totalIn > 0 ? 100 : 0;
-        node.status = totalIn > 0 ? 'optimal' : 'idle';
+        node.status = totalIn > 0 ? 'optimal' : anyInTransit ? 'waiting' : 'idle';
       } else if (recipe) {
-        // Production machine with recipe (Smelter, Constructor, Assembler)
         let limitingRatio = 1.0;
         let anyInputConnected = false;
+        let anyInputInTransit = false;
 
         for (let i = 0; i < recipe.inputs.length; i++) {
           const req = recipe.inputs[i];
@@ -459,8 +618,15 @@ export function stepSimulation(
           port.targetRatePerMin = req.ratePerMin;
           port.label = req.itemName;
 
-          const hasConn = nextConns.some((c) => c.toNodeId === node.id && c.toPortId === port.id);
-          if (hasConn) anyInputConnected = true;
+          const incomingConn = nextConns.find(
+            (c) => c.toNodeId === node.id && c.toPortId === port.id
+          );
+          if (incomingConn) {
+            anyInputConnected = true;
+            if ((incomingConn.sourceRatePerMin ?? 0) > 0 && !incomingConn.firstItemArrived) {
+              anyInputInTransit = true;
+            }
+          }
 
           const itemMatches =
             !port.itemName ||
@@ -477,6 +643,8 @@ export function stepSimulation(
           node.status = 'optimal';
         } else if (eff > 0) {
           node.status = 'working';
+        } else if (anyInputInTransit) {
+          node.status = 'waiting';
         } else if (anyInputConnected) {
           node.status = 'starved';
         } else {
@@ -495,7 +663,7 @@ export function stepSimulation(
       }
     }
 
-    // Pass B: transfer output port rates across conveyor connections to input ports
+    // Pass B: update belt entering rates & delivered rates (only delivering if firstItemArrived is true)
     for (const conn of nextConns) {
       const fromNode = nodeMap.get(conn.fromNodeId);
       const toNode = nodeMap.get(conn.toNodeId);
@@ -505,18 +673,111 @@ export function stepSimulation(
       const inPort = toNode.inputs.find((p) => p.id === conn.toPortId);
       if (!outPort || !inPort) continue;
 
-      const flowRate = Math.min(conn.maxCapacityPerMin, outPort.actualRatePerMin);
-      conn.ratePerMin = flowRate;
-      conn.itemName = outPort.itemName;
-
-      inPort.actualRatePerMin = flowRate;
+      const enteringRate = Math.min(conn.maxCapacityPerMin, outPort.actualRatePerMin);
+      conn.sourceRatePerMin = enteringRate;
       if (outPort.itemName) {
-        inPort.itemName = outPort.itemName;
+        conn.itemName = outPort.itemName;
+      }
+
+      const deliveredRate = conn.firstItemArrived ? enteringRate : 0;
+      conn.ratePerMin = deliveredRate;
+
+      inPort.actualRatePerMin = deliveredRate;
+      if (conn.itemName) {
+        inPort.itemName = conn.itemName;
       }
     }
   }
 
-  // Advance progress bars & storage counts using dt
+  // Physical Belt Transit Step: advance discrete item packets along each belt by speedPxPerSec * dt
+  for (const conn of nextConns) {
+    const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
+    const lengthPx = conn.lengthPx ?? 240;
+    const enteringRate = conn.sourceRatePerMin ?? 0;
+    const itemName = conn.itemName ?? 'Iron Ore';
+    const items = conn.inFlightItems ?? [];
+
+    // Pre-populate packets on legacy/starter pre-settled belts that had no packets yet
+    if (conn.firstItemArrived && items.length === 0 && enteringRate > 0) {
+      const spacingPx = Math.max(
+        48,
+        Math.round((tierDef.speedPxPerSec * 60) / Math.max(1, enteringRate))
+      );
+      for (let dist = spacingPx * 0.5; dist < lengthPx; dist += spacingPx) {
+        items.push({
+          id: `${conn.id}_init_${Math.round(dist)}`,
+          itemName,
+          distancePx: dist,
+        });
+      }
+    }
+
+    // Advance all in-flight packets toward the destination port (lengthPx)
+    if (dt > 0 && items.length > 0) {
+      const stepPx = tierDef.speedPxPerSec * dt;
+      for (const pkt of items) {
+        pkt.distancePx += stepPx;
+        pkt.itemName = itemName;
+      }
+    }
+
+    // Check if any packet reached the destination input port (distancePx >= lengthPx)
+    const remaining: BeltItemPacket[] = [];
+    let arrivedThisTick = false;
+    for (const pkt of items) {
+      if (pkt.distancePx >= lengthPx) {
+        arrivedThisTick = true;
+      } else {
+        remaining.push(pkt);
+      }
+    }
+
+    if (arrivedThisTick) {
+      conn.firstItemArrived = true;
+    }
+
+    // Spawn new physical item packets at the source output port (distancePx = 0)
+    if (enteringRate > 0) {
+      const itemsPerSec = enteringRate / 60;
+      let acc = (conn.spawnAccumulator ?? 0) + itemsPerSec * dt;
+      const minGapPx = 32;
+
+      while (acc >= 1) {
+        const lastPkt = remaining[remaining.length - 1];
+        const canFit = !lastPkt || lastPkt.distancePx >= minGapPx;
+        if (canFit) {
+          remaining.push({
+            id: `${conn.id}_pkt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            itemName,
+            distancePx: 0,
+          });
+          acc -= 1;
+        } else {
+          acc = Math.min(acc, 1);
+          break;
+        }
+      }
+      conn.spawnAccumulator = acc;
+    } else if (remaining.length === 0) {
+      conn.firstItemArrived = false;
+      conn.spawnAccumulator = 1;
+    }
+
+    conn.inFlightItems = remaining;
+
+    // If firstItemArrived just flipped true on this tick, immediately update destination port rate
+    if (arrivedThisTick && enteringRate > 0) {
+      conn.ratePerMin = enteringRate;
+      const toNode = nodeMap.get(conn.toNodeId);
+      const inPort = toNode?.inputs.find((p) => p.id === conn.toPortId);
+      if (inPort) {
+        inPort.actualRatePerMin = enteringRate;
+        inPort.itemName = conn.itemName;
+      }
+    }
+  }
+
+  // Advance machine progress bars & storage counts using dt
   for (const node of nextNodes) {
     const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
     const cycleSec = recipe?.cycleTimeSec ?? 2.0;
@@ -572,9 +833,11 @@ export function createStarterFactory(): {
       fromPortId: starterDeposit.outputs[0].id,
       toNodeId: miner.id,
       toPortId: miner.inputs[0].id,
+      beltTier: 1,
       itemName: 'Iron Ore',
       ratePerMin: 60,
-      maxCapacityPerMin: 120,
+      maxCapacityPerMin: 60,
+      firstItemArrived: true,
     },
     {
       id: 'conn_starter_2',
@@ -582,9 +845,11 @@ export function createStarterFactory(): {
       fromPortId: miner.outputs[0].id,
       toNodeId: smelter.id,
       toPortId: smelter.inputs[0].id,
+      beltTier: 1,
       itemName: 'Iron Ore',
       ratePerMin: 60,
-      maxCapacityPerMin: 120,
+      maxCapacityPerMin: 60,
+      firstItemArrived: true,
     },
     {
       id: 'conn_starter_3',
@@ -592,9 +857,11 @@ export function createStarterFactory(): {
       fromPortId: smelter.outputs[0].id,
       toNodeId: constructorNode.id,
       toPortId: constructorNode.inputs[0].id,
+      beltTier: 1,
       itemName: 'Iron Ingot',
       ratePerMin: 30,
-      maxCapacityPerMin: 120,
+      maxCapacityPerMin: 60,
+      firstItemArrived: true,
     },
     {
       id: 'conn_starter_4',
@@ -602,9 +869,11 @@ export function createStarterFactory(): {
       fromPortId: constructorNode.outputs[0].id,
       toNodeId: hub.id,
       toPortId: hub.inputs[0].id,
+      beltTier: 1,
       itemName: 'Iron Plate',
       ratePerMin: 20,
-      maxCapacityPerMin: 120,
+      maxCapacityPerMin: 60,
+      firstItemArrived: true,
     },
   ];
 

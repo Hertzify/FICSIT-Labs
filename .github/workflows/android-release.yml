@@ -60,7 +60,11 @@ jobs:
               for (const section of ["dependencies", "devDependencies"]) {
                 if (!pkg[section]) continue;
                 for (const k of Object.keys(pkg[section])) {
-                  pkg[section][k] = "latest";
+                  if (k === "tailwindcss" || k === "@tailwindcss/vite") {
+                    pkg[section][k] = "4.3.3";
+                  } else {
+                    pkg[section][k] = "latest";
+                  }
                 }
               }
               fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));

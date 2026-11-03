@@ -15,6 +15,34 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.09',
+    tag: '0.0.09 dev build',
+    date: '2026-11-02',
+    categories: [
+      {
+        category: '🎛️ Minimal HUD & Corner Controls',
+        items: [
+          {
+            title: 'Compact Belt Selector Button',
+            description: 'Replaced wide bottom bar with a small bottom-left button (Mk.X) that opens an upward flyout tab of all belt tiers (Mk.1–Mk.6).',
+          },
+          {
+            title: 'Active Button State',
+            description: 'Belt trigger button stays visible at all times and turns bright amber while its tab is open.',
+          },
+          {
+            title: 'Click-Anywhere Dismissal',
+            description: 'Tapping anywhere on the screen or pressing Escape immediately closes the belt tab.',
+          },
+          {
+            title: 'Bottom-Right Build Button',
+            description: 'Moved Build button to the bottom-right corner as a compact icon button with small "build" text underneath.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.08',
     tag: '0.0.08 dev build',
     date: '2026-11-02',

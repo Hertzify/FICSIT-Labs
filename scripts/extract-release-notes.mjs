@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
-const version = pkg.version || '0.0.06';
-const apkName = `ficsit-node-labs-${version}-dev.apk`;
+const version = pkg.version || '0.0.08';
 const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
 
 let sectionBody = '';
@@ -20,24 +19,16 @@ if (fs.existsSync(changelogPath)) {
 }
 
 if (!sectionBody) {
-  sectionBody = `### Highlights\n- Automated Android widescreen landscape build for **FICSIT Node Labs (${version} dev build)**.`;
+  sectionBody = `### Highlights\n- Build updates for **FICSIT Node Labs (${version} dev build)**.`;
 }
 
 const releaseNotes = [
   `# FICSIT Node Labs — \`${version} dev build\``,
   '',
-  '> **2D Factory Automation & Logistics Tycoon** inspired by *Satisfactory* & *Upload Labs* for Android (Landscape Widescreen) and Web.',
-  '',
-  '## 📦 Android APK Download & Installation',
-  `- **APK File**: \`${apkName}\` *(attached below under **Assets**)*`,
-  '- **Orientation & Mode**: Widescreen Landscape (`sensorLandscape`) · Android Game Mode (`isGame="true"`) · Immersive Sticky Fullscreen',
-  '- **How to Install**: Download the `.apk` file on your Android phone or tablet and open it to install or update your existing dev build.',
-  '',
-  `## 🛠️ What's New in \`${version} dev build\``,
   sectionBody,
   '',
   '---',
-  '*Full build history is available in [`CHANGELOG.md`](./CHANGELOG.md) and project documentation in [`README.md`](./README.md).*',
+  '*Full changelog in [`CHANGELOG.md`](./CHANGELOG.md)*',
   '',
 ].join('\n');
 

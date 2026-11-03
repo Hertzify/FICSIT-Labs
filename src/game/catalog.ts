@@ -336,7 +336,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
   constructor: {
     id: 'constructor',
     name: 'Constructor',
-    category: 'production',
+    category: 'production' as BuildCategory,
     subcategory: 'Manufacturers',
     description: 'Shapes a single ingot or mineral input into structural plates, rods, wire, or concrete.',
     accentColor: '#06B6D4',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SaveSlot, SettingsConfig } from '../game/types';
 import { APP_BUILD_TAG } from '../game/version';
+import { ChangelogModal } from './ChangelogModal';
 
 interface MainMenuProps {
   latestSlot: SaveSlot | null;
@@ -22,6 +23,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onOpenSettings,
 }) => {
   const [showNewGameDialog, setShowNewGameDialog] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
   const [newSessionName, setNewSessionName] = useState('Northern Forest Sector 02');
   const [includeStarterNodes, setIncludeStarterNodes] = useState(true);
 
@@ -91,9 +93,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </text>
           </svg>
 
-          <span className="px-2 py-1 rounded-md bg-[#131B2E] border border-amber-500/40 text-[10px] font-mono font-semibold text-amber-400 whitespace-nowrap shrink-0">
-            {APP_BUILD_TAG}
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowChangelog(true)}
+            title="View Patch Notes & Changelog"
+            className="px-2 py-1 rounded-md bg-[#131B2E] hover:bg-amber-500/20 hover:border-amber-400 border border-amber-500/40 text-[10px] font-mono font-semibold text-amber-400 whitespace-nowrap shrink-0 transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>{APP_BUILD_TAG}</span>
+            <span className="text-[10px] opacity-75">📋</span>
+          </button>
         </div>
 
         {/* Latest Session Readout Strip */}
@@ -171,7 +179,17 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         <span className="truncate">
           Drag Pan · Pinch/Double-Tap Zoom (Zoom Out for Icon Boxes) · Tap/Drag Ports Wire · [Q] Build
         </span>
-        <span className="text-slate-300 shrink-0 ml-2">{APP_BUILD_TAG}</span>
+        <div className="flex items-center gap-2 shrink-0 ml-2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setShowChangelog(true)}
+            className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors cursor-pointer"
+          >
+            Changelog
+          </button>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-300">{APP_BUILD_TAG}</span>
+        </div>
       </div>
 
       {/* Widescreen Landscape New Game Session Modal */}
@@ -250,6 +268,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </form>
         </div>
       )}
+
+      {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
     </div>
   );
 };

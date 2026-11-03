@@ -18,7 +18,6 @@ import {
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
-  computeConveyorBeltFlowVisuals,
   createConveyorConnection,
   createMachineNode,
   getBeltTierDef,
@@ -570,58 +569,72 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const itemColor = getItemAccentColor(conn.itemName);
         const lengthPx = Math.max(72, conn.lengthPx ?? 240);
 
-        // Outer Conveyor Track Casing (tinted by Belt Tier)
+        // Outer Industrial Conveyor Track Rails (16px wide bed so 16x16 items sit snugly inside)
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
-        ctx.strokeStyle = tierDef.tier >= 2 ? `${tierDef.accentColor}55` : '#1E293B';
-        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 7;
+        ctx.strokeStyle = tierDef.tier >= 2 ? tierDef.accentColor : '#334155';
+        ctx.lineWidth = macroMode ? Math.max(6, 4.5 / cam.zoom) : 16;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
 
-        // Inner Conveyor Track Line
+        // Inner Dark Metallic Conveyor Roller Bed
         drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
-        ctx.strokeStyle = isFlowing
-          ? itemColor
-          : isInTransit
-          ? '#38BDF8'
-          : '#475569';
-        ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2.6;
+        ctx.strokeStyle = '#0B111E';
+        ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 12.5;
         ctx.stroke();
 
-        // Render Physical Discrete Item Packets Traveling Along the Belt (`conn.inFlightItems`)
+        // Moving Conveyor Roller Slats synchronized to exact belt m/s speed (tierDef.speedPxPerSec)
+        if (!macroMode && (isFlowing || isInTransit)) {
+          ctx.save();
+          drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
+          ctx.strokeStyle = tierDef.tier >= 2 ? `${tierDef.accentColor}44` : '#1E293B';
+          ctx.lineWidth = 10;
+          ctx.setLineDash([3, 6]);
+          ctx.lineDashOffset = -(interactionRef.current.elapsedTime * tierDef.speedPxPerSec);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Center Power/Guide Spine
+        drawConveyorPath(p1.x, p1.y, p2.x, p2.y, cfg.conveyorStyle);
+        ctx.strokeStyle = isFlowing
+          ? `${itemColor}88`
+          : isInTransit
+          ? '#38BDF888'
+          : '#334155';
+        ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2;
+        ctx.stroke();
+
+        // Render Tightly Squeezed Physical Resource Items Traveling Along the Belt (`conn.inFlightItems`)
+        // At 100% belt capacity (e.g. 60/m on Mk.1 at 1.2 m/s = 18 px/s), items are spaced every 18px
+        // and each item is 15.5x15.5px so they sit tightly squeezed bumper-to-bumper along the belt.
         const packets = conn.inFlightItems ?? [];
-        if (packets.length > 0) {
-          const flowVis = computeConveyorBeltFlowVisuals(enteringRate || 60);
-          const itemImg = !macroMode ? getCanvasItemImage(conn.itemName) : null;
-          const dotR = macroMode
-            ? Math.max(4.5, 3 / cam.zoom)
-            : flowVis.dotRadius;
+        if (!macroMode && cam.zoom >= 0.35 && packets.length > 0) {
+          const itemImg = getCanvasItemImage(conn.itemName);
+          if (itemImg) {
+            // Draw from source (back) to destination (front) so leading items layer cleanly
+            for (let i = packets.length - 1; i >= 0; i--) {
+              const pkt = packets[i];
+              const rawRatio = Math.max(0, Math.min(1, pkt.distancePx / lengthPx));
+              // Keep items inside the visible belt span between the two 7.5px port sockets
+              const portMarginT = Math.min(0.12, 9 / lengthPx);
+              const t = portMarginT + rawRatio * (1 - portMarginT * 2);
+              const pt = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, t, cfg.conveyorStyle);
 
-          for (const pkt of packets) {
-            const t = Math.max(0, Math.min(1, pkt.distancePx / lengthPx));
-            const pt = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, t, cfg.conveyorStyle);
-
-            if (itemImg && cam.zoom >= 0.55) {
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 7.8, 0, Math.PI * 2);
+              const boxSize = 15.5;
+              const half = boxSize * 0.5;
+              drawRoundedRect(ctx, pt.x - half, pt.y - half, boxSize, boxSize, 3.2);
               ctx.fillStyle = '#0F172A';
               ctx.fill();
               ctx.strokeStyle = tierDef.tier >= 2 ? tierDef.accentColor : itemColor;
-              ctx.lineWidth = 1.5;
+              ctx.lineWidth = 1.3;
               ctx.stroke();
-              ctx.drawImage(itemImg, pt.x - 6, pt.y - 6, 12, 12);
-            } else {
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
-              ctx.fillStyle = '#F8FAFC';
-              ctx.fill();
-              ctx.strokeStyle = itemColor;
-              ctx.lineWidth = 1.8;
-              ctx.stroke();
+              ctx.drawImage(itemImg, pt.x - 6.8, pt.y - 6.8, 13.6, 13.6);
             }
           }
         }
 
+        // Floating Belt Telemetry Badge (positioned ABOVE the belt so tightly squeezed items are 100% visible)
         if (!macroMode && cfg.showPortRates) {
           const mid = sampleConveyorPoint(p1.x, p1.y, p2.x, p2.y, 0.5, cfg.conveyorStyle);
           const leadingDist =
@@ -630,14 +643,22 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
           const badgeText = isInTransit
             ? `${tierDef.shortLabel} · Transit ${transitPct}%`
-            : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}/m`;
+            : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}`;
 
-          ctx.font = '600 9.5px "JetBrains Mono", monospace';
-          const itemImg = getCanvasItemImage(conn.itemName);
-          const iconPad = itemImg ? 14 : 0;
-          const tw = ctx.measureText(badgeText).width + 12 + iconPad;
-          drawRoundedRect(ctx, mid.x - tw / 2, mid.y - 9.5, tw, 19, 4.5);
-          ctx.fillStyle = '#0F172A';
+          const badgeY = mid.y - 21;
+          ctx.beginPath();
+          ctx.moveTo(mid.x, mid.y - 8);
+          ctx.lineTo(mid.x, badgeY + 8);
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.font = '600 9px "JetBrains Mono", monospace';
+          const beltImg = getCanvasBuildingImage(tierDef.id);
+          const iconPad = beltImg ? 14 : 0;
+          const tw = ctx.measureText(badgeText).width + 10 + iconPad;
+          drawRoundedRect(ctx, mid.x - tw / 2, badgeY - 8.5, tw, 17, 4);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
           ctx.fill();
           ctx.strokeStyle = isInTransit
             ? '#38BDF8'
@@ -646,11 +667,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             : isFlowing
             ? itemColor
             : '#334155';
-          ctx.lineWidth = 1.2;
+          ctx.lineWidth = 1.1;
           ctx.stroke();
 
-          if (itemImg) {
-            ctx.drawImage(itemImg, mid.x - tw / 2 + 4, mid.y - 6, 12, 12);
+          if (beltImg) {
+            ctx.drawImage(beltImg, mid.x - tw / 2 + 3.5, badgeY - 6, 12, 12);
           }
 
           ctx.fillStyle = isInTransit
@@ -660,7 +681,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             : '#94A3B8';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(badgeText, mid.x + iconPad * 0.45, mid.y);
+          ctx.fillText(badgeText, mid.x + iconPad * 0.45, badgeY);
         }
       }
 

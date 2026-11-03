@@ -15,9 +15,20 @@ export const BUILD_CATEGORIES: { id: BuildCategory; label: string; subtitle: str
 
 /**
  * Official Satisfactory Conveyor Belt Tiers (Mk.1 – Mk.6).
- * Physical item spacing on a full belt is 96 world px per item, so:
- * speedPxPerSec = (capacityPerMin / 60) * 96 px.
+ * Each item on a belt occupies 1.2 meters (18 world px at 15 px/m).
+ * At 100% capacity, items are tightly squeezed bumper-to-bumper (18 px pitch)
+ * and move at the belt's m/s pace:
+ * - Mk.1 (60/m = 1/s):    1.2 m/s  -> 18 px/s
+ * - Mk.2 (120/m = 2/s):   2.4 m/s  -> 36 px/s
+ * - Mk.3 (270/m = 4.5/s): 5.4 m/s  -> 81 px/s
+ * - Mk.4 (480/m = 8/s):   9.6 m/s  -> 144 px/s
+ * - Mk.5 (780/m = 13/s):  15.6 m/s -> 234 px/s
+ * - Mk.6 (1200/m = 20/s): 24.0 m/s -> 360 px/s
  */
+export const PIXELS_PER_METER = 15;
+export const BELT_ITEM_LENGTH_METERS = 1.2;
+export const BELT_ITEM_FOOTPRINT_PX = 18; // 1.2m * 15 px/m = 18px tight bumper-to-bumper item spacing
+
 export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> = {
   1: {
     tier: 1,
@@ -25,12 +36,13 @@ export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> 
     name: 'Conveyor Belt Mk.1',
     shortLabel: 'Mk.1',
     capacityPerMin: 60,
-    speedPxPerSec: 96,
+    speedMetersPerSec: 1.2,
+    speedPxPerSec: 18,
     accentColor: '#94A3B8',
     ingredientName: 'Iron Plate',
     unlockTier: 'Tier 0 (HUB Upgrade 4)',
     description:
-      'Transports up to 60 items/min between machines. Resources physically travel along the belt at 96 px/s — longer belts require more travel time before items arrive.',
+      'Transports up to 60 resources/min between factory nodes. Built with standard Iron Plates.',
   },
   2: {
     tier: 2,
@@ -38,12 +50,13 @@ export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> 
     name: 'Conveyor Belt Mk.2',
     shortLabel: 'Mk.2',
     capacityPerMin: 120,
-    speedPxPerSec: 192,
+    speedMetersPerSec: 2.4,
+    speedPxPerSec: 36,
     accentColor: '#F59E0B',
     ingredientName: 'Reinforced Iron Plate',
     unlockTier: 'Tier 2 (Logistics Mk.2)',
     description:
-      'Transports up to 120 items/min at 2× physical travel speed (192 px/s). Ideal for Pure resource nodes and high-throughput smelting lines.',
+      'Transports up to 120 resources/min for Pure resource deposits and dual-smelter lines.',
   },
   3: {
     tier: 3,
@@ -51,12 +64,13 @@ export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> 
     name: 'Conveyor Belt Mk.3',
     shortLabel: 'Mk.3',
     capacityPerMin: 270,
-    speedPxPerSec: 432,
+    speedMetersPerSec: 5.4,
+    speedPxPerSec: 81,
     accentColor: '#38BDF8',
     ingredientName: 'Steel Beam',
     unlockTier: 'Tier 4 (Logistics Mk.3)',
     description:
-      'Transports up to 270 items/min at 4.5× physical travel speed (432 px/s) for medium-range manifold distribution.',
+      'Transports up to 270 resources/min for medium-range manifold distribution.',
   },
   4: {
     tier: 4,
@@ -64,12 +78,13 @@ export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> 
     name: 'Conveyor Belt Mk.4',
     shortLabel: 'Mk.4',
     capacityPerMin: 480,
-    speedPxPerSec: 768,
+    speedMetersPerSec: 9.6,
+    speedPxPerSec: 144,
     accentColor: '#818CF8',
     ingredientName: 'Encased Industrial Beam',
     unlockTier: 'Tier 5 (Logistics Mk.4)',
     description:
-      'Transports up to 480 items/min at 8× physical travel speed (768 px/s) for long-distance regional resource buses.',
+      'Transports up to 480 resources/min for high-volume regional resource buses.',
   },
   5: {
     tier: 5,
@@ -77,12 +92,13 @@ export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> 
     name: 'Conveyor Belt Mk.5',
     shortLabel: 'Mk.5',
     capacityPerMin: 780,
-    speedPxPerSec: 1248,
+    speedMetersPerSec: 15.6,
+    speedPxPerSec: 234,
     accentColor: '#A855F7',
     ingredientName: 'Aluminum Casing',
     unlockTier: 'Tier 7 (Logistics Mk.5)',
     description:
-      'Transports up to 780 items/min at 13× physical travel speed (1,248 px/s) across cross-sector factory networks.',
+      'Transports up to 780 resources/min across cross-sector factory networks.',
   },
   6: {
     tier: 6,
@@ -90,12 +106,13 @@ export const CONVEYOR_BELT_TIERS: Record<ConveyorBeltTier, ConveyorBeltTierDef> 
     name: 'Conveyor Belt Mk.6',
     shortLabel: 'Mk.6',
     capacityPerMin: 1200,
-    speedPxPerSec: 1920,
+    speedMetersPerSec: 24.0,
+    speedPxPerSec: 360,
     accentColor: '#EC4899',
     ingredientName: 'Fused Modular Frame',
     unlockTier: 'Tier 9 (Peak Efficiency)',
     description:
-      'Maximum-velocity FICSIT quantum conveyor transporting up to 1,200 items/min at 20× physical travel speed (1,920 px/s).',
+      'Transports up to 1,200 resources/min for maximum-throughput production lines.',
   },
 };
 

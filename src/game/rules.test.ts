@@ -103,23 +103,43 @@ test('32 natural world resource deposits are scattered in clusters with Impure (
   assert.equal(pureDep.outputs[0].actualRatePerMin, 120);
 });
 
-test('Satisfactory Conveyor Belt tiers (Mk.1 60/m, Mk.2 120/m .. Mk.6 1200/m) enforce capacity and physical travel delay', () => {
+test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/s) enforce tight 1.2m (18px) item spacing and travel pace', () => {
   assert.equal(CONVEYOR_BELT_TIERS[1].capacityPerMin, 60);
+  assert.equal(CONVEYOR_BELT_TIERS[1].speedMetersPerSec, 1.2);
+  assert.equal(CONVEYOR_BELT_TIERS[1].speedPxPerSec, 18);
+
   assert.equal(CONVEYOR_BELT_TIERS[2].capacityPerMin, 120);
+  assert.equal(CONVEYOR_BELT_TIERS[2].speedMetersPerSec, 2.4);
+  assert.equal(CONVEYOR_BELT_TIERS[2].speedPxPerSec, 36);
+
   assert.equal(CONVEYOR_BELT_TIERS[3].capacityPerMin, 270);
+  assert.equal(CONVEYOR_BELT_TIERS[3].speedMetersPerSec, 5.4);
   assert.equal(CONVEYOR_BELT_TIERS[4].capacityPerMin, 480);
+  assert.equal(CONVEYOR_BELT_TIERS[4].speedMetersPerSec, 9.6);
   assert.equal(CONVEYOR_BELT_TIERS[5].capacityPerMin, 780);
+  assert.equal(CONVEYOR_BELT_TIERS[5].speedMetersPerSec, 15.6);
   assert.equal(CONVEYOR_BELT_TIERS[6].capacityPerMin, 1200);
-  assert.ok(CONVEYOR_BELT_TIERS[2].speedPxPerSec > CONVEYOR_BELT_TIERS[1].speedPxPerSec);
+  assert.equal(CONVEYOR_BELT_TIERS[6].speedMetersPerSec, 24.0);
 
   const starter = createStarterFactory();
+  // Starter belt 1 (60/m on Mk.1 belt, ~151px long) should have tightly packed items every 18px (1.2m)
+  const starterBelt1 = starter.connections.find((c) => c.id === 'conn_starter_1')!;
+  assert.ok((starterBelt1.inFlightItems?.length ?? 0) >= 7);
+  const gap01 = Math.abs(
+    starterBelt1.inFlightItems![0].distancePx - starterBelt1.inFlightItems![1].distancePx
+  );
+  assert.ok(
+    Math.abs(gap01 - 18) < 0.5,
+    `Expected tight 18px (1.2m) bumper-to-bumper item spacing on full 60/m Mk.1 belt, got ${gap01}px`
+  );
+
   const pureCopper = starter.nodes.find(
     (d) => d.buildingId === 'resource_deposit' && d.purity === 'pure' && d.recipeId === 'deposit_copper'
   )!;
-  // Place a Miner far away from the Pure Copper deposit so items must travel across the belt
-  const miner = createMachineNode('miner_mk1', pureCopper.x + 1200, pureCopper.y, 'distant_miner');
+  // Place a Miner 450px away from the Pure Copper deposit (belt length ~ 197px = ~13.1m)
+  const miner = createMachineNode('miner_mk1', pureCopper.x + 450, pureCopper.y, 'distant_miner');
 
-  // Connect using a Mk.1 belt (60/min capacity, 96 px/s speed)
+  // Connect using a Mk.1 belt (60/min capacity, 1.2 m/s = 18 px/s speed)
   const mk1Conn = createConveyorConnection(
     pureCopper.id,
     pureCopper.outputs[0].id,
@@ -132,22 +152,25 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m, Mk.2 120/m .. Mk.6 1200/m) en
   assert.equal(mk1Conn.maxCapacityPerMin, 60);
   assert.equal(mk1Conn.firstItemArrived, false);
 
-  // Step 1 second: items are spawned and moving in-flight, but have NOT reached the distant miner yet!
-  const stepEarly = stepSimulation([pureCopper, miner], [mk1Conn], 1.0);
-  const connEarly = stepEarly.connections[0];
-  const minerEarly = stepEarly.nodes.find((n) => n.id === miner.id)!;
-  assert.ok((connEarly.lengthPx ?? 0) > 900);
+  // Step 3 seconds (54px traveled at 18px/s): 3 tightly squeezed items on belt, not arrived yet!
+  let simNodes = [pureCopper, miner];
+  let simConns = [mk1Conn];
+  for (let i = 0; i < 3; i++) {
+    const next = stepSimulation(simNodes, simConns, 1.0);
+    simNodes = next.nodes;
+    simConns = next.connections;
+  }
+  const connEarly = simConns[0];
+  const minerEarly = simNodes.find((n) => n.id === miner.id)!;
   assert.equal(connEarly.firstItemArrived, false);
   assert.equal(connEarly.ratePerMin, 0);
   assert.equal(connEarly.sourceRatePerMin, 60); // Capped by Mk.1 belt at 60/m even though deposit is Pure 120/m
-  assert.ok((connEarly.inFlightItems?.length ?? 0) > 0);
+  assert.ok((connEarly.inFlightItems?.length ?? 0) >= 3);
   assert.equal(minerEarly.status, 'waiting');
   assert.equal(minerEarly.outputs[0].actualRatePerMin, 0);
 
-  // Step enough seconds for the leading packet to travel the full belt length at 96 px/s
-  let simNodes = stepEarly.nodes;
-  let simConns = stepEarly.connections;
-  for (let i = 0; i < 20; i++) {
+  // Step enough seconds for the leading packet to travel the full belt length at 18 px/s (1.2 m/s)
+  for (let i = 0; i < 12; i++) {
     const next = stepSimulation(simNodes, simConns, 1.0);
     simNodes = next.nodes;
     simConns = next.connections;
@@ -159,7 +182,7 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m, Mk.2 120/m .. Mk.6 1200/m) en
   assert.equal(connArrived.ratePerMin, 60); // Mk.1 bottlenecked to 60/min
   assert.equal(minerArrived.outputs[0].actualRatePerMin, 60);
 
-  // Upgrade the belt to Mk.2 (120/min capacity, 192 px/s speed)
+  // Upgrade the belt to Mk.2 (120/min capacity, 2.4 m/s = 36 px/s speed)
   const upgradedConn = upgradeConveyorBeltTier(connArrived, 2);
   const afterUpgrade = stepSimulation(simNodes, [upgradedConn], 0.5);
   const minerMk2 = afterUpgrade.nodes.find((n) => n.id === miner.id)!;
@@ -227,7 +250,7 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.06 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.06');
-  assert.equal(APP_BUILD_TAG, '0.0.06 dev build');
+test('version tracking matches 0.0.08 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.08');
+  assert.equal(APP_BUILD_TAG, '0.0.08 dev build');
 });

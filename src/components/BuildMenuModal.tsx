@@ -138,7 +138,9 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                             {bt.name}
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
-                            {isEquipped ? 'Equipped for Wiring' : `${bt.speedPxPerSec} px/s speed`}
+                            {isEquipped
+                              ? `Equipped · ${bt.capacityPerMin} items/min`
+                              : `Max ${bt.capacityPerMin} items/min`}
                           </div>
                         </div>
                       </button>
@@ -238,10 +240,17 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                         {selectedBeltDef.description}
                       </p>
 
-                      <div className="mt-2 pt-2 border-t border-[#26334D] flex items-center justify-between text-[10px] font-mono tabular-nums text-slate-400">
-                        <span>Max Rate: {selectedBeltDef.capacityPerMin}/min</span>
-                        <span>·</span>
-                        <span>Speed: {selectedBeltDef.speedPxPerSec} px/s</span>
+                      <div className="mt-2 pt-2 border-t border-[#26334D] space-y-1 text-[10px] font-mono tabular-nums text-slate-400">
+                        <div className="flex items-center justify-between">
+                          <span>Max Throughput:</span>
+                          <span className="text-slate-200 font-semibold">
+                            {selectedBeltDef.capacityPerMin} items/min
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Primary Material:</span>
+                          <span className="text-slate-200">{selectedBeltDef.ingredientName}</span>
+                        </div>
                       </div>
                     </div>
                   </div>

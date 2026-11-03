@@ -94,7 +94,8 @@ export interface ConveyorBeltTierDef {
   name: string;
   shortLabel: string;
   capacityPerMin: number;
-  speedPxPerSec: number;
+  speedMetersPerSec: number; // Belt movement speed (1.2, 2.4, 5.4, 9.6, 15.6, 24.0 m/s)
+  speedPxPerSec: number; // World pixel speed (1m = 15px, 1.2m item footprint = 18px)
   accentColor: string;
   ingredientName: string;
   unlockTier: string;

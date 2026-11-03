@@ -2,7 +2,7 @@
 
 **FICSIT Node Labs** is a 2D widescreen factory automation and logistics tycoon game for **Android (Landscape APK)** and **Web**, blending the industrial production chains, resource node purities, and conveyor belt physics of ***Satisfactory*** with a clean, tactile node-graph interface inspired by ***Upload Labs***.
 
-![Version](https://img.shields.io/badge/version-0.0.06%20dev%20build-F59E0B?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.0.08%20dev%20build-F59E0B?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Android%20(Landscape)%20%7C%20Web-38BDF8?style=flat-square)
 ![Engine](https://img.shields.io/badge/engine-React%2019%20%2B%20HTML5%20Canvas%20%2B%20Capacitor%207-22C55E?style=flat-square)
 
@@ -11,18 +11,19 @@
 ## Core Gameplay & Mechanics
 
 ### 1. Authentic *Satisfactory* Conveyor Belt Physics & Tiers (`Mk.1` – `Mk.6`)
-Unlike instant-transfer node games, resources in **FICSIT Node Labs** physically travel as discrete item packets along the length of each conveyor belt:
-- **Distance & Transit Time Matter**: When two connected machines are far apart on the map, you watch the extracted resources march across the belt and wait for the leading item packet to physically arrive at the destination input port before production begins (`WAITING` status + live `Transit %` readout).
+Unlike instant-transfer node games, resources in **FICSIT Node Labs** physically travel as tightly packed discrete items (`1.2m` / `18px` item footprint) along the length of each conveyor belt:
+- **Tight Bumper-to-Bumper Resource Queue**: At 100% belt capacity (e.g., `60 items/min` on a Mk.1 belt), resource items sit tightly squeezed right next to each other (`1.2m` spacing) and march in lockstep at the belt's exact pace (`1.2 m/s` on Mk.1 up to `24 m/s` on Mk.6).
+- **Distance & Transit Time Matter**: When two connected machines are far apart on the map, you watch the tightly packed train of resources travel across the belt and wait for the leading item to physically reach the destination input port before production begins (`WAITING` status + live `Transit %` readout).
 - **Six Official Conveyor Belt Tiers**:
 
-| Belt Tier | Max Capacity | Physical Speed | Unlock Tier | Primary Ingredient |
+| Belt Tier | Max Capacity | Belt Speed | Unlock Tier | Primary Ingredient |
 | :--- | :--- | :--- | :--- | :--- |
-| **Conveyor Belt Mk.1** | **60** items/min | `96 px/s` (1.0×) | Tier 0 (HUB Upgrade 4) | Iron Plate |
-| **Conveyor Belt Mk.2** | **120** items/min | `192 px/s` (2.0×) | Tier 2 (Logistics Mk.2) | Reinforced Iron Plate |
-| **Conveyor Belt Mk.3** | **270** items/min | `432 px/s` (4.5×) | Tier 4 (Logistics Mk.3) | Steel Beam |
-| **Conveyor Belt Mk.4** | **480** items/min | `768 px/s` (8.0×) | Tier 5 (Logistics Mk.4) | Encased Industrial Beam |
-| **Conveyor Belt Mk.5** | **780** items/min | `1,248 px/s` (13.0×) | Tier 7 (Logistics Mk.5) | Aluminum Casing |
-| **Conveyor Belt Mk.6** | **1,200** items/min | `1,920 px/s` (20.0×) | Tier 9 (Peak Efficiency) | Fused Modular Frame |
+| **Conveyor Belt Mk.1** | **60** items/min | `1.2 m/s` | Tier 0 (HUB Upgrade 4) | Iron Plate |
+| **Conveyor Belt Mk.2** | **120** items/min | `2.4 m/s` | Tier 2 (Logistics Mk.2) | Reinforced Iron Plate |
+| **Conveyor Belt Mk.3** | **270** items/min | `5.4 m/s` | Tier 4 (Logistics Mk.3) | Steel Beam |
+| **Conveyor Belt Mk.4** | **480** items/min | `9.6 m/s` | Tier 5 (Logistics Mk.4) | Encased Industrial Beam |
+| **Conveyor Belt Mk.5** | **780** items/min | `15.6 m/s` | Tier 7 (Logistics Mk.5) | Aluminum Casing |
+| **Conveyor Belt Mk.6** | **1,200** items/min | `24.0 m/s` | Tier 9 (Peak Efficiency) | Fused Modular Frame |
 
 - **In-Place Belt Upgrades**: Select your active belt tier from the bottom-left thumb bar (`Mk.1` – `Mk.6`) before wiring, or select any machine on the canvas to upgrade its attached belts in place.
 

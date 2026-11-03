@@ -5,6 +5,35 @@ Every update increments the build number by `+0.0001`.
 
 ---
 
+## [0.0.08] — 2026-11-02 (`0.0.08 dev build`)
+
+### Removed
+- **Removed Unused Pioneer Movement Fields (`bladeRunnersKmh`, `speedKmh`)**:
+  - Removed irrelevant first-person pioneer movement fields from `ConveyorBeltTierDef`, `CONVEYOR_BELT_TIERS`, the Logistics Build Menu inspector, unit tests, and documentation, keeping only the conveyor belt item transport properties (`capacityPerMin`, `speedMetersPerSec`, `speedPxPerSec`, and `1.2m` tight item spacing).
+
+---
+
+## [0.0.07] — 2026-11-02 (`0.0.07 dev build`)
+
+### Changed
+- **Tight Bumper-to-Bumper Conveyor Belt Item Packing (`1.2m` / `18px` Item Footprint)**:
+  - Matched *Satisfactory*'s physical item spacing where every item occupies `1.2 meters` (`18 world px` at `15 px/m`) along the belt.
+  - On a belt running at 100% capacity (e.g., `60 items/min` on a **Mk.1** belt or `120 items/min` on a **Mk.2** belt), actual resource items (`15.5×15.5 px` crates with official *Satisfactory* Wiki item icons) are tightly squeezed bumper-to-bumper (`18 px` center-to-center) in a continuous marching queue.
+  - Enforced physical front-to-back collision spacing (`BELT_ITEM_FOOTPRINT_PX = 18`) so items on a belt never overlap and form a tight queue.
+- **Conveyor Belt Movement Pace (`1.2 m/s` – `24.0 m/s`)**:
+  - Calibrated all 6 Conveyor Belt tiers to their *Satisfactory* item transport speeds:
+    - **Mk.1 (`60/m`)**: `1.2 m/s` (`18 px/s`)
+    - **Mk.2 (`120/m`)**: `2.4 m/s` (`36 px/s`)
+    - **Mk.3 (`270/m`)**: `5.4 m/s` (`81 px/s`)
+    - **Mk.4 (`480/m`)**: `9.6 m/s` (`144 px/s`)
+    - **Mk.5 (`780/m`)**: `15.6 m/s` (`234 px/s`)
+    - **Mk.6 (`1,200/m`)**: `24.0 m/s` (`360 px/s`)
+- **Unobstructed Industrial Roller Belt Rendering**:
+  - Upgraded conveyor belts to a `16 px` wide industrial roller track with animated roller slats synchronized to the belt's `m/s` speed.
+  - Moved the belt telemetry pill (`Mk.1 · 60/60/m · 1.2m/s`) above the belt with a vertical leader line so the tightly squeezed resource items marching along the belt are 100% visible end-to-end.
+
+---
+
 ## [0.0.06] — 2026-11-02 (`0.0.06 dev build`)
 
 ### Added

@@ -17,6 +17,10 @@ import {
   SaveSlot,
 } from './types';
 
+export const PIXELS_PER_METER = 15;
+export const BELT_ITEM_LENGTH_METERS = 1.2;
+export const BELT_ITEM_FOOTPRINT_PX = 18;
+
 // Expanded Sector 01 Map Boundaries (12000x8000 regional sector with clustered deposits)
 export const WORLD_WIDTH = 12000;
 export const WORLD_HEIGHT = 8000;
@@ -25,8 +29,8 @@ export const MAX_ZOOM = 1.85;
 // Require zooming out past 0.25x before switching to Macro Icon Box / Map Pin view
 export const LOD_ICON_BOX_ZOOM_THRESHOLD = 0.25;
 export const WORLD_PADDING = 24;
-// Physical spacing on a full belt: 1 item every 96 world pixels
-export const BELT_ITEM_SLOT_PX = 96;
+// Physical spacing on a full belt: 1 item every 1.2 meters (18 world pixels)
+export const BELT_ITEM_SLOT_PX = BELT_ITEM_FOOTPRINT_PX;
 
 export function isMacroIconZoom(zoom: number): boolean {
   return zoom < LOD_ICON_BOX_ZOOM_THRESHOLD;
@@ -689,39 +693,64 @@ export function stepSimulation(
     }
   }
 
-  // Physical Belt Transit Step: advance discrete item packets along each belt by speedPxPerSec * dt
+  // Physical Belt Transit Step: advance tightly packed discrete items along each belt at exact Satisfactory m/s pace
   for (const conn of nextConns) {
     const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
     const lengthPx = conn.lengthPx ?? 240;
     const enteringRate = conn.sourceRatePerMin ?? 0;
     const itemName = conn.itemName ?? 'Iron Ore';
-    const items = conn.inFlightItems ?? [];
+    const items = conn.inFlightItems ? [...conn.inFlightItems] : [];
 
-    // Pre-populate packets on legacy/starter pre-settled belts that had no packets yet
-    if (conn.firstItemArrived && items.length === 0 && enteringRate > 0) {
-      const spacingPx = Math.max(
-        48,
-        Math.round((tierDef.speedPxPerSec * 60) / Math.max(1, enteringRate))
-      );
-      for (let dist = spacingPx * 0.5; dist < lengthPx; dist += spacingPx) {
+    // Ideal center-to-center spacing (18px = 1.2m when belt is at 100% capacity, e.g. 60/m on Mk.1)
+    const idealSpacingPx =
+      enteringRate > 0
+        ? Math.max(
+            BELT_ITEM_FOOTPRINT_PX,
+            (tierDef.speedPxPerSec * 60) / Math.min(tierDef.capacityPerMin, enteringRate)
+          )
+        : BELT_ITEM_FOOTPRINT_PX;
+
+    const expectedSteadyCount =
+      enteringRate > 0 ? Math.max(1, Math.floor(lengthPx / idealSpacingPx)) : 0;
+
+    // Pre-populate or migrate legacy sparse belts that already settled (firstItemArrived = true)
+    if (
+      conn.firstItemArrived &&
+      enteringRate > 0 &&
+      (items.length === 0 || items.length < Math.floor(expectedSteadyCount * 0.6))
+    ) {
+      items.length = 0;
+      // Populate from destination back toward source at exact idealSpacingPx (18px on a full belt)
+      for (let dist = lengthPx - idealSpacingPx * 0.5; dist >= 0; dist -= idealSpacingPx) {
         items.push({
-          id: `${conn.id}_init_${Math.round(dist)}`,
+          id: `${conn.id}_init_${Math.round(dist * 10)}`,
           itemName,
-          distancePx: dist,
+          distancePx: Number(dist.toFixed(2)),
         });
       }
+      conn.spawnAccumulator = 0.5;
     }
 
-    // Advance all in-flight packets toward the destination port (lengthPx)
+    // Sort items from front (closest to destination lengthPx) to back (closest to source 0)
+    items.sort((a, b) => b.distancePx - a.distancePx);
+
+    // Advance all in-flight packets toward the destination port (lengthPx) at tierDef.speedPxPerSec * dt
+    // while enforcing physical bumper-to-bumper collision (minimum BELT_ITEM_FOOTPRINT_PX = 18px gap)
     if (dt > 0 && items.length > 0) {
       const stepPx = tierDef.speedPxPerSec * dt;
-      for (const pkt of items) {
-        pkt.distancePx += stepPx;
+      for (let i = 0; i < items.length; i++) {
+        const pkt = items[i];
+        let nextDist = pkt.distancePx + stepPx;
+        if (i > 0) {
+          const aheadDist = items[i - 1].distancePx;
+          nextDist = Math.min(nextDist, aheadDist - BELT_ITEM_FOOTPRINT_PX);
+        }
+        pkt.distancePx = nextDist;
         pkt.itemName = itemName;
       }
     }
 
-    // Check if any packet reached the destination input port (distancePx >= lengthPx)
+    // Check if leading packet(s) reached the destination input port (distancePx >= lengthPx)
     const remaining: BeltItemPacket[] = [];
     let arrivedThisTick = false;
     for (const pkt of items) {
@@ -736,24 +765,34 @@ export function stepSimulation(
       conn.firstItemArrived = true;
     }
 
-    // Spawn new physical item packets at the source output port (distancePx = 0)
+    // Spawn new tightly packed physical item packets at the source output port (distancePx >= 0)
     if (enteringRate > 0) {
       const itemsPerSec = enteringRate / 60;
       let acc = (conn.spawnAccumulator ?? 0) + itemsPerSec * dt;
-      const minGapPx = 32;
 
-      while (acc >= 1) {
+      // Guard against huge dt jumps creating too many iterations
+      let safety = 0;
+      while (acc >= 1 && safety < 64) {
+        safety++;
         const lastPkt = remaining[remaining.length - 1];
-        const canFit = !lastPkt || lastPkt.distancePx >= minGapPx;
-        if (canFit) {
+        // Exact fractional distance the newly emitted item has already traveled during this frame
+        const overshootSec = (acc - 1) / itemsPerSec;
+        const desiredDist = Math.max(0, overshootSec * tierDef.speedPxPerSec);
+        const maxAllowedDist = lastPkt
+          ? lastPkt.distancePx - BELT_ITEM_FOOTPRINT_PX
+          : desiredDist;
+
+        if (!lastPkt || lastPkt.distancePx >= BELT_ITEM_FOOTPRINT_PX - 0.01) {
+          const spawnDist = Math.max(0, Math.min(desiredDist, maxAllowedDist));
           remaining.push({
-            id: `${conn.id}_pkt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            id: `${conn.id}_pkt_${Date.now()}_${safety}_${Math.random().toString(36).slice(2, 5)}`,
             itemName,
-            distancePx: 0,
+            distancePx: Number(spawnDist.toFixed(2)),
           });
           acc -= 1;
         } else {
-          acc = Math.min(acc, 1);
+          // Output port is physically blocked by the item immediately ahead of it (bumper-to-bumper)
+          acc = 1;
           break;
         }
       }
@@ -809,22 +848,22 @@ export function createStarterFactory(): {
   const baseX = starterDeposit.x;
   const baseY = starterDeposit.y;
 
-  const miner = createMachineNode('miner_mk1', baseX + 336, baseY, 'starter_miner', 'mine_iron');
+  const miner = createMachineNode('miner_mk1', baseX + 408, baseY, 'starter_miner', 'mine_iron');
   const smelter = createMachineNode(
     'smelter',
-    baseX + 696,
+    baseX + 816,
     baseY,
     'starter_smelter',
     'smelt_iron'
   );
   const constructorNode = createMachineNode(
     'constructor',
-    baseX + 1056,
+    baseX + 1224,
     baseY,
     'starter_constructor',
     'construct_iron_plate'
   );
-  const hub = createMachineNode('the_hub', baseX + 1416, baseY - 12, 'starter_hub', null);
+  const hub = createMachineNode('the_hub', baseX + 1632, baseY - 12, 'starter_hub', null);
 
   const rawConns: ConveyorConnection[] = [
     {

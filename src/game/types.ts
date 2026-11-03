@@ -1,6 +1,6 @@
 export type GameState = 'title' | 'playing' | 'paused';
 
-export type ConveyorLineStyle = 'bezier' | 'orthogonal';
+export type ConveyorLineStyle = 'orthogonal';
 export type TouchWiringMode = 'drag' | 'tap' | 'both';
 
 export interface SettingsConfig {

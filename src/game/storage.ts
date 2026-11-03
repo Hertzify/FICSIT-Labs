@@ -10,7 +10,7 @@ const SETTINGS_KEY = 'ficsit_node_labs_settings_v1';
 const SAVES_KEY = 'ficsit_node_labs_saves_v1';
 
 export const DEFAULT_SETTINGS: SettingsConfig = {
-  conveyorStyle: 'bezier',
+  conveyorStyle: 'orthogonal',
   gridSnap: true,
   gridSize: 24,
   uiScale: 1.0,
@@ -33,6 +33,7 @@ export function loadSettings(): SettingsConfig {
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      conveyorStyle: 'orthogonal',
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

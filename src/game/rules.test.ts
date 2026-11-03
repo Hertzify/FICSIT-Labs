@@ -8,11 +8,17 @@ import {
   clampCameraToWorld,
   clampNodeToWorld,
   computeConveyorBeltFlowVisuals,
+  computeOrthogonalConveyorPath,
   createConveyorConnection,
   createMachineNode,
   createStarterFactory,
+  doesPathIntersectNode,
+  doNodesOverlap,
+  findConveyorCrossings,
   isMacroIconZoom,
+  isNodePositionValid,
   parseSaveImport,
+  sampleOrthogonalPath,
   serializeSaveExport,
   snapToGrid,
   stepSimulation,
@@ -253,4 +259,99 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
 test('version tracking matches 0.0.10 dev build', () => {
   assert.equal(APP_VERSION, '0.0.10');
   assert.equal(APP_BUILD_TAG, '0.0.10 dev build');
+});
+
+test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
+  const nodeA = createMachineNode('smelter', 100, 100, 'smelter_a');
+  const nodeB = createMachineNode('constructor', 150, 120, 'constructor_b'); // Overlaps A
+  const nodeC = createMachineNode('constructor', 500, 500, 'constructor_c'); // Far away
+
+  assert.equal(doNodesOverlap(nodeA, nodeB), true);
+  assert.equal(doNodesOverlap(nodeA, nodeC), false);
+
+  const checkColliding = isNodePositionValid([nodeA, nodeC], nodeB);
+  assert.equal(checkColliding.valid, false);
+  assert.equal(checkColliding.collidingNode?.id, nodeA.id);
+
+  const checkFree = isNodePositionValid([nodeA, nodeC], {
+    x: 900,
+    y: 900,
+    width: 260,
+    height: 140,
+  });
+  assert.equal(checkFree.valid, true);
+});
+
+test('computeOrthogonalConveyorPath produces clean 90-degree orthogonal routing and avoids obstacle nodes', () => {
+  const startX = 100;
+  const startY = 100;
+  const endX = 600;
+  const endY = 250;
+
+  // Clear path without obstacles
+  const clearPath = computeOrthogonalConveyorPath(startX, startY, endX, endY, []);
+  assert.ok(clearPath.length >= 3);
+  for (let i = 1; i < clearPath.length; i++) {
+    const isHorizontal = Math.abs(clearPath[i].y - clearPath[i - 1].y) < 1e-4;
+    const isVertical = Math.abs(clearPath[i].x - clearPath[i - 1].x) < 1e-4;
+    assert.ok(
+      isHorizontal || isVertical,
+      `Expected purely 90-degree orthogonal segment, got (${clearPath[i - 1].x}, ${clearPath[i - 1].y}) -> (${clearPath[i].x}, ${clearPath[i].y})`
+    );
+  }
+
+  // Obstacle right in the center corridor (midX = 350)
+  const obstacleSmelter = createMachineNode('smelter', 320, 80, 'obs_smelter');
+  const routedPath = computeOrthogonalConveyorPath(startX, startY, endX, endY, [obstacleSmelter]);
+  assert.equal(doesPathIntersectNode(routedPath, obstacleSmelter, 6), false);
+});
+
+test('sampleOrthogonalPath accurately samples progress and tangent angle along 90-degree polyline', () => {
+  const polyline = [
+    { x: 0, y: 100 },
+    { x: 100, y: 100 }, // 100px horizontal east (angle = 0)
+    { x: 100, y: 200 }, // 100px vertical south (angle = PI/2)
+  ];
+
+  const atStart = sampleOrthogonalPath(polyline, 0);
+  assert.equal(atStart.x, 0);
+  assert.equal(atStart.y, 100);
+
+  const atCorner = sampleOrthogonalPath(polyline, 0.5);
+  assert.equal(atCorner.x, 100);
+  assert.equal(atCorner.y, 100);
+
+  const atMidDown = sampleOrthogonalPath(polyline, 0.75);
+  assert.equal(atMidDown.x, 100);
+  assert.equal(atMidDown.y, 150);
+  assert.ok(Math.abs(atMidDown.angle - Math.PI / 2) < 1e-4);
+
+  const atEnd = sampleOrthogonalPath(polyline, 1.0);
+  assert.equal(atEnd.x, 100);
+  assert.equal(atEnd.y, 200);
+});
+
+test('findConveyorCrossings detects perpendicular crossings for elevated overpass rendering', () => {
+  // Horizontal path from (0, 100) to (200, 100)
+  const pathH = {
+    connId: 'conn_h',
+    pts: [
+      { x: 0, y: 100 },
+      { x: 200, y: 100 },
+    ],
+  };
+
+  // Vertical path from (100, 0) to (100, 200) crossing at (100, 100)
+  const pathV = {
+    connId: 'conn_v',
+    pts: [
+      { x: 100, y: 0 },
+      { x: 100, y: 200 },
+    ],
+  };
+
+  const crossings = findConveyorCrossings([pathH, pathV]);
+  assert.equal(crossings.length, 1);
+  assert.equal(crossings[0].x, 100);
+  assert.equal(crossings[0].y, 100);
 });

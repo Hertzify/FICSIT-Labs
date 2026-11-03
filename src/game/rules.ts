@@ -79,6 +79,256 @@ export function computeConveyorLengthPx(
   return Math.max(72, Math.round(straightDist * 1.08));
 }
 
+/**
+ * Checks whether two machine nodes overlap (AABB collision detection).
+ */
+export function doNodesOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+  padding = 0
+): boolean {
+  return !(
+    a.x + a.width + padding <= b.x ||
+    b.x + b.width + padding <= a.x ||
+    a.y + a.height + padding <= b.y ||
+    b.y + b.height + padding <= a.y
+  );
+}
+
+/**
+ * Validates whether a candidate node position is free of overlap with any existing nodes.
+ */
+export function isNodePositionValid(
+  nodes: MachineNode[],
+  candidate: { x: number; y: number; width: number; height: number; id?: string },
+  padding = 0
+): { valid: boolean; collidingNode?: MachineNode } {
+  for (const node of nodes) {
+    if (candidate.id && node.id === candidate.id) continue;
+    if (doNodesOverlap(candidate, node, padding)) {
+      return { valid: false, collidingNode: node };
+    }
+  }
+  return { valid: true };
+}
+
+/**
+ * Checks if an orthogonal line segment intersects a machine node bounding box.
+ */
+export function doesSegmentIntersectBox(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  box: { x: number; y: number; width: number; height: number },
+  pad = 4
+): boolean {
+  const minX = Math.min(p1.x, p2.x);
+  const maxX = Math.max(p1.x, p2.x);
+  const minY = Math.min(p1.y, p2.y);
+  const maxY = Math.max(p1.y, p2.y);
+
+  const bL = box.x - pad;
+  const bR = box.x + box.width + pad;
+  const bT = box.y - pad;
+  const bB = box.y + box.height + pad;
+
+  // Horizontal segment
+  if (Math.abs(p1.y - p2.y) < 1e-4) {
+    return p1.y >= bT && p1.y <= bB && maxX >= bL && minX <= bR;
+  }
+  // Vertical segment
+  if (Math.abs(p1.x - p2.x) < 1e-4) {
+    return p1.x >= bL && p1.x <= bR && maxY >= bT && minY <= bB;
+  }
+  return maxX >= bL && minX <= bR && maxY >= bT && minY <= bB;
+}
+
+/**
+ * Checks if any segment of an orthogonal conveyor path intersects a machine node.
+ */
+export function doesPathIntersectNode(
+  path: { x: number; y: number }[],
+  node: MachineNode,
+  pad = 4
+): boolean {
+  for (let i = 1; i < path.length; i++) {
+    if (doesSegmentIntersectBox(path[i - 1], path[i], node, pad)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Computes a clean 90-degree orthogonal conveyor belt path between ports,
+ * actively routing around obstacle nodes so belts never go over machine nodes.
+ */
+export function computeOrthogonalConveyorPath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  obstacles: MachineNode[] = []
+): { x: number; y: number }[] {
+  const pad = 10;
+  const isSegmentBlocked = (pA: { x: number; y: number }, pB: { x: number; y: number }) => {
+    return obstacles.some((obs) => doesSegmentIntersectBox(pA, pB, obs, pad));
+  };
+
+  // Standard forward routing: S-bend with vertical corridor
+  if (x2 >= x1 + 36) {
+    const midX = x1 + (x2 - x1) * 0.5;
+    const pA = { x: x1, y: y1 };
+    const pB = { x: midX, y: y1 };
+    const pC = { x: midX, y: y2 };
+    const pD = { x: x2, y: y2 };
+
+    if (!isSegmentBlocked(pA, pB) && !isSegmentBlocked(pB, pC) && !isSegmentBlocked(pC, pD)) {
+      return [pA, pB, pC, pD];
+    }
+
+    // Try shifting midX to the left or right of colliding obstacles
+    const colliding = obstacles.filter((obs) => doesSegmentIntersectBox(pB, pC, obs, pad));
+    for (const obs of colliding) {
+      const leftX = obs.x - 20;
+      if (leftX > x1 + 16 && leftX < x2 - 16) {
+        const altB = { x: leftX, y: y1 };
+        const altC = { x: leftX, y: y2 };
+        if (!isSegmentBlocked(pA, altB) && !isSegmentBlocked(altB, altC) && !isSegmentBlocked(altC, pD)) {
+          return [pA, altB, altC, pD];
+        }
+      }
+      const rightX = obs.x + obs.width + 20;
+      if (rightX > x1 + 16 && rightX < x2 - 16) {
+        const altB = { x: rightX, y: y1 };
+        const altC = { x: rightX, y: y2 };
+        if (!isSegmentBlocked(pA, altB) && !isSegmentBlocked(altB, altC) && !isSegmentBlocked(altC, pD)) {
+          return [pA, altB, altC, pD];
+        }
+      }
+    }
+
+    // If still blocked, route around obstacles vertically (above or below)
+    const minYObs = obstacles.length > 0 ? Math.min(...obstacles.map((o) => o.y)) - 28 : y1 - 40;
+    const maxYObs = obstacles.length > 0 ? Math.max(...obstacles.map((o) => o.y + o.height)) + 28 : y2 + 40;
+    const detourY = Math.abs(y1 - minYObs) < Math.abs(y1 - maxYObs) ? minYObs : maxYObs;
+    return [
+      { x: x1, y: y1 },
+      { x: x1 + 18, y: y1 },
+      { x: x1 + 18, y: detourY },
+      { x: x2 - 18, y: detourY },
+      { x: x2 - 18, y: y2 },
+      { x: x2, y: y2 },
+    ];
+  }
+
+  // Backward, vertical, or tight alignment: route around
+  const detourY = y1 <= y2 ? Math.min(y1, y2) - 44 : Math.max(y1, y2) + 44;
+  return [
+    { x: x1, y: y1 },
+    { x: x1 + 22, y: y1 },
+    { x: x1 + 22, y: detourY },
+    { x: x2 - 22, y: detourY },
+    { x: x2 - 22, y: y2 },
+    { x: x2, y: y2 },
+  ];
+}
+
+/**
+ * Samples a continuous progress t [0..1] along an orthogonal polyline.
+ * Returns the exact (x, y) world coordinates and direction angle.
+ */
+export function sampleOrthogonalPath(
+  pts: { x: number; y: number }[],
+  t: number
+): { x: number; y: number; angle: number } {
+  if (pts.length === 0) return { x: 0, y: 0, angle: 0 };
+  if (pts.length === 1) return { x: pts[0].x, y: pts[0].y, angle: 0 };
+  const segLens: number[] = [];
+  let totalLen = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    segLens.push(len);
+    totalLen += len;
+  }
+  if (totalLen <= 0) return { x: pts[0].x, y: pts[0].y, angle: 0 };
+  const targetDist = Math.max(0, Math.min(totalLen, t * totalLen));
+  let acc = 0;
+  for (let i = 0; i < segLens.length; i++) {
+    const len = segLens[i];
+    if (acc + len >= targetDist || i === segLens.length - 1) {
+      const segT = len > 0 ? (targetDist - acc) / len : 0;
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      return {
+        x: p1.x + (p2.x - p1.x) * segT,
+        y: p1.y + (p2.y - p1.y) * segT,
+        angle: Math.atan2(p2.y - p1.y, p2.x - p1.x),
+      };
+    }
+    acc += len;
+  }
+  return { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, angle: 0 };
+}
+
+export interface ConveyorCrossing {
+  x: number;
+  y: number;
+  overConnId: string;
+  underConnId: string;
+}
+
+/**
+ * Detects all points where orthogonal conveyor belts cross each other,
+ * enabling elevated overpass bridge rendering ("belts can go over other belts").
+ */
+export function findConveyorCrossings(
+  paths: { connId: string; pts: { x: number; y: number }[] }[]
+): ConveyorCrossing[] {
+  const crossings: ConveyorCrossing[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    for (let j = i + 1; j < paths.length; j++) {
+      const pathA = paths[i];
+      const pathB = paths[j];
+      for (let a = 1; a < pathA.pts.length; a++) {
+        const segA1 = pathA.pts[a - 1];
+        const segA2 = pathA.pts[a];
+        const isAH = Math.abs(segA1.y - segA2.y) < 1e-4;
+
+        for (let b = 1; b < pathB.pts.length; b++) {
+          const segB1 = pathB.pts[b - 1];
+          const segB2 = pathB.pts[b];
+          const isBH = Math.abs(segB1.y - segB2.y) < 1e-4;
+
+          if (isAH === isBH) continue;
+
+          const hSeg1 = isAH ? segA1 : segB1;
+          const hSeg2 = isAH ? segA2 : segB2;
+          const vSeg1 = isAH ? segB1 : segA1;
+          const vSeg2 = isAH ? segB2 : segA2;
+
+          const hMinX = Math.min(hSeg1.x, hSeg2.x);
+          const hMaxX = Math.max(hSeg1.x, hSeg2.x);
+          const vMinY = Math.min(vSeg1.y, vSeg2.y);
+          const vMaxY = Math.max(vSeg1.y, vSeg2.y);
+
+          const cx = vSeg1.x;
+          const cy = hSeg1.y;
+
+          if (cx > hMinX + 4 && cx < hMaxX - 4 && cy > vMinY + 4 && cy < vMaxY - 4) {
+            crossings.push({
+              x: cx,
+              y: cy,
+              overConnId: pathB.connId,
+              underConnId: pathA.connId,
+            });
+          }
+        }
+      }
+    }
+  }
+  return crossings;
+}
+
 export function createConveyorConnection(
   fromNodeId: string,
   fromPortId: string,

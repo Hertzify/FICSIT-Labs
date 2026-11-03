@@ -123,39 +123,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 p-3.5 overflow-y-auto">
           {activeTab === 'visuals' && (
             <div className="grid grid-cols-2 gap-2.5">
-              {/* 1. Conveyor Line Style: Curved vs 90-Degree */}
+              {/* 1. Conveyor Routing: 90-Degree Industrial Standard */}
               <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold text-white">
-                    Conveyor Line Routing Style
+                    Conveyor Belt Routing
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    Smooth Upload Labs Bezier curves or 90-degree circuit lines
+                    Industrial 90-degree orthogonal lines with obstacle avoidance
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => updateField('conveyorStyle', 'bezier')}
-                    className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
-                      settings.conveyorStyle === 'bezier'
-                        ? 'bg-amber-500 text-slate-950'
-                        : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
-                    }`}
-                  >
-                    Curved Bezier
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateField('conveyorStyle', 'orthogonal')}
-                    className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
-                      settings.conveyorStyle === 'orthogonal'
-                        ? 'bg-amber-500 text-slate-950'
-                        : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
-                    }`}
-                  >
-                    90-Degree Circuit
-                  </button>
+                <div className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-mono font-bold whitespace-nowrap">
+                  90° Orthogonal
                 </div>
               </div>
 

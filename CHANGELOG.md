@@ -6,6 +6,15 @@ All notable changes for **FICSIT Node Labs** are documented below. Straight to t
 
 ## [0.0.10] — 2026-11-02 (`0.0.10 dev build`)
 
+### 📐 90° Orthogonal Belts & Overpass Bridges
+- **No Curved Belts**: Removed curved Bézier conveyor lines; all belts now route using clean, 90-degree orthogonal industrial circuits.
+- **Elevated Overpass Bridges**: Belts can cross over other belts; perpendicular conveyor crossings now render elevated steel bridge platforms with clearance pylons and caution markings.
+
+### 🚫 Strict No-Overlap Physics
+- **No Machine Overlap**: Buildings can no longer be placed on top of each other. Attempting to drop an existing building in collision reverts it immediately to its previous position with an error chime.
+- **Belts Cannot Go Over Nodes**: Conveyor paths automatically route around obstacle machines with clearance. Buildings cannot be placed directly across active conveyor lines.
+- **Hologram Collision Warning**: Build menu ghost preview turns red and displays `NO OVERLAP` when hovering over another machine or conveyor line.
+
 ### 📦 Android In-Place Updates & Keystore
 - **Permanent Signing Keystore**: Bound a permanent cryptographic key (`signing/app-release.keystore`) across all automated builds so Android allows in-place updates without uninstalling.
 - **Auto-Incremented Version Code**: Automated Android `versionCode` computation from `package.json` to prevent package conflicts on newer Android versions.

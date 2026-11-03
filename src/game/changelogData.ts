@@ -15,6 +15,33 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.16',
+    tag: '0.0.16 dev build',
+    date: '2026-11-03',
+    categories: [
+      {
+        category: '🎨 Sleek Conveyor Visuals & Multi-Angle Corner Arc Rotation',
+        items: [
+          {
+            title: 'Thin Precision Roller Slats & Directional Chevrons',
+            description:
+              'Replaced thick blocky dashed lines with precision 1.5px industrial roller slats and periodic 1.7px forward directional chevrons that cleanly fit within the conveyor roller bed.',
+          },
+          {
+            title: 'Continuous Corner Arc Radial Rotation',
+            description:
+              'Engineered circular fillet corner interpolation along 90-degree conveyor bends so moving lines and chevrons smoothly fan and rotate across multiple continuous radial angles instead of deforming into awkward squares.',
+          },
+          {
+            title: 'Smooth Item Packet Corner Navigation',
+            description:
+              'Synchronized in-flight physical resource item packets to travel along rounded corner arcs, eliminating abrupt right-angle snapping.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.15',
     tag: '0.0.15 dev build',
     date: '2026-11-03',

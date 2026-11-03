@@ -280,7 +280,7 @@ export const RECIPES: Record<string, RecipeDef> = {
     id: 'construct_iron_plate',
     name: 'Iron Plate',
     machineType: 'constructor',
-    cycleTimeSec: 3.0,
+    cycleTimeSec: 6.0,
     inputs: [{ itemId: 'iron_ingot', itemName: 'Iron Ingot', ratePerMin: 30 }],
     outputs: [{ itemId: 'iron_plate', itemName: 'Iron Plate', ratePerMin: 20 }],
   },

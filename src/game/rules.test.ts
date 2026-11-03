@@ -7,6 +7,7 @@ import {
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
+  computeFilletedConveyorPath,
   computeNodeSnapAlignment,
   computeOrthogonalConveyorPath,
   createConveyorConnection,
@@ -20,6 +21,7 @@ import {
   isMacroIconZoom,
   isNodePositionValid,
   parseSaveImport,
+  sampleFilletedPath,
   sampleOrthogonalPath,
   serializeSaveExport,
   snapToGrid,
@@ -28,6 +30,7 @@ import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from './rules';
+import { ConveyorConnection, MachineNode } from './types';
 import { APP_BUILD_TAG, APP_VERSION } from './version';
 
 test('snapToGrid snaps coordinates only when enabled', () => {
@@ -241,9 +244,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.15 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.15');
-  assert.equal(APP_BUILD_TAG, '0.0.15 dev build');
+test('version tracking matches 0.0.16 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.16');
+  assert.equal(APP_BUILD_TAG, '0.0.16 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -413,6 +416,48 @@ test('sampleOrthogonalPath accurately samples progress and tangent angle along 9
   const atEnd = sampleOrthogonalPath(polyline, 1.0);
   assert.equal(atEnd.x, 100);
   assert.equal(atEnd.y, 200);
+});
+
+test('computeFilletedConveyorPath and sampleFilletedPath provide smooth circular fillet arcs and multiple rotation angles around 90-degree corners', () => {
+  const polyline = [
+    { x: 0, y: 100 },
+    { x: 100, y: 100 }, // 100px east (angle = 0)
+    { x: 100, y: 200 }, // 100px south (angle = PI/2)
+  ];
+
+  const filleted = computeFilletedConveyorPath(polyline, 10);
+  assert.ok(filleted.segments.length >= 3, 'Expected line, arc, line segments');
+  assert.equal(filleted.segments[0].type, 'line');
+  assert.equal(filleted.segments[1].type, 'arc');
+  assert.equal(filleted.segments[2].type, 'line');
+
+  // Before corner: tangent angle is 0 rad (0 deg)
+  const beforeCorner = sampleFilletedPath(filleted, 50);
+  assert.ok(Math.abs(beforeCorner.angle) < 1e-4);
+
+  // Sample multiple distinct angles through the 90-degree corner arc
+  const arcStartDist = filleted.segments[0].length;
+  const arcLen = filleted.segments[1].length;
+
+  const sampleQuarter = sampleFilletedPath(filleted, arcStartDist + arcLen * 0.25);
+  const sampleHalf = sampleFilletedPath(filleted, arcStartDist + arcLen * 0.5);
+  const sampleThreeQuarter = sampleFilletedPath(filleted, arcStartDist + arcLen * 0.75);
+
+  // Quarter turn (~22.5 deg = ~0.3927 rad)
+  assert.ok(Math.abs(sampleQuarter.angle - Math.PI / 8) < 0.05);
+  // Half turn (45 deg = ~0.7854 rad)
+  assert.ok(Math.abs(sampleHalf.angle - Math.PI / 4) < 0.05);
+  // Three quarter turn (~67.5 deg = ~1.178 rad)
+  assert.ok(Math.abs(sampleThreeQuarter.angle - (3 * Math.PI) / 8) < 0.05);
+
+  // All three intermediate rotation angles are strictly increasing and distinct!
+  assert.ok(sampleQuarter.angle < sampleHalf.angle);
+  assert.ok(sampleHalf.angle < sampleThreeQuarter.angle);
+  assert.ok(sampleThreeQuarter.angle < Math.PI / 2);
+
+  // After corner: tangent angle is strictly PI/2 (90 deg)
+  const afterCorner = sampleFilletedPath(filleted, filleted.totalLength - 10);
+  assert.ok(Math.abs(afterCorner.angle - Math.PI / 2) < 1e-4);
 });
 
 test('findConveyorCrossings detects perpendicular crossings for elevated overpass rendering', () => {
@@ -587,5 +632,183 @@ test('computeNodeSnapAlignment magnetically snaps to connected ports, nearby por
   );
   assert.equal(snapDisabled.guidelines.length, 0);
 });
+
+test('nodes maintain both input and output storages and belt items visually get stuck and wait when destination input storage is full', () => {
+  const deposit = createMachineNode('resource_deposit', 240, 2000, 'dep_iron', 'deposit_iron', {
+    purity: 'normal',
+  });
+  const miner = createMachineNode('miner_mk1', 648, 2000, 'miner_1', 'mine_iron');
+  const smelter = createMachineNode('smelter', 1056, 2000, 'smelter_1', 'smelt_iron');
+  const assembler = createMachineNode(
+    'assembler',
+    1464,
+    2000,
+    'assembler_1',
+    'assemble_reinforced_plate'
+  );
+
+  // Verify both input and output storage capacities on nodes
+  assert.equal(miner.inputs[0].maxBuffer, 100);
+  assert.equal(miner.outputs[0].maxBuffer, 100);
+  assert.equal(miner.maxInputStoredCount, 100);
+  assert.equal(miner.maxStoredCount, 100);
+
+  assert.equal(smelter.inputs[0].maxBuffer, 100);
+  assert.equal(smelter.outputs[0].maxBuffer, 100);
+  assert.equal(smelter.maxInputStoredCount, 100);
+  assert.equal(smelter.maxStoredCount, 100);
+
+  // Assembler has 2 inputs: Iron Plate (200) + Screws (500) = 700 total input storage, and 1 output: Reinforced Plate (100)
+  assert.equal(assembler.inputs[0].maxBuffer, 200);
+  assert.equal(assembler.inputs[1].maxBuffer, 500);
+  assert.equal(assembler.maxInputStoredCount, 700);
+  assert.equal(assembler.maxStoredCount, 100);
+
+  const connDepToMiner = createConveyorConnection(
+    deposit.id,
+    deposit.outputs[0].id,
+    miner.id,
+    miner.inputs[0].id,
+    1,
+    'conn_dep_miner'
+  );
+  const connMinerToSmelter = createConveyorConnection(
+    miner.id,
+    miner.outputs[0].id,
+    smelter.id,
+    smelter.inputs[0].id,
+    1,
+    'conn_miner_smelter'
+  );
+
+  // Set Smelter's Output Storage (100/100) and Input Storage (100/100) to FULL (no output belt connected)
+  smelter.storedCount = 100;
+  smelter.outputs[0].bufferedCount = 100;
+  smelter.inputs[0].bufferedCount = 100;
+  smelter.inputStoredCount = 100;
+
+  let simNodes: MachineNode[] = [deposit, miner, smelter];
+  let simConns: ConveyorConnection[] = [
+    { ...connDepToMiner, firstItemArrived: true, inFlightItems: undefined },
+    { ...connMinerToSmelter, firstItemArrived: true, inFlightItems: undefined },
+  ];
+
+  // Step simulation so items on the belt between Miner and Smelter hit the full Smelter input port and queue up
+  for (let i = 0; i < 15; i++) {
+    const res = stepSimulation(simNodes, simConns, 1.0);
+    simNodes = res.nodes;
+    simConns = res.connections;
+  }
+
+  const stalledBelt = simConns.find((c) => c.id === 'conn_miner_smelter')!;
+  const beltLen = stalledBelt.lengthPx!;
+  const beltItems = stalledBelt.inFlightItems!;
+
+  // Verify the belt is marked backed up, delivered rate is 0, and items did NOT vanish — they are queued on the belt!
+  assert.equal(stalledBelt.isBackedUp, true);
+  assert.equal(stalledBelt.ratePerMin, 0);
+  assert.ok(beltItems.length >= 6, `Expected items to remain queued on belt, got ${beltItems.length}`);
+
+  // Leading item is stopped right at the destination input port (distancePx === beltLen) and marked stalled
+  assert.equal(beltItems[0].distancePx, beltLen);
+  assert.equal(beltItems[0].stalled, true);
+
+  // Second and third items are queued tightly behind it at 18px (1.2m) intervals and marked stalled
+  assert.equal(beltItems[1].distancePx, beltLen - 18);
+  assert.equal(beltItems[1].stalled, true);
+  assert.equal(beltItems[2].distancePx, beltLen - 36);
+  assert.equal(beltItems[2].stalled, true);
+
+  // Step another 1 second while Smelter input storage is still full: stuck items must NOT move at all!
+  const snapshotDistances = beltItems.map((p) => p.distancePx);
+  const frozenStep = stepSimulation(simNodes, simConns, 1.0);
+  const frozenBelt = frozenStep.connections.find((c) => c.id === 'conn_miner_smelter')!;
+  assert.deepEqual(
+    frozenBelt.inFlightItems!.slice(0, 4).map((p) => p.distancePx),
+    snapshotDistances.slice(0, 4),
+    'Stuck items on belt must not move while destination input storage is full'
+  );
+
+  // Also verify that because the belt backed up all the way to the Miner's output port, the Miner's Output Storage started filling up!
+  const minerAfterBackup = frozenStep.nodes.find((n) => n.id === miner.id)!;
+  assert.ok(
+    minerAfterBackup.storedCount > 0,
+    `Expected Miner output storage to accumulate items once outgoing belt is jammed, got ${minerAfterBackup.storedCount}`
+  );
+
+  // Now free space in the Smelter's Input & Output Storage (e.g. player flushes storage or drains output)
+  simNodes = frozenStep.nodes.map((n) =>
+    n.id === smelter.id
+      ? {
+          ...n,
+          storedCount: 0,
+          inputStoredCount: 0,
+          inputs: n.inputs.map((p) => ({ ...p, bufferedCount: 0 })),
+          outputs: n.outputs.map((p) => ({ ...p, bufferedCount: 0 })),
+        }
+      : n
+  );
+  simConns = frozenStep.connections;
+
+  // Step 0.5 seconds: the waiting front item enters the Smelter (+1 discrete item) and queued items on the belt immediately resume moving!
+  const resumedStep = stepSimulation(simNodes, simConns, 0.5);
+  const resumedBelt = resumedStep.connections.find((c) => c.id === 'conn_miner_smelter')!;
+  const resumedSmelter = resumedStep.nodes.find((n) => n.id === smelter.id)!;
+  assert.equal(resumedBelt.isBackedUp, false);
+  assert.equal(resumedBelt.ratePerMin, 60);
+  assert.equal(resumedBelt.inFlightItems![0].stalled, false);
+  assert.ok(
+    (resumedSmelter.inputs[0]?.bufferedCount ?? 0) >= 1,
+    'Arriving belt item must increment destination input storage as a real discrete resource'
+  );
+
+  // Case B: Smelter Input Storage is 100/100 while Output Storage is 0/100 (actively smelting 1 ore every 2.0s)
+  // During the 2.0s smelting cycle while IN is 100/100, arriving belt items CANNOT enter and must line up and wait!
+  simNodes = resumedStep.nodes.map((n) =>
+    n.id === smelter.id
+      ? {
+          ...n,
+          progress: 0,
+          storedCount: 0,
+          inputStoredCount: 100,
+          inputs: n.inputs.map((p) => ({ ...p, bufferedCount: 100 })),
+          outputs: n.outputs.map((p) => ({ ...p, bufferedCount: 0 })),
+        }
+      : n
+  );
+  simConns = resumedStep.connections;
+
+  // Step 1.5 seconds (1.0s + 0.5s; Smelter cycle is 2.0s, so at 1.5s progress = 0.75 and 0 items have been consumed yet -> IN is still 100/100!)
+  const step1s = stepSimulation(simNodes, simConns, 1.0);
+  const midCycleStep = stepSimulation(step1s.nodes, step1s.connections, 0.5);
+  const midCycleSmelter = midCycleStep.nodes.find((n) => n.id === smelter.id)!;
+  const midCycleBelt = midCycleStep.connections.find((c) => c.id === 'conn_miner_smelter')!;
+  assert.equal(
+    midCycleSmelter.inputs[0].bufferedCount,
+    100,
+    'Smelter input storage must remain an exact integer 100/100 during its 2.0s crafting cycle'
+  );
+  assert.equal(midCycleBelt.inFlightItems![0].distancePx, beltLen);
+  assert.equal(midCycleBelt.inFlightItems![0].stalled, true);
+  assert.equal(midCycleBelt.inFlightItems![1].distancePx, beltLen - 18);
+  assert.equal(midCycleBelt.inFlightItems![1].stalled, true);
+
+  // Step another 0.6 seconds (total 2.1s > 2.0s cycle): Smelter finishes 1 cycle (consuming 1 ore: 100 -> 99, producing 1 ingot: 0 -> 1),
+  // and 1 waiting item from the front of the belt steps into that 1 free spot (99 -> 100)!
+  const postCycleStep = stepSimulation(midCycleStep.nodes, midCycleStep.connections, 0.6);
+  const postCycleSmelter = postCycleStep.nodes.find((n) => n.id === smelter.id)!;
+  assert.equal(
+    postCycleSmelter.storedCount,
+    1,
+    'Expected Smelter to produce 1 discrete Iron Ingot after completing 2.0s cycle'
+  );
+  assert.equal(
+    postCycleSmelter.inputs[0].bufferedCount,
+    100,
+    'Expected 1 waiting belt item to enter the 99/100 free spot and bring input storage back to 100/100'
+  );
+});
+
+
 
 

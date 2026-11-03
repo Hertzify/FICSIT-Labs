@@ -12,8 +12,10 @@ import {
 import {
   CachedConveyorRoute,
   clampNodeToWorld,
+  computeFilletedConveyorPath,
   computeNodeSnapAlignment,
   computeOrthogonalConveyorPath,
+  ConveyorCrossing,
   doesPathIntersectNode,
   findConveyorCrossings,
   getBeltTierDef,
@@ -21,6 +23,7 @@ import {
   getPortWorldPosition,
   isMacroIconZoom,
   isNodePositionValid,
+  sampleFilletedPath,
   sampleOrthogonalPath,
   SnapGuideline,
   WORLD_HEIGHT,
@@ -71,7 +74,7 @@ export interface CanvasRenderParams {
 export const VIEWPORT_CULL_MARGIN_PX = 240;
 
 let cachedCrossingsSignature = '';
-let cachedCrossingsResult: { x: number; y: number; topConnId: string }[] = [];
+let cachedCrossingsResult: ConveyorCrossing[] = [];
 
 const TOPOGRAPHIC_RIDGE_CENTERS = [
   { x: 2300, y: 1100, rx: 620, ry: 420 },
@@ -413,7 +416,8 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
     const enteringRate = conn.sourceRatePerMin ?? conn.ratePerMin;
     const packets = conn.inFlightItems ?? [];
-    const visiblePackets = packets.filter((p) => p.distancePx <= polyLen);
+    const maxBeltDist = Math.max(polyLen, conn.lengthPx ?? polyLen);
+    const visiblePackets = packets.filter((p) => p.distancePx <= maxBeltDist + 1);
     const leadingDist =
       visiblePackets.length > 0
         ? Math.max(...visiblePackets.map((p) => p.distancePx))
@@ -426,9 +430,14 @@ export function renderFactoryScene(params: CanvasRenderParams) {
           )
         : 18;
     const hasLiveFrontGap =
-      visiblePackets.length > 0 && polyLen - leadingDist > estSpacing + 6;
+      visiblePackets.length > 0 && maxBeltDist - leadingDist > estSpacing + 6;
+    const isBackedUp = Boolean(conn.isBackedUp && !hasLiveFrontGap);
+    const allItemsStalled =
+      visiblePackets.length > 0 && visiblePackets.every((p) => p.stalled);
+    const hasMovingItems = visiblePackets.some((p) => !p.stalled);
     const isInTransit =
       (!conn.firstItemArrived || hasLiveFrontGap) &&
+      !isBackedUp &&
       (enteringRate > 0 || visiblePackets.length > 0);
     const isFlowing = conn.ratePerMin > 0 && !isInTransit;
     const itemColor = getItemAccentColor(conn.itemName);
@@ -449,17 +458,67 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    // Moving Conveyor Roller Slats synchronized to exact belt m/s speed (tierDef.speedPxPerSec)
-    if (!macroMode && (isFlowing || isInTransit)) {
+    const filleted = route.filletedPath ?? computeFilletedConveyorPath(pts);
+
+    // Moving Conveyor Roller Slats & Directional Chevrons
+    // Thin precision slats and periodic chevrons that rotate smoothly around corner arcs (pauses when backpressured)
+    if (!macroMode && !allItemsStalled && (isFlowing || isInTransit || hasMovingItems)) {
+      const totalLen = filleted.totalLength;
+      const slatSpacing = 11; // 11px pitch gives dense, sleek industrial roller track
+      const speed = tierDef.speedPxPerSec;
+      const offset = (elapsedTime * speed) % slatSpacing;
+      const endDist = Math.max(0, totalLen - 4);
+      const slatHalfWidth = 4.2; // spans 8.4px inside the 12.5px inner roller bed
+
       ctx.save();
-      drawPolyline(pts);
-      ctx.strokeStyle = tierDef.tier >= 2 ? `${tierDef.accentColor}44` : '#1E293B';
-      ctx.lineWidth = 10;
-      ctx.lineCap = 'butt';
-      ctx.lineJoin = 'miter';
-      ctx.setLineDash([3, 6]);
-      ctx.lineDashOffset = -(elapsedTime * tierDef.speedPxPerSec);
-      ctx.stroke();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for (let dist = offset; dist <= endDist; dist += slatSpacing) {
+        if (dist < 4) continue;
+        const sample = sampleFilletedPath(filleted, dist);
+        const { x, y, angle } = sample;
+
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const nx = -sinA;
+        const ny = cosA;
+
+        const slatIdx = Math.round(dist / slatSpacing);
+        const isChevron = slatIdx % 4 === 0;
+
+        if (isChevron) {
+          // Sleek forward directional chevron: pointer tip forward by 1.8px
+          const tipX = x + cosA * 2.0;
+          const tipY = y + sinA * 2.0;
+          const leftX = x - nx * slatHalfWidth;
+          const leftY = y - ny * slatHalfWidth;
+          const rightX = x + nx * slatHalfWidth;
+          const rightY = y + ny * slatHalfWidth;
+
+          ctx.strokeStyle = tierDef.tier >= 2 ? tierDef.accentColor : '#94A3B8';
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.moveTo(leftX, leftY);
+          ctx.lineTo(tipX, tipY);
+          ctx.lineTo(rightX, rightY);
+          ctx.stroke();
+        } else {
+          // Thin precision roller slat perpendicular to belt
+          const x1 = x - nx * slatHalfWidth;
+          const y1 = y - ny * slatHalfWidth;
+          const x2 = x + nx * slatHalfWidth;
+          const y2 = y + ny * slatHalfWidth;
+
+          ctx.strokeStyle =
+            tierDef.tier >= 2 ? `${tierDef.accentColor}77` : '#334155';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     }
 
@@ -475,23 +534,23 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    // Render Physical Resource Items Traveling Along the Belt (`conn.inFlightItems`)
+    // Render Physical Discrete Resource Items Traveling or Lined Up Along the Belt (`conn.inFlightItems`)
     if (!macroMode && cam.zoom >= 0.35 && packets.length > 0) {
       const itemImg = getCanvasItemImage(conn.itemName);
       if (itemImg) {
+        const curPathLen = filleted.totalLength;
         // Draw from source (back) to destination (front) so leading items layer cleanly
         for (let i = packets.length - 1; i >= 0; i--) {
           const pkt = packets[i];
-          if (pkt.distancePx > polyLen) continue;
-          const portMarginPx = Math.min(9, polyLen * 0.12);
+          if (pkt.distancePx > maxBeltDist + 1) continue;
+          const portMarginPx = Math.min(8, curPathLen * 0.1);
+          const normDist = Math.max(0, Math.min(1, pkt.distancePx / maxBeltDist));
           const clampedDist =
             portMarginPx +
-            (Math.max(0, Math.min(polyLen, pkt.distancePx)) / polyLen) *
-              Math.max(1, polyLen - portMarginPx * 2);
-          const t = Math.max(0, Math.min(1, clampedDist / polyLen));
-          const sample = sampleOrthogonalPath(pts, t);
+            normDist * Math.max(1, curPathLen - portMarginPx * 2);
+          const sample = sampleFilletedPath(filleted, clampedDist);
 
-          const boxSize = 15.5;
+          const boxSize = 14.8;
           const half = boxSize * 0.5;
           ctx.save();
           ctx.translate(sample.x, sample.y);
@@ -501,7 +560,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
           ctx.strokeStyle = tierDef.tier >= 2 ? tierDef.accentColor : itemColor;
           ctx.lineWidth = 1.3;
           ctx.stroke();
-          ctx.drawImage(itemImg, -6.8, -6.8, 13.6, 13.6);
+          ctx.drawImage(itemImg, -6.5, -6.5, 13, 13);
           ctx.restore();
         }
       }
@@ -883,59 +942,107 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         ctx.fill();
       }
     } else {
-      // 1. STORAGE CAPACITY BAR (Fills 0% -> 100% with Stored / Max item count)
+      // 1. DUAL INPUT & OUTPUT STORAGE BARS (IN on Left under Input Ports, OUT on Right under Output Ports)
       const storageBarY = node.y + node.height - 30;
       const storageBarH = 11;
-      const storedRatio =
-        maxCap > 0 ? Math.max(0, Math.min(1, (node.storedCount ?? 0) / maxCap)) : 0;
-      const isFull = storedRatio >= 0.995;
+      const halfBarW = (barW - 6) * 0.5;
 
-      drawRoundedRect(ctx, barX, storageBarY, barW, storageBarH, 4);
+      const inMax = Math.max(
+        1,
+        node.maxInputStoredCount ??
+          node.inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0)
+      );
+      const inRaw =
+        node.inputStoredCount ??
+        node.inputs.reduce((acc, p) => acc + (p.bufferedCount ?? 0), 0);
+      const inInt = Math.min(inMax, Math.floor(inRaw));
+      const inRatio = Math.max(0, Math.min(1, inRaw / inMax));
+      const isInFull =
+        node.inputs.length > 0 &&
+        node.inputs.some((p) => (p.bufferedCount ?? 0) >= (p.maxBuffer ?? 100) - 0.5);
+
+      const outMax = Math.max(1, maxCap);
+      const outRaw = node.storedCount ?? 0;
+      const outInt = storedInt;
+      const outRatio = Math.max(0, Math.min(1, outRaw / outMax));
+      const isOutFull = outRatio >= 0.995;
+
+      // Left Bar: Input Storage (IN)
+      drawRoundedRect(ctx, barX, storageBarY, halfBarW, storageBarH, 4);
       ctx.fillStyle = '#0B0F17';
       ctx.fill();
-      ctx.strokeStyle = isFull ? '#F59E0B' : '#1E293B';
+      ctx.strokeStyle = isInFull ? '#F59E0B' : '#1E293B';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      if (storedRatio > 0.005) {
+      if (inRatio > 0.005) {
         drawRoundedRect(
           ctx,
           barX,
           storageBarY,
-          Math.max(6, barW * storedRatio),
+          Math.max(5, halfBarW * inRatio),
           storageBarH,
           4
         );
-        ctx.fillStyle = isFull ? '#D97706' : '#0D9488';
+        ctx.fillStyle = isInFull ? '#D97706' : '#0891B2';
         ctx.fill();
       }
 
+      ctx.font = '700 8px "JetBrains Mono", monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isInFull ? '#FDE68A' : '#67E8F9';
+      ctx.fillText('IN', barX + 4, storageBarY + storageBarH * 0.5 + 0.5);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isInFull ? '#FDE68A' : '#F8FAFC';
+      ctx.fillText(
+        `${inInt}/${inMax}`,
+        barX + halfBarW - 4,
+        storageBarY + storageBarH * 0.5 + 0.5
+      );
+
+      // Right Bar: Output Storage (OUT)
+      const outBarX = barX + halfBarW + 6;
+      drawRoundedRect(ctx, outBarX, storageBarY, halfBarW, storageBarH, 4);
+      ctx.fillStyle = '#0B0F17';
+      ctx.fill();
+      ctx.strokeStyle = isOutFull ? '#F59E0B' : '#1E293B';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      if (outRatio > 0.005) {
+        drawRoundedRect(
+          ctx,
+          outBarX,
+          storageBarY,
+          Math.max(5, halfBarW * outRatio),
+          storageBarH,
+          4
+        );
+        ctx.fillStyle = isOutFull ? '#D97706' : '#0D9488';
+        ctx.fill();
+      }
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isOutFull ? '#FDE68A' : '#5EEAD4';
+      ctx.fillText('OUT', outBarX + 4, storageBarY + storageBarH * 0.5 + 0.5);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isOutFull ? '#FDE68A' : '#F8FAFC';
+      ctx.fillText(
+        `${outInt}/${outMax}`,
+        outBarX + halfBarW - 4,
+        storageBarY + storageBarH * 0.5 + 0.5
+      );
+
+      // 2. CRAFTING / EXTRACTION CYCLE PROGRESS BAR (Below Storage Bars)
+      const cycleBarY = node.y + node.height - 14;
+      const cycleBarH = 6;
       const isContainer =
         node.buildingId === 'storage_container' || node.buildingId === 'the_hub';
       const isLogistics =
         node.buildingId === 'splitter' || node.buildingId === 'merger';
-      const leftLabel = isContainer
-        ? '24 SLOTS'
-        : isLogistics
-        ? 'BUFFER'
-        : 'STORAGE';
-      const rightLabel = isLogistics
-        ? `0 / ${maxCap}`
-        : `${storedInt} / ${maxCap}${isFull ? ' FULL' : ''}`;
-
-      ctx.font = '700 8.5px "JetBrains Mono", monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#CBD5E1';
-      ctx.fillText(leftLabel, barX + 5, storageBarY + storageBarH * 0.5 + 0.5);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = isFull ? '#FDE68A' : '#F8FAFC';
-      ctx.fillText(rightLabel, barX + barW - 5, storageBarY + storageBarH * 0.5 + 0.5);
-
-      // 2. CRAFTING / EXTRACTION CYCLE PROGRESS BAR (Below Storage Bar)
-      const cycleBarY = node.y + node.height - 14;
-      const cycleBarH = 6;
 
       drawRoundedRect(ctx, barX, cycleBarY, barW, cycleBarH, 3);
       ctx.fillStyle = '#0B0F17';
@@ -970,19 +1077,24 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       const port = node.inputs[i];
       const pt = getPortWorldPosition(node, 'input', i, node.inputs.length);
       const isConnected = connectedInputPortKeys.has(`${node.id}:${port.id}`);
+      const isPortFull = (port.bufferedCount ?? 0) >= (port.maxBuffer ?? 100) - 0.5;
       const portImg = getCanvasItemImage(port.itemName ?? port.label);
 
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 7.5, 0, Math.PI * 2);
-      ctx.fillStyle = isConnected ? '#06B6D4' : '#0B0F17';
+      ctx.fillStyle = isPortFull
+        ? '#D97706'
+        : isConnected
+        ? '#06B6D4'
+        : '#0B0F17';
       ctx.fill();
-      ctx.strokeStyle = '#38BDF8';
+      ctx.strokeStyle = isPortFull ? '#FBBF24' : '#38BDF8';
       ctx.lineWidth = 2;
       ctx.stroke();
 
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = isConnected ? '#FFFFFF' : '#38BDF8';
+      ctx.fillStyle = isConnected || isPortFull ? '#FFFFFF' : '#38BDF8';
       ctx.fill();
 
       let textOffsetX = pt.x + 12;
@@ -999,7 +1111,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         ctx.fillText(port.label, textOffsetX, pt.y - 6);
 
         ctx.font = '600 9.5px "JetBrains Mono", monospace';
-        ctx.fillStyle = '#38BDF8';
+        ctx.fillStyle = isPortFull ? '#FBBF24' : '#38BDF8';
         ctx.fillText(
           `${port.actualRatePerMin}/${port.targetRatePerMin}/m`,
           textOffsetX,
@@ -1080,7 +1192,8 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       const enteringRate = conn.sourceRatePerMin ?? conn.ratePerMin;
       const packets = conn.inFlightItems ?? [];
       const lengthPx = Math.max(36, conn.lengthPx ?? route.lengthPx);
-      const visiblePackets = packets.filter((p) => p.distancePx <= polyLen);
+      const maxBeltDist = Math.max(polyLen, lengthPx);
+      const visiblePackets = packets.filter((p) => p.distancePx <= maxBeltDist + 1);
       const leadingDist =
         visiblePackets.length > 0
           ? Math.max(...visiblePackets.map((p) => p.distancePx))
@@ -1094,18 +1207,22 @@ export function renderFactoryScene(params: CanvasRenderParams) {
             )
           : 18;
       const hasLiveFrontGap =
-        visiblePackets.length > 0 && polyLen - leadingDist > estSpacing + 6;
+        visiblePackets.length > 0 && maxBeltDist - leadingDist > estSpacing + 6;
+      const isBackedUp = Boolean(conn.isBackedUp && !hasLiveFrontGap);
       const isInTransit =
         (!conn.firstItemArrived || hasLiveFrontGap) &&
+        !isBackedUp &&
         (enteringRate > 0 || visiblePackets.length > 0);
       const isFlowing = conn.ratePerMin > 0 && !isInTransit;
       const itemColor = getItemAccentColor(conn.itemName);
 
       const transitPct = Math.min(
         99,
-        Math.round((leadingDist / Math.max(lengthPx, polyLen)) * 100)
+        Math.round((leadingDist / maxBeltDist) * 100)
       );
-      const badgeText = isInTransit
+      const badgeText = isBackedUp && conn.ratePerMin === 0
+        ? `${tierDef.shortLabel} · STALLED (FULL)`
+        : isInTransit
         ? `${tierDef.shortLabel} · Transit ${transitPct}%`
         : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}`;
 
@@ -1151,7 +1268,9 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       drawRoundedRect(ctx, badgeX - tw / 2, badgeY - badgeH / 2, tw, badgeH, 4);
       ctx.fillStyle = '#0F172A';
       ctx.fill();
-      ctx.strokeStyle = isInTransit
+      ctx.strokeStyle = isBackedUp
+        ? '#F59E0B'
+        : isInTransit
         ? '#38BDF8'
         : tierDef.tier >= 2
         ? tierDef.accentColor
@@ -1165,7 +1284,9 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         ctx.drawImage(beltImg, badgeX - tw / 2 + 3.5, badgeY - 6, 12, 12);
       }
 
-      ctx.fillStyle = isInTransit
+      ctx.fillStyle = isBackedUp
+        ? '#FBBF24'
+        : isInTransit
         ? '#38BDF8'
         : isFlowing
         ? '#F8FAFC'

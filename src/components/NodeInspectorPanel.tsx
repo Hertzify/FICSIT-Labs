@@ -23,6 +23,8 @@ interface NodeInspectorPanelProps {
   onClose: () => void;
   onSelectRecipe: (recipeId: string) => void;
   onFlushBuffer: () => void;
+  onFillInputBuffer?: () => void;
+  onFillOutputBuffer?: () => void;
   onUpgradeConnectedBelts: (tier: ConveyorBeltTier, shortLabel: string, capacityPerMin: number) => void;
   onUnwireBelts: () => void;
   onDismantleNode: () => void;
@@ -36,6 +38,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
     onClose,
     onSelectRecipe,
     onFlushBuffer,
+    onFillInputBuffer,
+    onFillOutputBuffer,
     onUpgradeConnectedBelts,
     onUnwireBelts,
     onDismantleNode,
@@ -175,68 +179,111 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
           )
         )}
 
-        {/* Satisfactory Internal Building Storage & Input/Output Buffers */}
+        {/* Satisfactory Internal Input & Output Storages */}
         {!isWorldDeposit && (
           <div className="mt-2 pt-2 border-t border-[#26334D] space-y-1.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-1">
               <span className="text-[11px] font-medium text-slate-300">
-                Internal Part Storage
+                Input & Output Storage
               </span>
-              {(node.storedCount > 0.5 ||
-                node.inputs.some((p) => (p.bufferedCount ?? 0) > 0.5)) && (
-                <button
-                  type="button"
-                  onClick={onFlushBuffer}
-                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-amber-300 border border-amber-500/30"
-                >
-                  Flush Buffer
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {onFillInputBuffer && node.inputs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onFillInputBuffer}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-cyan-300 border border-cyan-500/30"
+                    title="Fill input storage to 100%"
+                  >
+                    Fill In
+                  </button>
+                )}
+                {onFillOutputBuffer && (
+                  <button
+                    type="button"
+                    onClick={onFillOutputBuffer}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-teal-300 border border-teal-500/30"
+                    title="Fill output storage to 100%"
+                  >
+                    Fill Out
+                  </button>
+                )}
+                {(node.storedCount > 0.5 ||
+                  node.inputs.some((p) => (p.bufferedCount ?? 0) > 0.5)) && (
+                  <button
+                    type="button"
+                    onClick={onFlushBuffer}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-amber-300 border border-amber-500/30"
+                  >
+                    Flush
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Input Slot Buffers (1 Stack per Input Port on Production Machines) */}
-            {node.recipeId &&
-              node.inputs.map((inPort) => {
-                const maxBuf =
-                  inPort.maxBuffer ?? getItemStackSize(inPort.itemName ?? inPort.label);
-                const curBuf = Math.min(maxBuf, Math.floor(inPort.bufferedCount ?? 0));
-                const pct = maxBuf > 0 ? Math.min(100, Math.round((curBuf / maxBuf) * 100)) : 0;
-                const itemIcon = getItemIconUrl(inPort.itemName ?? inPort.label);
-                return (
-                  <div
-                    key={inPort.id}
-                    className="p-2 rounded-lg bg-[#0B0F17] border border-[#26334D] space-y-1"
-                  >
-                    <div className="flex items-center justify-between text-[10px] font-mono">
-                      <span className="flex items-center gap-1.5 text-cyan-300 truncate">
-                        {itemIcon && (
-                          <img
-                            src={itemIcon}
-                            alt={inPort.label}
-                            className="w-3.5 h-3.5 object-contain shrink-0"
-                          />
-                        )}
-                        <span className="truncate">In: {inPort.label}</span>
+            {/* Input Storage Slots (Shown for all nodes with inputs) */}
+            {node.inputs.map((inPort) => {
+              const isLogistics =
+                node.buildingId === 'splitter' || node.buildingId === 'merger';
+              const maxBuf =
+                inPort.maxBuffer ??
+                (isLogistics
+                  ? getBuildingMaxStorage(node.buildingId, null, null)
+                  : getItemStackSize(inPort.itemName ?? inPort.label));
+              const curBuf = Math.min(maxBuf, Math.floor(inPort.bufferedCount ?? 0));
+              const pct =
+                maxBuf > 0 ? Math.min(100, Math.round((curBuf / maxBuf) * 100)) : 0;
+              const isInputFull = curBuf >= maxBuf && maxBuf > 0;
+              const itemIcon = getItemIconUrl(inPort.itemName ?? inPort.label);
+              const capLabel = isInputFull
+                ? 'FULL · BELT WAITS'
+                : isLogistics
+                ? 'Buffer'
+                : '1 Stack';
+              return (
+                <div
+                  key={inPort.id}
+                  className="p-2 rounded-lg bg-[#0B0F17] border border-[#26334D] space-y-1"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-mono gap-1">
+                    <span className="flex items-center gap-1.5 text-cyan-300 truncate">
+                      {itemIcon && (
+                        <img
+                          src={itemIcon}
+                          alt={inPort.label}
+                          className="w-3.5 h-3.5 object-contain shrink-0"
+                        />
+                      )}
+                      <span className="truncate">
+                        In Storage: {inPort.itemName ?? inPort.label}
                       </span>
-                      <span className="text-slate-200 font-semibold shrink-0">
-                        {curBuf} / {maxBuf} (1 Stack)
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-400 transition-all duration-150"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                    </span>
+                    <span
+                      className={`font-semibold shrink-0 ${
+                        isInputFull ? 'text-amber-400' : 'text-slate-200'
+                      }`}
+                    >
+                      {curBuf} / {maxBuf} ({capLabel})
+                    </span>
                   </div>
-                );
-              })}
+                  <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-150 ${
+                        isInputFull ? 'bg-amber-500' : 'bg-cyan-400'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
 
-            {/* Output Slot / 24-Slot Container Buffer */}
+            {/* Output Storage Slot / 24-Slot Container Storage */}
             {(() => {
               const isContainer =
                 node.buildingId === 'storage_container' ||
                 node.buildingId === 'the_hub';
+              const isLogistics =
+                node.buildingId === 'splitter' || node.buildingId === 'merger';
               const activeItemName =
                 node.outputs[0]?.itemName ??
                 node.inputs.find((p) => p.itemName)?.itemName ??
@@ -256,13 +303,17 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                 maxCap > 0 ? Math.min(100, Math.round((curStored / maxCap) * 100)) : 0;
               const isFull = curStored >= maxCap && maxCap > 0;
               const itemIcon = getItemIconUrl(activeItemName);
-              const slotLabel = isContainer
+              const slotLabel = isFull
+                ? 'FULL'
+                : isContainer
                 ? `${STORAGE_CONTAINER_SLOTS} Slots`
+                : isLogistics
+                ? 'Buffer'
                 : '1 Stack';
 
               return (
                 <div className="p-2 rounded-lg bg-[#0B0F17] border border-[#26334D] space-y-1">
-                  <div className="flex items-center justify-between text-[10px] font-mono">
+                  <div className="flex items-center justify-between text-[10px] font-mono gap-1">
                     <span className="flex items-center gap-1.5 text-amber-300 truncate">
                       {itemIcon && (
                         <img
@@ -272,7 +323,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                         />
                       )}
                       <span className="truncate">
-                        {isContainer ? 'Container' : 'Out'}: {activeItemName}
+                        Out Storage: {activeItemName}
                       </span>
                     </span>
                     <span

@@ -1018,6 +1018,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
               if (n.id !== selectedNodeSnapshot.id) return n;
               return {
                 ...n,
+                inputStoredCount: 0,
                 storedCount: 0,
                 inputs: n.inputs.map((p) => ({ ...p, bufferedCount: 0 })),
                 outputs: n.outputs.map((p) => ({ ...p, bufferedCount: 0 })),
@@ -1028,7 +1029,62 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             setSelectedNodeSnapshot(updated ? { ...updated } : null);
             playSynthSfx('click', settings);
             onGraphMutated();
-            showToast('Flushed internal building buffers');
+            showToast('Flushed internal input & output storages');
+            drawNowRef.current?.();
+          }}
+          onFillInputBuffer={() => {
+            nodesRef.current = nodesRef.current.map((n) => {
+              if (n.id !== selectedNodeSnapshot.id) return n;
+              const isPassThrough =
+                n.buildingId === 'storage_container' ||
+                n.buildingId === 'the_hub' ||
+                n.buildingId === 'splitter' ||
+                n.buildingId === 'merger';
+              const maxOut = n.maxStoredCount ?? 100;
+              const filledInputs = n.inputs.map((p) => {
+                const pMax = p.maxBuffer ?? 100;
+                return { ...p, bufferedCount: pMax };
+              });
+              const totalIn = filledInputs.reduce(
+                (acc, p) => acc + (p.bufferedCount ?? 0),
+                0
+              );
+              return {
+                ...n,
+                progress: 0,
+                inputStoredCount: totalIn,
+                storedCount: isPassThrough ? maxOut : n.storedCount,
+                inputs: filledInputs,
+                outputs: isPassThrough
+                  ? n.outputs.map((p) => ({ ...p, bufferedCount: maxOut }))
+                  : n.outputs,
+              };
+            });
+            const updated =
+              nodesRef.current.find((n) => n.id === selectedNodeSnapshot.id) ?? null;
+            setSelectedNodeSnapshot(updated ? { ...updated } : null);
+            playSynthSfx('click', settings);
+            onGraphMutated();
+            showToast('Filled node input storage to 100%');
+            drawNowRef.current?.();
+          }}
+          onFillOutputBuffer={() => {
+            nodesRef.current = nodesRef.current.map((n) => {
+              if (n.id !== selectedNodeSnapshot.id) return n;
+              const maxOut = n.maxStoredCount ?? 100;
+              return {
+                ...n,
+                progress: 0,
+                storedCount: maxOut,
+                outputs: n.outputs.map((p) => ({ ...p, bufferedCount: maxOut })),
+              };
+            });
+            const updated =
+              nodesRef.current.find((n) => n.id === selectedNodeSnapshot.id) ?? null;
+            setSelectedNodeSnapshot(updated ? { ...updated } : null);
+            playSynthSfx('click', settings);
+            onGraphMutated();
+            showToast('Filled node output storage to 100%');
             drawNowRef.current?.();
           }}
           onUpgradeConnectedBelts={(tier, shortLabel, capacityPerMin) => {

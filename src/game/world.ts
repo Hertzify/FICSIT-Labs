@@ -86,10 +86,13 @@ export function buildNodePorts(
   const recipe = recipeId ? RECIPES[recipeId] : null;
   const purityRate = purity ? PURITY_CONFIG[purity].ratePerMin : null;
 
+  const isLogistics = buildingId === 'splitter' || buildingId === 'merger';
   const inputs: PortSocket[] = [];
   for (let i = 0; i < bDef.inputPortCount; i++) {
     const ing = recipe?.inputs[i] ?? null;
-    const stackLimit = getItemStackSize(ing?.itemId ?? ing?.itemName ?? null);
+    const stackLimit = isLogistics
+      ? getBuildingMaxStorage(buildingId, null, null)
+      : getItemStackSize(ing?.itemId ?? ing?.itemName ?? null);
     inputs.push({
       id: `${nodeId}_in_${i}`,
       index: i,
@@ -115,6 +118,8 @@ export function buildNodePorts(
     const stackLimit =
       buildingId === 'storage_container'
         ? STORAGE_CONTAINER_SLOTS * getItemStackSize(out?.itemId ?? out?.itemName ?? null)
+        : isLogistics
+        ? getBuildingMaxStorage(buildingId, null, null)
         : getItemStackSize(out?.itemId ?? out?.itemName ?? null);
     outputs.push({
       id: `${nodeId}_out_${i}`,
@@ -151,6 +156,7 @@ export function createMachineNode(
     options?.purity ?? (buildingId === 'resource_deposit' ? 'normal' : undefined);
   const { inputs, outputs } = buildNodePorts(id, bDef.id, recipeId, purity);
   const maxStoredCount = getBuildingMaxStorage(bDef.id, recipeId, outputs[0]?.itemName ?? null);
+  const maxInputStoredCount = inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0);
 
   return {
     id,
@@ -166,6 +172,8 @@ export function createMachineNode(
     status: 'idle',
     efficiency: 0,
     progress: 0,
+    inputStoredCount: 0,
+    maxInputStoredCount,
     storedCount: 0,
     maxStoredCount,
     inputs,
@@ -216,11 +224,18 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
       n.recipeId,
       n.outputs[0]?.itemName ?? n.inputs[0]?.itemName ?? null
     );
+    const maxInputStoredCount = n.inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0);
+    const inputStoredCount = n.inputs.reduce(
+      (acc, p) => acc + Math.min(p.maxBuffer ?? 100, Math.max(0, p.bufferedCount ?? 0)),
+      0
+    );
     return {
       ...n,
       y: migratedY,
       width: syncedWidth,
       height: syncedHeight,
+      inputStoredCount,
+      maxInputStoredCount,
       maxStoredCount,
       storedCount: Math.min(maxStoredCount, Math.max(0, n.storedCount ?? 0)),
     };
@@ -253,12 +268,15 @@ export function changeNodeRecipe(node: MachineNode, newRecipeId: string | null):
     newRecipeId,
     outputs[0]?.itemName ?? null
   );
+  const maxInputStoredCount = inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0);
   return {
     ...node,
     recipeId: newRecipeId,
     inputs,
     outputs,
     progress: 0,
+    inputStoredCount: 0,
+    maxInputStoredCount,
     storedCount: 0,
     maxStoredCount,
   };

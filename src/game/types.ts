@@ -87,8 +87,10 @@ export interface MachineNode {
   status: MachineStatus;
   efficiency: number; // 0..100 integer
   progress: number; // 0..1 animation progress
-  storedCount: number; // Current items in primary building storage (output buffer or container slots)
-  maxStoredCount?: number; // Maximum storage capacity (1 stack for machines, 24 stacks for containers)
+  inputStoredCount?: number; // Current items stored across building input storage slots
+  maxInputStoredCount?: number; // Maximum input storage capacity across input slots
+  storedCount: number; // Current items in primary building output storage (output buffer or container slots)
+  maxStoredCount?: number; // Maximum output storage capacity (1 stack for machines, 24 stacks for containers)
   inputs: PortSocket[];
   outputs: PortSocket[];
 }
@@ -113,6 +115,7 @@ export interface BeltItemPacket {
   id: string;
   itemName: string;
   distancePx: number; // 0 .. lengthPx along the belt path
+  stalled?: boolean; // True when item is stuck waiting on the belt because destination input storage is full
 }
 
 export interface ConveyorConnection {
@@ -131,6 +134,7 @@ export interface ConveyorConnection {
   spawnAccumulator?: number; // 0..1 fractional item spawn progress at belt entrance
   inFlightItems?: BeltItemPacket[]; // Discrete physical items currently traveling along the belt
   firstItemArrived?: boolean; // True once the leading item packet has physically reached the destination port
+  isBackedUp?: boolean; // True when destination input storage is full and items are queued/stuck on the belt
 }
 
 export interface CameraState {

@@ -418,28 +418,10 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const packets = conn.inFlightItems ?? [];
     const maxBeltDist = Math.max(polyLen, conn.lengthPx ?? polyLen);
     const visiblePackets = packets.filter((p) => p.distancePx <= maxBeltDist + 1);
-    const leadingDist =
-      visiblePackets.length > 0
-        ? Math.max(...visiblePackets.map((p) => p.distancePx))
-        : 0;
-    const estSpacing =
-      enteringRate > 0
-        ? Math.max(
-            18,
-            (tierDef.speedPxPerSec * 60) / Math.min(tierDef.capacityPerMin, enteringRate)
-          )
-        : 18;
-    const hasLiveFrontGap =
-      visiblePackets.length > 0 && maxBeltDist - leadingDist > estSpacing + 6;
-    const isBackedUp = Boolean(conn.isBackedUp && !hasLiveFrontGap);
     const allItemsStalled =
       visiblePackets.length > 0 && visiblePackets.every((p) => p.stalled);
     const hasMovingItems = visiblePackets.some((p) => !p.stalled);
-    const isInTransit =
-      (!conn.firstItemArrived || hasLiveFrontGap) &&
-      !isBackedUp &&
-      (enteringRate > 0 || visiblePackets.length > 0);
-    const isFlowing = conn.ratePerMin > 0 && !isInTransit;
+    const isFlowing = conn.ratePerMin > 0;
     const itemColor = getItemAccentColor(conn.itemName);
 
     // Outer Industrial Conveyor Track Rails (16px wide bed so items sit snugly inside)
@@ -462,7 +444,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
 
     // Moving Conveyor Roller Slats & Directional Chevrons
     // Thin precision slats and periodic chevrons that rotate smoothly around corner arcs (pauses when backpressured)
-    if (!macroMode && !allItemsStalled && (isFlowing || isInTransit || hasMovingItems)) {
+    if (!macroMode && !allItemsStalled && (isFlowing || enteringRate > 0 || hasMovingItems)) {
       const totalLen = filleted.totalLength;
       const slatSpacing = 11; // 11px pitch gives dense, sleek industrial roller track
       const speed = tierDef.speedPxPerSec;
@@ -524,11 +506,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
 
     // Center Power/Guide Spine
     drawPolyline(pts);
-    ctx.strokeStyle = isFlowing
-      ? `${itemColor}88`
-      : isInTransit
-      ? '#38BDF888'
-      : '#334155';
+    ctx.strokeStyle = isFlowing ? `${itemColor}88` : '#334155';
     ctx.lineWidth = macroMode ? Math.max(3, 2.2 / cam.zoom) : 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -1187,43 +1165,14 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         continue;
       }
 
-      const { pts, polyLen } = route;
+      const { pts } = route;
       const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
-      const enteringRate = conn.sourceRatePerMin ?? conn.ratePerMin;
-      const packets = conn.inFlightItems ?? [];
-      const lengthPx = Math.max(36, conn.lengthPx ?? route.lengthPx);
-      const maxBeltDist = Math.max(polyLen, lengthPx);
-      const visiblePackets = packets.filter((p) => p.distancePx <= maxBeltDist + 1);
-      const leadingDist =
-        visiblePackets.length > 0
-          ? Math.max(...visiblePackets.map((p) => p.distancePx))
-          : 0;
-      const estSpacing =
-        enteringRate > 0
-          ? Math.max(
-              18,
-              (tierDef.speedPxPerSec * 60) /
-                Math.min(tierDef.capacityPerMin, enteringRate)
-            )
-          : 18;
-      const hasLiveFrontGap =
-        visiblePackets.length > 0 && maxBeltDist - leadingDist > estSpacing + 6;
-      const isBackedUp = Boolean(conn.isBackedUp && !hasLiveFrontGap);
-      const isInTransit =
-        (!conn.firstItemArrived || hasLiveFrontGap) &&
-        !isBackedUp &&
-        (enteringRate > 0 || visiblePackets.length > 0);
-      const isFlowing = conn.ratePerMin > 0 && !isInTransit;
+      const isBackedUp = Boolean(conn.isBackedUp);
+      const isFlowing = conn.ratePerMin > 0;
       const itemColor = getItemAccentColor(conn.itemName);
 
-      const transitPct = Math.min(
-        99,
-        Math.round((leadingDist / maxBeltDist) * 100)
-      );
       const badgeText = isBackedUp && conn.ratePerMin === 0
         ? `${tierDef.shortLabel} · STALLED (FULL)`
-        : isInTransit
-        ? `${tierDef.shortLabel} · Transit ${transitPct}%`
         : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}`;
 
       ctx.font = '600 9px "JetBrains Mono", monospace';
@@ -1268,10 +1217,8 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       drawRoundedRect(ctx, badgeX - tw / 2, badgeY - badgeH / 2, tw, badgeH, 4);
       ctx.fillStyle = '#0F172A';
       ctx.fill();
-      ctx.strokeStyle = isBackedUp
+      ctx.strokeStyle = isBackedUp && conn.ratePerMin === 0
         ? '#F59E0B'
-        : isInTransit
-        ? '#38BDF8'
         : tierDef.tier >= 2
         ? tierDef.accentColor
         : isFlowing
@@ -1284,10 +1231,8 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         ctx.drawImage(beltImg, badgeX - tw / 2 + 3.5, badgeY - 6, 12, 12);
       }
 
-      ctx.fillStyle = isBackedUp
+      ctx.fillStyle = isBackedUp && conn.ratePerMin === 0
         ? '#FBBF24'
-        : isInTransit
-        ? '#38BDF8'
         : isFlowing
         ? '#F8FAFC'
         : '#94A3B8';

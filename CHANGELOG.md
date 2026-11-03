@@ -4,6 +4,30 @@ All notable changes for **FICSIT Labs** are documented below. Straight to the po
 
 ---
 
+## [0.0.16] — 2026-11-03 (`0.0.16 dev build`)
+
+### 🎨 Conveyor Visual Overhaul & Radial Corner Arcs
+- **Thin Precision Roller Slats & Directional Chevrons**: Replaced bulky dashed strokes with precision 1.5px industrial roller slats and periodic 1.7px forward directional chevrons (`>`) that cleanly fit within the 12.5px conveyor bed.
+- **Continuous Multi-Angle Corner Arc Rotation**: Engineered circular fillet corner arc interpolation (`computeFilletedConveyorPath`, `sampleFilletedPath`) along 90-degree conveyor turns. Moving lines and chevrons smoothly fan and rotate across continuous radial angles (0° to 90°) instead of deforming into square artifacts or snapping at corners.
+- **Smooth Item Packet Corner Navigation**: Synchronized in-flight physical resource item packets to travel along rounded corner arcs, eliminating abrupt right-angle snapping.
+- **Dual Input/Output Storage Buffers & Backpressure**: Implemented dedicated input and output storage inventories for every machine. When a downstream input storage hits capacity (e.g. 100/100), incoming belts halt bumper-to-bumper, queue up at the intake port, and pause upstream production until inventory space is freed.
+- **Removed Artificial In-Transit HUD**: Eliminated the artificial floating "Transit %" badge, leader lines, and cyan overrides, restoring clean Satisfactory-accurate belt telemetry badges displaying tier and real throughput capacity (or `STALLED (FULL)` when backpressured).
+
+---
+
+## [0.0.15] — 2026-11-03 (`0.0.15 dev build`)
+
+### 🚀 Future-Proof 2D Engine & Low-End Device Performance
+- **Decoupled 20 Hz Fixed-Timestep Simulation Loop**: Separated smooth 60 FPS camera/visual rendering from a fixed 20 Hz (50ms) factory simulation tick and removed per-pixel simulation steps while dragging machines.
+- **O(1) Connection Indexing & Early-Exit Solver**: Indexed port/node connections via O(1) lookup maps and added convergence detection so settled factories finish flow calculation in 2 passes instead of N passes.
+- **Cached Overpass Crossings & Low-End Battery Saver Mode**: Cached conveyor intersection checks by geometry signature and added a Low-End / Battery Saver mode in Settings that renders at 1.0x resolution and skips shadow passes.
+
+### 📲 Standalone Offline Game Shell (PWA & Fullscreen)
+- **Offline Installable Game & Asset Caching**: Configured service worker caching for all game scripts, UI, and Satisfactory icons so FICSIT Labs can be installed to the home screen and played 100% offline.
+- **One-Tap Fullscreen & Install Controls**: Added Fullscreen toggle and Install Offline Game buttons directly in the Main Menu and Settings.
+
+---
+
 ## [0.0.14] — 2026-11-03 (`0.0.14 dev build`)
 
 ### 🛠️ Blueprint Grid Rendering & Camera Viewport Fix

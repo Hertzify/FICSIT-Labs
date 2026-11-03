@@ -37,6 +37,11 @@ export const CHANGELOG_DATA: ChangelogRelease[] = [
             description:
               'Synchronized in-flight physical resource item packets to travel along rounded corner arcs, eliminating abrupt right-angle snapping.',
           },
+          {
+            title: 'Removed Artificial In-Transit HUD & Simplified Telemetry',
+            description:
+              'Eliminated artificial floating "Transit %" badges and cyan overrides, restoring clean Satisfactory-accurate belt telemetry badges displaying tier and real throughput capacity (or STALLED when backpressured).',
+          },
         ],
       },
     ],

@@ -7,7 +7,6 @@ import {
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
-  computeConveyorBeltFlowVisuals,
   computeNodeSnapAlignment,
   computeOrthogonalConveyorPath,
   createConveyorConnection,
@@ -16,6 +15,7 @@ import {
   doesPathIntersectNode,
   doNodesOverlap,
   findConveyorCrossings,
+  getCachedConveyorRoute,
   getPortWorldPosition,
   isMacroIconZoom,
   isNodePositionValid,
@@ -59,36 +59,19 @@ test('clampCameraToWorld constrains zoom and isMacroIconZoom requires 0.25x zoom
   assert.equal(isMacroIconZoom(0.75), false);
 });
 
-test('computeConveyorBeltFlowVisuals is strictly adaptive down to every single digit (1/m .. 9/m)', () => {
-  const zero = computeConveyorBeltFlowVisuals(0);
-  assert.equal(zero.dotCount, 0);
-  assert.equal(zero.speedMultiplier, 0);
+test('getCachedConveyorRoute reuses cached belt paths when stationary and invalidates when any node moves', () => {
+  const miner = createMachineNode('miner_mk1', 400, 1200, 'cache_miner');
+  const smelter = createMachineNode('smelter', 800, 1200, 'cache_smelter');
+  const nodes = [miner, smelter];
 
-  // Verify every single-digit rate 1..9 produces a strictly increasing speedMultiplier and decreasing spacingRatio
-  for (let r = 1; r <= 9; r++) {
-    const curr = computeConveyorBeltFlowVisuals(r);
-    const next = computeConveyorBeltFlowVisuals(r + 1);
-    assert.ok(
-      curr.speedMultiplier < next.speedMultiplier,
-      `Expected speed at ${r}/m (${curr.speedMultiplier}) < speed at ${r + 1}/m (${next.speedMultiplier})`
-    );
-    assert.ok(
-      curr.spacingRatio > next.spacingRatio,
-      `Expected spacingRatio at ${r}/m > spacingRatio at ${r + 1}/m`
-    );
-  }
+  const routeA = getCachedConveyorRoute(miner, 0, smelter, 0, nodes);
+  const routeB = getCachedConveyorRoute(miner, 0, smelter, 0, nodes);
+  assert.equal(routeA, routeB, 'Expected identical cached route object reference when no nodes moved');
 
-  const slow = computeConveyorBeltFlowVisuals(4);
-  const medium = computeConveyorBeltFlowVisuals(30);
-  const normal = computeConveyorBeltFlowVisuals(60);
-  const pure = computeConveyorBeltFlowVisuals(120);
-
-  assert.ok(slow.speedMultiplier < medium.speedMultiplier);
-  assert.ok(medium.speedMultiplier < normal.speedMultiplier);
-  assert.ok(normal.speedMultiplier < pure.speedMultiplier);
-
-  assert.ok(slow.dotCount < normal.dotCount);
-  assert.ok(normal.dotCount < pure.dotCount);
+  const movedSmelter = { ...smelter, x: 960 };
+  const routeMoved = getCachedConveyorRoute(miner, 0, movedSmelter, 0, [miner, movedSmelter]);
+  assert.notEqual(routeMoved, routeA);
+  assert.ok(routeMoved.lengthPx > routeA.lengthPx);
 });
 
 test('32 natural world resource deposits are scattered in clusters with Impure (30), Normal (60), and Pure (120) qualities', () => {
@@ -258,9 +241,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.11 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.11');
-  assert.equal(APP_BUILD_TAG, '0.0.11 dev build');
+test('version tracking matches 0.0.13 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.13');
+  assert.equal(APP_BUILD_TAG, '0.0.13 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {

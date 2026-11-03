@@ -142,14 +142,8 @@ export default function App() {
       }
     };
     window.addEventListener('pointerdown', handleGlobalDismiss);
-    window.addEventListener('mousedown', handleGlobalDismiss);
-    window.addEventListener('touchstart', handleGlobalDismiss);
-    window.addEventListener('click', handleGlobalDismiss);
     return () => {
       window.removeEventListener('pointerdown', handleGlobalDismiss);
-      window.removeEventListener('mousedown', handleGlobalDismiss);
-      window.removeEventListener('touchstart', handleGlobalDismiss);
-      window.removeEventListener('click', handleGlobalDismiss);
     };
   }, [showBeltTab]);
 

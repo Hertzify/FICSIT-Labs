@@ -1,55 +1,65 @@
-# Version 12 Implementation Plan: Local Snap Mode Proximity & Authentic Satisfactory Building Storage
+# Version 13 (`0.0.13 dev build`) — Codebase Cleanup, Modularization & Mobile Performance Plan
 
-## 1. Overview
-Version 12 introduces two core improvements modeled after *Satisfactory*:
-1. **Bounded Local Snap Mode Proximity (`240px` / `~15m`)**: Prevents buildings from snapping to or drawing alignment lasers toward distant machines across the factory floor, even if connected by a long conveyor belt.
-2. **Full *Satisfactory* Internal Building Buffers & Capacity Limits**: Implements canonical item stack sizes (`100`, `200`, `500`), 1-stack input and output buffers inside production/extraction machines, 24-slot Storage Containers, `BACKED UP` status when output storage reaches 100%, and **both** the crafting progress bar and a new storage capacity bar (`0%–100%` fill + `Stored / Max` item count) on node cards.
+## 1. Plain-English Overview & Engineering Decisions
 
----
+Based on your feedback, I evaluated all options—including keeping the files as-is—and selected the safest, highest-benefit approach that **guarantees zero changes to gameplay or save files** while making the game noticeably smoother on mobile devices.
 
-## 2. Bounded Local Snap Mode (`src/game/rules.ts`)
-- **Strict Local Proximity Constant**:
-  - Replace the long-range `960px` / `840px` corridor constants and unbounded connected-port snap checks in `computeNodeSnapAlignment` with a strict local edge-to-edge proximity limit (`MAX_SNAP_PROXIMITY = 240`, ~15m in grid units).
-- **2D Bounding Box Distance Check Across All Priorities**:
-  - Require both horizontal and vertical edge-to-edge gaps (`hDist <= 240` and `vDist <= 240`) before considering any candidate building for:
-    - **Priority 1A**: Connected input/output port Y-alignment.
-    - **Priority 1B**: Nearby facing input/output port Y-alignment.
-    - **Priority 1C**: Building vertical center Y-alignment.
-    - **Priority 2**: Building horizontal X-alignment (center X and left/right edges).
-  - Cull all cyan/emerald snap laser guidelines beyond the `240px` neighborhood so dragging a machine only projects guidelines to immediate neighbors.
+### Option Comparison: File Organization
+1. **Option A — Keep Files As-Is (No File Split):**
+   * *Pros:* Zero file movement.
+   * *Cons:* `NodeCanvas.tsx` (2,545 lines) and `rules.ts` (2,075 lines) remain very large, making future updates slower and harder to maintain.
+2. **Option B — Extreme Micro-Splitting (20+ tiny files):**
+   * *Pros:* Very small individual files.
+   * *Cons:* High risk of circular dependency bugs and harder to follow how game rules work together.
+3. **Option C — Safe Domain Split with Compatibility Re-Exports (Selected Best Choice):**
+   * We split the two huge files into **6 clear, self-contained modules** by responsibility, while keeping `src/game/rules.ts` as an automatic pass-through index (`export *`).
+   * **Why this is best:** Every existing import and test continues to work without breaking, and each file shrinks to a clean, readable size (300–700 lines).
 
 ---
 
-## 3. Canonical *Satisfactory* Stack Sizes & Building Buffers (`src/game/types.ts`, `src/game/rules.ts`)
-- **Item Stack Sizes (`ITEM_STACK_SIZES`)**:
-  - `100` items/stack: `iron_ore`, `copper_ore`, `limestone`, `iron_ingot`, `copper_ingot`, `reinforced_iron_plate`, `rotor`
-  - `200` items/stack: `iron_plate`, `iron_rod`, `cable`
-  - `500` items/stack: `wire`, `concrete`, `screw`
-- **Port & Building Storage State**:
-  - Add `bufferedCount?: number` and `maxBuffer?: number` to `PortState` (and `maxStoredCount?: number` on `MachineNode`) so each input port and output port tracks its stored items and stack limit.
-- **Production & Extraction Machine Buffers (`Miner Mk.1`, `Smelter`, `Constructor`, `Assembler`)**:
-  - **Input Slots (1 Stack per Input Port)**:
-    - Incoming belts deliver items into the target input port's buffer up to `1 × stackSize` (e.g., `100` Iron Ore).
-    - Once an input buffer reaches `100%` full, backpressure throttles the incoming belt to the machine's active consumption rate.
-    - If an incoming belt is disconnected or starved, the machine continues crafting by consuming directly from its buffered input items until empty.
-  - **Output Slot (1 Stack per Output Port)**:
-    - Crafted or mined items enter the machine's output buffer (`1 × stackSize`, e.g., `200` Iron Plates).
-    - Connected output belts pull items from the output buffer up to the belt's speed (`60/m` or `120/m`) and downstream demand.
-    - When production exceeds outgoing belt flow (or when no output belt is connected), excess crafted items accumulate in the output buffer.
-    - When the output buffer reaches **100% capacity**, the machine transitions to **`backed_up` (`BACKED UP`)** and pauses crafting until outgoing belts drain space in the buffer.
-- **Storage Container (`24 Slots`)**:
-  - Capacity is `24 × itemStackSize` (e.g., `2,400` Ingots, `4,800` Iron Plates, `12,000` Screws; defaults to `2,400` before an item type is locked in).
-  - Acts as a true flow buffer: accumulates incoming items up to 24 full stacks and discharges stored items onto connected output belts even if upstream inputs stop.
-  - Enters `backed_up` when `storedCount >= maxStoredCount` and throttles incoming belts once full.
+## 2. Planned Architecture & File Split
+
+### A. Game Engine (`src/game/`)
+* **`src/game/catalog.ts`** — Single source of truth for all building specs, recipes, stack sizes, and physical conveyor constants (`PIXELS_PER_METER`, `BELT_ITEM_LENGTH_METERS`, `BELT_ITEM_FOOTPRINT_PX`).
+* **`src/game/geometry.ts` (New)** — World bounds clamping, grid snapping, port coordinates (`getPortWorldPosition`), AABB collision checks (`doNodesOverlap`, `isNodePositionValid`), orthogonal belt pathfinder (`computeOrthogonalConveyorPath`), belt length & sampling, and overpass bridge crossings (`findConveyorCrossings`).
+* **`src/game/snap.ts` (New)** — Bounded 240px (16m) Snap Mode alignment solver (`computeNodeSnapAlignment`, `getBoxEdgeGap`) and laser guideline builders.
+* **`src/game/world.ts` (New)** — Natural planetary resource deposits (`WORLD_RESOURCE_DEPOSITS`), starter factory creation (`createStarterFactory`), node/belt constructors, storage helpers, and save import/export (`serializeSaveExport`, `parseSaveImport`).
+* **`src/game/simulation.ts` (New)** — Tick-by-tick factory production, internal storage buffers, splitter/merger routing, and physical conveyor item movement (`stepSimulation`).
+* **`src/game/rules.ts` (Refactored to Barrel Index)** — Re-exports all public functions and constants from `geometry.ts`, `snap.ts`, `world.ts`, and `simulation.ts` so all callers and tests remain 100% compatible.
+
+### B. Canvas & UI Components (`src/components/`)
+* **`src/components/canvasRenderer.ts` (New)** — Pure 2D HTML5 Canvas drawing functions (`drawScene`, belt roller animation, item icons in transit, macro zoom pins, detailed machine cards, floating HUD badges, and laser snap lines).
+* **`src/components/NodeInspectorPanel.tsx` (New)** — Selected machine/deposit floating inspector card (recipe selector, internal storage bars, flush button, connected belt upgrade buttons, move & dismantle actions).
+* **`src/components/NodeCanvas.tsx` (Streamlined)** — Multi-touch/pointer gesture handlers (pan, pinch-to-zoom, double-tap zoom, drag-to-wire), `requestAnimationFrame` simulation loop, and placement/wiring banners.
 
 ---
 
-## 4. Node Card & Inspector UI (`src/components/NodeCanvas.tsx`, `src/App.tsx`)
-- **Both Bars on Building Cards**:
-  - Increase standard machine card footer space slightly (`getNodeHeight` adjusted cleanly) so every production, extraction, and storage building card renders:
-    1. **Storage Capacity Bar + Item Count**: Shows a dedicated storage bar that fills from `0%` to `100%` capacity alongside the exact `Stored / Max` item count (e.g., `142 / 200` or `1,250 / 4,800`). Turns amber when `100%` full (`BACKED UP`).
-    2. **Crafting / Extraction Cycle Progress Bar**: Kept below the storage bar to show active cycle progress when the machine is running.
-- **Inspector Popover Slot Breakdown**:
-  - In the bottom-right Node Inspector panel, display individual **Input Slot Buffers** (`Stored / Stack Limit` per ingredient) and **Output / Container Buffer** (`Stored / Max Capacity` and slot count) with fill bars and a button to clear/flush internal buffers if desired.
-- **Version 12 Badge & Changelog**:
-  - Update the version badge and changelog history entry to **v12**.
+## 3. Bug-Safe Runtime Optimizations (And How We Prevent Side Effects)
+
+All three performance optimizations will be included with built-in safety guards to prevent visual glitches or stale state:
+
+1. **Geometry-Keyed Conveyor Belt Path Caching**
+   * *What it fixes:* Currently, the obstacle-avoiding belt pathfinder runs **twice per frame for every belt** (~70 times/sec per belt) even when no buildings are moving.
+   * *Trade-off & Bug Prevention:* A naive cache could leave a belt path outdated if a building moves. To prevent this, the cache is keyed by a live layout revision stamp that automatically invalidates the instant any building is moved, added, resized, or deleted. When buildings are stationary, belt paths and lengths are reused at near-zero CPU cost.
+2. **Padded Camera Viewport Culling (`240px` Safety Margin)**
+   * *What it fixes:* Skips drawing machine cards and resource deposits that are off-screen across the `12,000 × 8,000` world map.
+   * *Trade-off & Bug Prevention:* Culling right at the screen edge can cause cards or shadows to pop in visibly while panning. We use a generous `240px` world-space buffer around the camera viewport so nodes are already drawn before they enter the screen, and conveyor belts remain drawn whenever their bounding box intersects the padded view.
+3. **Smart Inspector React State Diffing**
+   * *What it fixes:* Selecting a building currently triggers `setSelectedNodeSnapshot` on every animation frame (35 times/sec), forcing React to re-render the UI continuously even when numbers haven't changed.
+   * *Trade-off & Bug Prevention:* A time delay could make buttons feel sluggish. Instead of a timer, we compare the visible inspector fields (status, recipe, integer storage counts, actual rates, and 2% progress increments) and only re-render React when a visible value changes—while user actions (upgrading belts, changing recipes, flushing storage) update on the exact same tap.
+
+---
+
+## 4. Dead & Duplicated Code Removal
+
+* **Delete unused `computeConveyorBeltFlowVisuals` & `BELT_ITEM_SLOT_PX`:** Left over from an early prototype before physical `1.2m` (`18px`) belt items were introduced; never called anywhere in the game.
+* **Deduplicate Belt Constants:** Remove duplicate `PIXELS_PER_METER`, `BELT_ITEM_LENGTH_METERS`, and `BELT_ITEM_FOOTPRINT_PX` definitions in `rules.ts` and import them from `catalog.ts`.
+* **Remove Redundant Wrapper:** Replace `getPortWorldCoords` in `NodeCanvas.tsx` with direct use of `getPortWorldPosition`.
+* **Clean Up Global Listeners in `App.tsx`:** Replace the 4 redundant window listeners (`pointerdown`, `mousedown`, `touchstart`, `click`) for closing the belt selector with a single clean `pointerdown` listener.
+
+---
+
+## 5. Version Bump & Verification (`0.0.13 dev build`)
+
+* Bump version to `0.0.13` (`0.0.13 dev build`) in `package.json`, `src/game/version.ts`, and `src/game/changelogData.ts`.
+* Run the full automated test suite (`npm test`), TypeScript typecheck, and production build (`npm run build`) to verify zero regressions.

@@ -15,6 +15,53 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.13',
+    tag: '0.0.13 dev build',
+    date: '2026-11-03',
+    categories: [
+      {
+        category: '🗂️ Modular Architecture & Code Organization',
+        items: [
+          {
+            title: 'Engine Domain Split (geometry, snap, world, simulation)',
+            description:
+              'Split the 2,075-line rules.ts monolith into focused domain modules for orthogonal geometry/pathfinding, bounded Snap Mode alignment, world deposits/save serialization, and factory tick simulation.',
+          },
+          {
+            title: 'Canvas Renderer & Inspector Separation',
+            description:
+              'Extracted the 2D HTML5 Canvas drawing pipeline into canvasRenderer.ts and the floating machine/deposit inspector UI into a memoized NodeInspectorPanel.tsx component.',
+          },
+          {
+            title: 'Dead & Duplicate Code Removal',
+            description:
+              'Removed unused legacy belt visual helpers, consolidated duplicate meter/pixel constants into catalog.ts, removed redundant coordinate wrappers, and simplified global pointer event listeners.',
+          },
+        ],
+      },
+      {
+        category: '⚡ Safe Runtime Performance Optimizations',
+        items: [
+          {
+            title: 'Geometry-Keyed Conveyor Belt Path Caching',
+            description:
+              'Cached obstacle-avoiding orthogonal belt paths and lengths by node geometry signature so stationary factories reuse precalculated routes across simulation and rendering passes.',
+          },
+          {
+            title: 'Smart Inspector State Diffing',
+            description:
+              'Eliminated 35 FPS React DOM re-render thrashing when a machine is selected by updating the inspector snapshot only when visible item counts, flow rates, or statuses change.',
+          },
+          {
+            title: 'Padded Camera Viewport Frustum Culling',
+            description:
+              'Skipped off-screen canvas draw calls for distant deposits, machines, and conveyor belts outside the active camera viewport plus a 240px safety margin.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.12',
     tag: '0.0.12 dev build',
     date: '2026-11-03',

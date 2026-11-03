@@ -70,6 +70,9 @@ export interface CanvasRenderParams {
 
 export const VIEWPORT_CULL_MARGIN_PX = 240;
 
+let cachedCrossingsSignature = '';
+let cachedCrossingsResult: { x: number; y: number; topConnId: string }[] = [];
+
 const TOPOGRAPHIC_RIDGE_CENTERS = [
   { x: 2300, y: 1100, rx: 620, ry: 420 },
   { x: 3650, y: 1450, rx: 850, ry: 520 },
@@ -225,6 +228,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
   if (width <= 0 || height <= 0) return;
 
   const macroMode = isMacroIconZoom(cam.zoom);
+  const isBatterySaver = cfg.performanceMode === 'battery_saver';
 
   // Compute padded world-space viewport rect for off-screen frustum culling
   const viewMinX = -cam.x / cam.zoom - VIEWPORT_CULL_MARGIN_PX;
@@ -363,10 +367,16 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     nodeById.set(n.id, n);
   }
 
+  const connectedInputPortKeys = new Set<string>();
+  const connectedOutputPortKeys = new Set<string>();
   const connRouteMap = new Map<string, CachedConveyorRoute>();
   const allBeltPathsList: { connId: string; pts: { x: number; y: number }[] }[] = [];
+  let beltSigParts = '';
 
   for (const conn of connections) {
+    connectedInputPortKeys.add(`${conn.toNodeId}:${conn.toPortId}`);
+    connectedOutputPortKeys.add(`${conn.fromNodeId}:${conn.fromPortId}`);
+
     const fromNode = nodeById.get(conn.fromNodeId);
     const toNode = nodeById.get(conn.toNodeId);
     if (!fromNode || !toNode) continue;
@@ -378,6 +388,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const route = getCachedConveyorRoute(fromNode, outIdx, toNode, inIdx, nodes);
     connRouteMap.set(conn.id, route);
     allBeltPathsList.push({ connId: conn.id, pts: route.pts });
+    beltSigParts += `${conn.id}:${route.pts.length}:${route.pts[0]?.x},${route.pts[0]?.y}->${route.pts[route.pts.length - 1]?.x},${route.pts[route.pts.length - 1]?.y}|`;
   }
 
   const drawPolyline = (pts: { x: number; y: number }[]) => {
@@ -497,8 +508,12 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     }
   }
 
-  // Render Industrial Elevated Overpass Bridges where belts cross each other
-  const crossings = findConveyorCrossings(allBeltPathsList);
+  // Render Industrial Elevated Overpass Bridges where belts cross each other (cached by geometry signature)
+  if (beltSigParts !== cachedCrossingsSignature) {
+    cachedCrossingsSignature = beltSigParts;
+    cachedCrossingsResult = findConveyorCrossings(allBeltPathsList);
+  }
+  const crossings = cachedCrossingsResult;
   for (const cross of crossings) {
     if (!isBoxInViewport(cross.x - 20, cross.y - 20, cross.x + 20, cross.y + 20)) {
       continue;
@@ -507,8 +522,10 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const halfB = bridgeSize * 0.5;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.fillRect(cross.x - halfB + 2, cross.y - halfB + 3, bridgeSize, bridgeSize);
+    if (!isBatterySaver) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.fillRect(cross.x - halfB + 2, cross.y - halfB + 3, bridgeSize, bridgeSize);
+    }
 
     drawRoundedRect(ctx, cross.x - halfB, cross.y - halfB, bridgeSize, bridgeSize, 4);
     ctx.fillStyle = '#0F172A';
@@ -657,9 +674,11 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         continue;
       }
 
-      drawRoundedRect(ctx, node.x + 4, node.y + 8, node.width, node.height, 16);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-      ctx.fill();
+      if (!isBatterySaver) {
+        drawRoundedRect(ctx, node.x + 4, node.y + 8, node.width, node.height, 16);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fill();
+      }
 
       drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
       ctx.fillStyle = '#111A2E';
@@ -721,9 +740,11 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     }
 
     // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.25)
-    drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
-    ctx.fill();
+    if (!isBatterySaver) {
+      drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+      ctx.fill();
+    }
 
     drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
     ctx.fillStyle = isDeposit ? '#0E1924' : '#131B2E';
@@ -948,9 +969,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     for (let i = 0; i < node.inputs.length; i++) {
       const port = node.inputs[i];
       const pt = getPortWorldPosition(node, 'input', i, node.inputs.length);
-      const isConnected = connections.some(
-        (c) => c.toNodeId === node.id && c.toPortId === port.id
-      );
+      const isConnected = connectedInputPortKeys.has(`${node.id}:${port.id}`);
       const portImg = getCanvasItemImage(port.itemName ?? port.label);
 
       ctx.beginPath();
@@ -997,9 +1016,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     for (let i = 0; i < node.outputs.length; i++) {
       const port = node.outputs[i];
       const pt = getPortWorldPosition(node, 'output', i, node.outputs.length);
-      const isConnected = connections.some(
-        (c) => c.fromNodeId === node.id && c.fromPortId === port.id
-      );
+      const isConnected = connectedOutputPortKeys.has(`${node.id}:${port.id}`);
       const isTapSelected =
         curTapPort?.nodeId === node.id && curTapPort?.portId === port.id;
       const portImg = getCanvasItemImage(port.itemName ?? port.label);

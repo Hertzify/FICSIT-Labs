@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SaveSlot, SettingsConfig } from '../game/types';
 import { APP_BUILD_TAG } from '../game/version';
 import { ChangelogModal } from './ChangelogModal';
+import { usePWAInstall } from './usePWAInstall';
 
 interface MainMenuProps {
   latestSlot: SaveSlot | null;
@@ -26,6 +27,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [showChangelog, setShowChangelog] = useState(false);
   const [newSessionName, setNewSessionName] = useState('Northern Forest Sector 02');
   const [includeStarterNodes, setIncludeStarterNodes] = useState(true);
+  const {
+    isInstallable,
+    showIOSPrompt,
+    setShowIOSPrompt,
+    promptInstall,
+    isFullscreen,
+    toggleFullscreen,
+  } = usePWAInstall();
 
   const handleCreateSession = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +55,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-[#26334D]">
           <svg
             viewBox="0 0 340 60"
-            className="w-52 h-auto shrink-0"
+            className="w-48 h-auto shrink-0"
             role="img"
             aria-label="FICSIT Labs Emblem"
           >
@@ -93,15 +102,25 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </text>
           </svg>
 
-          <button
-            type="button"
-            onClick={() => setShowChangelog(true)}
-            title="View Patch Notes & Changelog"
-            className="px-2 py-1 rounded-md bg-[#131B2E] hover:bg-amber-500/20 hover:border-amber-400 border border-amber-500/40 text-[10px] font-mono font-semibold text-amber-400 whitespace-nowrap shrink-0 transition-colors cursor-pointer flex items-center gap-1.5"
-          >
-            <span>{APP_BUILD_TAG}</span>
-            <span className="text-[10px] opacity-75">📋</span>
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen Game Mode'}
+              className="px-2 py-1 rounded-md bg-[#131B2E] hover:bg-cyan-500/20 hover:border-cyan-400 border border-[#26334D] text-[10px] font-mono font-semibold text-cyan-300 whitespace-nowrap transition-colors cursor-pointer"
+            >
+              {isFullscreen ? '⛶ Exit' : '⛶ Full'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowChangelog(true)}
+              title="View Patch Notes & Changelog"
+              className="px-2 py-1 rounded-md bg-[#131B2E] hover:bg-amber-500/20 hover:border-amber-400 border border-amber-500/40 text-[10px] font-mono font-semibold text-amber-400 whitespace-nowrap shrink-0 transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <span>{APP_BUILD_TAG}</span>
+              <span className="text-[10px] opacity-75">📋</span>
+            </button>
+          </div>
         </div>
 
         {/* Latest Session Readout Strip */}
@@ -164,13 +183,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           <button
             type="button"
             onClick={onOpenSettings}
-            className="col-span-2 min-h-[42px] px-3.5 py-2 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] text-white border border-[#26334D] font-display font-semibold text-xs flex items-center justify-between whitespace-nowrap"
+            className={`${
+              isInstallable ? 'col-span-1' : 'col-span-2'
+            } min-h-[42px] px-3.5 py-2 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] text-white border border-[#26334D] font-display font-semibold text-xs flex items-center justify-between whitespace-nowrap`}
           >
             <span>Settings</span>
             <span className="text-[10px] text-slate-400 font-normal">
-              UI Scale · Conveyor Style · Audio · Saves
+              {isInstallable ? 'Config' : 'Performance · UI · Audio · Saves'}
             </span>
           </button>
+
+          {isInstallable && (
+            <button
+              type="button"
+              onClick={promptInstall}
+              className="col-span-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 font-display font-semibold text-xs flex items-center justify-between whitespace-nowrap"
+            >
+              <span>Install App</span>
+              <span className="text-[10px] font-mono text-cyan-200">Offline</span>
+            </button>
+          )}
         </nav>
       </div>
 
@@ -266,6 +298,38 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {showIOSPrompt && (
+        <div className="fixed inset-0 z-30 pointer-events-auto bg-black/80 flex items-center justify-center p-3">
+          <div className="w-full max-w-md rounded-2xl bg-[#131B2E] border border-[#26334D] p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#26334D]">
+              <h2 className="text-sm font-bold font-display text-white">
+                Install FICSIT Labs on Home Screen
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowIOSPrompt(false)}
+                className="min-w-[32px] min-h-[32px] rounded-lg text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Tap the browser <strong>Share</strong> button and choose{' '}
+              <strong>Add to Home Screen</strong> to launch FICSIT Labs as a full-screen offline game.
+            </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowIOSPrompt(false)}
+                className="min-h-[36px] px-4 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -13,6 +13,7 @@ interface SettingsModalProps {
 }
 
 import { CHANGELOG_DATA } from '../game/changelogData';
+import { usePWAInstall } from './usePWAInstall';
 
 type SettingsTab = 'visuals' | 'controls' | 'audio' | 'data' | 'changelog';
 
@@ -28,6 +29,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [saveCodeBuffer, setSaveCodeBuffer] = useState('');
   const [dataFeedback, setDataFeedback] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const { isInstallable, isInstalled, promptInstall, isFullscreen, toggleFullscreen } =
+    usePWAInstall();
 
   const updateField = <K extends keyof SettingsConfig>(
     key: K,
@@ -123,18 +126,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex-1 p-3.5 overflow-y-auto">
           {activeTab === 'visuals' && (
             <div className="grid grid-cols-2 gap-2.5">
-              {/* 1. Conveyor Routing: 90-Degree Industrial Standard */}
+              {/* 1. Performance & Battery Mode (Low-End Device Optimization) */}
               <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold text-white">
-                    Conveyor Belt Routing
+                    Graphics &amp; Low-End Device Performance Mode
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    Industrial 90-degree orthogonal lines with obstacle avoidance
+                    Battery Saver renders at native 1.0x resolution and skips card shadows for cool, lag-free play on budget phones
                   </div>
                 </div>
-                <div className="px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-mono font-bold whitespace-nowrap">
-                  90° Orthogonal
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {(
+                    [
+                      { id: 'high', label: 'High (60 FPS)' },
+                      { id: 'battery_saver', label: 'Low-End / Battery Saver' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => updateField('performanceMode', opt.id)}
+                      className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                        (settings.performanceMode ?? 'high') === opt.id
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -294,6 +315,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onChange={(e) => updateField('autoSaveEnabled', e.target.checked)}
                   className="w-4 h-4 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
+              </div>
+
+              {/* 4. Fullscreen & Standalone Offline Game App Controls */}
+              <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Fullscreen &amp; Standalone Offline Game Mode
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Hide browser bars or install FICSIT Labs to your device for 100% offline play
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={toggleFullscreen}
+                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-[#131B2E] hover:bg-slate-800 border border-[#26334D] text-xs font-semibold text-cyan-300 whitespace-nowrap"
+                  >
+                    {isFullscreen ? 'Exit Fullscreen' : 'Toggle Fullscreen'}
+                  </button>
+                  {isInstallable && (
+                    <button
+                      type="button"
+                      onClick={promptInstall}
+                      className="min-h-[36px] px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 whitespace-nowrap"
+                    >
+                      Install Offline Game
+                    </button>
+                  )}
+                  {isInstalled && (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-[11px] font-mono text-emerald-300">
+                      Installed
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           )}

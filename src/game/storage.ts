@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: SettingsConfig = {
   gridSize: 24,
   uiScale: 1.0,
   showPortRates: true,
+  performanceMode: 'high',
   wiringMode: 'both',
   skipMainMenu: false,
   masterVolume: 75,

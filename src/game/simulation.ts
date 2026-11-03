@@ -94,6 +94,22 @@ export function stepSimulation(
     };
   });
 
+  // Pre-index connections by port key and node ID for O(1) lookup across all simulation passes
+  const incomingConnByPortKey = new Map<string, ConveyorConnection>();
+  const outgoingConnByPortKey = new Map<string, ConveyorConnection>();
+  const outgoingConnsByNodeId = new Map<string, ConveyorConnection[]>();
+
+  for (const conn of nextConns) {
+    incomingConnByPortKey.set(`${conn.toNodeId}:${conn.toPortId}`, conn);
+    outgoingConnByPortKey.set(`${conn.fromNodeId}:${conn.fromPortId}`, conn);
+    const list = outgoingConnsByNodeId.get(conn.fromNodeId);
+    if (list) {
+      list.push(conn);
+    } else {
+      outgoingConnsByNodeId.set(conn.fromNodeId, [conn]);
+    }
+  }
+
   // Normalize node & port buffer capacities with official Satisfactory stack limits
   for (const node of nextNodes) {
     const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
@@ -142,12 +158,16 @@ export function stepSimulation(
     }
   }
 
-  // Multi-pass flow propagation for settled belts & Satisfactory internal buffers
+  // Multi-pass flow propagation for settled belts & Satisfactory internal buffers with early-exit convergence
   const maxPasses = Math.max(5, nextNodes.length);
   for (let pass = 0; pass < maxPasses; pass++) {
+    let anyChangeInPass = false;
+
     // Pass A: compute each node's output rates from its current arriving input rates & internal buffers
     for (const node of nextNodes) {
       const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
+      const prevStatus = node.status;
+      const prevEff = node.efficiency;
 
       if (node.buildingId === 'resource_deposit') {
         const outRecipe = recipe ?? RECIPES.deposit_iron;
@@ -165,10 +185,12 @@ export function stepSimulation(
       } else if (node.buildingId === 'miner_mk1') {
         const inPort = node.inputs[0];
         const outPort = node.outputs[0];
-        const incomingConn =
-          inPort && nextConns.find((c) => c.toNodeId === node.id && c.toPortId === inPort.id);
-        const outgoingConn =
-          outPort && nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+        const incomingConn = inPort
+          ? incomingConnByPortKey.get(`${node.id}:${inPort.id}`)
+          : undefined;
+        const outgoingConn = outPort
+          ? outgoingConnByPortKey.get(`${node.id}:${outPort.id}`)
+          : undefined;
         const outMax = node.maxStoredCount ?? 100;
         const isOutputBufferFull = node.storedCount >= outMax - 0.01;
         const hasBufferedOre = (inPort?.bufferedCount ?? 0) > 0.05;
@@ -248,20 +270,18 @@ export function stepSimulation(
       } else if (node.buildingId === 'splitter') {
         const inRate = node.inputs[0]?.actualRatePerMin ?? 0;
         const inItem = node.inputs[0]?.itemName ?? null;
-        const incomingConn =
-          node.inputs[0] &&
-          nextConns.find(
-            (c) => c.toNodeId === node.id && c.toPortId === node.inputs[0].id
-          );
+        const incomingConn = node.inputs[0]
+          ? incomingConnByPortKey.get(`${node.id}:${node.inputs[0].id}`)
+          : undefined;
         if (node.inputs[0]) {
           node.inputs[0].label = inItem ?? 'IN 1';
         }
-        const activeOutConns = nextConns.filter((c) => c.fromNodeId === node.id);
+        const activeOutConns = outgoingConnsByNodeId.get(node.id) ?? [];
         const splitCount = Math.max(1, activeOutConns.length);
         const perOutRate = activeOutConns.length > 0 ? Math.round(inRate / splitCount) : 0;
 
         for (const outPort of node.outputs) {
-          const isConnected = activeOutConns.some((c) => c.fromPortId === outPort.id);
+          const isConnected = outgoingConnByPortKey.has(`${node.id}:${outPort.id}`);
           outPort.actualRatePerMin = isConnected ? perOutRate : 0;
           outPort.targetRatePerMin = 60;
           outPort.itemName = isConnected ? inItem : null;
@@ -284,9 +304,7 @@ export function stepSimulation(
             dominantItem = inPort.itemName;
           }
           inPort.label = inPort.itemName ?? `IN ${inPort.index + 1}`;
-          const c = nextConns.find(
-            (conn) => conn.toNodeId === node.id && conn.toPortId === inPort.id
-          );
+          const c = incomingConnByPortKey.get(`${node.id}:${inPort.id}`);
           if (c && (c.sourceRatePerMin ?? 0) > 0 && !c.firstItemArrived) {
             anyInTransit = true;
           }
@@ -310,9 +328,7 @@ export function stepSimulation(
             itemLabel = inPort.itemName;
           }
           inPort.label = inPort.itemName ?? `IN ${inPort.index + 1}`;
-          const c = nextConns.find(
-            (conn) => conn.toNodeId === node.id && conn.toPortId === inPort.id
-          );
+          const c = incomingConnByPortKey.get(`${node.id}:${inPort.id}`);
           if (c && (c.sourceRatePerMin ?? 0) > 0 && !c.firstItemArrived) {
             anyInTransit = true;
           }
@@ -324,9 +340,9 @@ export function stepSimulation(
         const isContainerFull = node.storedCount >= maxCap - 0.01;
 
         const outPort = node.outputs[0];
-        const outgoingConn =
-          outPort &&
-          nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+        const outgoingConn = outPort
+          ? outgoingConnByPortKey.get(`${node.id}:${outPort.id}`)
+          : undefined;
 
         if (outPort) {
           // Storage Container can output incoming items OR discharge stored inventory onto a connected belt
@@ -367,9 +383,7 @@ export function stepSimulation(
           port.label = req.itemName;
           port.maxBuffer = getItemStackSize(req.itemId || req.itemName);
 
-          const incomingConn = nextConns.find(
-            (c) => c.toNodeId === node.id && c.toPortId === port.id
-          );
+          const incomingConn = incomingConnByPortKey.get(`${node.id}:${port.id}`);
           if (incomingConn) {
             anyInputConnected = true;
             if ((incomingConn.sourceRatePerMin ?? 0) > 0 && !incomingConn.firstItemArrived) {
@@ -396,9 +410,9 @@ export function stepSimulation(
         const outMax = getItemStackSize(outSpec?.itemId ?? outSpec?.itemName ?? null);
         node.maxStoredCount = outMax;
         const isOutputFull = node.storedCount >= outMax - 0.01;
-        const outgoingConn =
-          outPort &&
-          nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+        const outgoingConn = outPort
+          ? outgoingConnByPortKey.get(`${node.id}:${outPort.id}`)
+          : undefined;
 
         if (isOutputFull) {
           const maxBeltOut = outgoingConn ? outgoingConn.maxCapacityPerMin : 0;
@@ -447,6 +461,10 @@ export function stepSimulation(
           }
         }
       }
+
+      if (node.status !== prevStatus || node.efficiency !== prevEff) {
+        anyChangeInPass = true;
+      }
     }
 
     // Pass B: update belt entering rates & delivered rates (respecting full destination buffers)
@@ -464,7 +482,8 @@ export function stepSimulation(
       if (toNode.buildingId === 'storage_container' || toNode.buildingId === 'the_hub') {
         const maxCap = toNode.maxStoredCount ?? 2400;
         if (toNode.storedCount >= maxCap - 0.01) {
-          const dstOutConn = nextConns.find((c) => c.fromNodeId === toNode.id);
+          const dstOutConns = outgoingConnsByNodeId.get(toNode.id);
+          const dstOutConn = dstOutConns?.[0];
           destMaxAcceptRate = dstOutConn
             ? Math.min(conn.maxCapacityPerMin, toNode.outputs[0]?.actualRatePerMin ?? 0)
             : 0;
@@ -483,18 +502,33 @@ export function stepSimulation(
         outPort.actualRatePerMin,
         destMaxAcceptRate
       );
+      const deliveredRate = conn.firstItemArrived ? enteringRate : 0;
+
+      if (
+        conn.sourceRatePerMin !== enteringRate ||
+        conn.ratePerMin !== deliveredRate ||
+        (outPort.itemName && conn.itemName !== outPort.itemName) ||
+        inPort.actualRatePerMin !== deliveredRate
+      ) {
+        anyChangeInPass = true;
+      }
+
       conn.sourceRatePerMin = enteringRate;
       if (outPort.itemName) {
         conn.itemName = outPort.itemName;
       }
 
-      const deliveredRate = conn.firstItemArrived ? enteringRate : 0;
       conn.ratePerMin = deliveredRate;
 
       inPort.actualRatePerMin = deliveredRate;
       if (conn.itemName) {
         inPort.itemName = conn.itemName;
       }
+    }
+
+    // Early-exit once flow propagation converges across the network
+    if (pass >= 1 && !anyChangeInPass) {
+      break;
     }
   }
 
@@ -504,7 +538,7 @@ export function stepSimulation(
     const lengthPx = conn.lengthPx ?? 240;
     const enteringRate = conn.sourceRatePerMin ?? 0;
     const itemName = conn.itemName ?? 'Iron Ore';
-    const items = conn.inFlightItems ? [...conn.inFlightItems] : [];
+    const items = conn.inFlightItems ?? [];
 
     // Ideal center-to-center spacing (18px = 1.2m when belt is at 100% capacity, e.g. 60/m on Mk.1)
     const idealSpacingPx =
@@ -639,7 +673,8 @@ export function stepSimulation(
 
     if (node.buildingId === 'storage_container' || node.buildingId === 'the_hub') {
       const inSum = node.inputs.reduce((acc, p) => acc + p.actualRatePerMin, 0);
-      const outConn = nextConns.find((c) => c.fromNodeId === node.id);
+      const outConns = outgoingConnsByNodeId.get(node.id);
+      const outConn = outConns?.[0];
       const outSum = outConn ? (outConn.sourceRatePerMin ?? 0) : 0;
       const maxCap = node.maxStoredCount ?? 2400;
       const netPerSec = (inSum - outSum) / 60;
@@ -676,9 +711,9 @@ export function stepSimulation(
       if (outSpec) {
         const outMax = node.maxStoredCount ?? getItemStackSize(outSpec.itemId || outSpec.itemName);
         const outPort = node.outputs[0];
-        const outConn =
-          outPort &&
-          nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+        const outConn = outPort
+          ? outgoingConnByPortKey.get(`${node.id}:${outPort.id}`)
+          : undefined;
         const producedPerSec = (outSpec.ratePerMin * activeRatio) / 60;
         const beltedOutPerSec = outConn ? (outConn.sourceRatePerMin ?? 0) / 60 : 0;
         const nextStored = Math.min(

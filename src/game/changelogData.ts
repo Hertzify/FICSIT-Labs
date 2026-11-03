@@ -15,6 +15,48 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.15',
+    tag: '0.0.15 dev build',
+    date: '2026-11-03',
+    categories: [
+      {
+        category: '🚀 Future-Proof 2D Engine & Low-End Device Performance',
+        items: [
+          {
+            title: 'Decoupled 20 Hz Fixed-Timestep Simulation Loop',
+            description:
+              'Separated smooth 60 FPS camera/visual rendering from a fixed 20 Hz (50ms) factory simulation tick and removed per-pixel simulation steps while dragging machines.',
+          },
+          {
+            title: 'O(1) Connection Indexing & Early-Exit Solver',
+            description:
+              'Indexed port/node connections via O(1) lookup maps and added convergence detection so settled factories finish flow calculation in 2 passes instead of N passes.',
+          },
+          {
+            title: 'Cached Overpass Crossings & Low-End Battery Saver Mode',
+            description:
+              'Cached conveyor intersection checks by geometry signature and added a Low-End / Battery Saver mode in Settings that renders at 1.0x resolution and skips shadow passes.',
+          },
+        ],
+      },
+      {
+        category: '📲 Standalone Offline Game Shell (PWA & Fullscreen)',
+        items: [
+          {
+            title: 'Offline Installable Game & Asset Caching',
+            description:
+              'Configured service worker caching for all game scripts, UI, and Satisfactory icons so FICSIT Labs can be installed to the home screen and played 100% offline.',
+          },
+          {
+            title: 'One-Tap Fullscreen & Install Controls',
+            description:
+              'Added Fullscreen toggle and Install Offline Game buttons directly in the Main Menu and Settings.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.14',
     tag: '0.0.14 dev build',
     date: '2026-11-03',

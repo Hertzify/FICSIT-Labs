@@ -235,7 +235,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     drawNowRef.current?.();
   }, [selectedNodeId, nodesRef]);
 
+  const resizeCanvasRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
+    resizeCanvasRef.current?.();
     drawNowRef.current?.();
   }, [tapSourcePort, mode, settings]);
 
@@ -265,11 +268,18 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     if (!ctx) return;
 
     let animationFrameId = 0;
-    let timerId = 0;
     let lastTime = performance.now();
+    let simAccumulatorSec = 0;
+    let lastRenderTime = 0;
+    const FIXED_SIM_DT = 0.05; // Fixed 20 Hz simulation tick (50ms) decoupled from 60 FPS render loop
+
+    const getEffectiveDpr = () =>
+      settingsRef.current.performanceMode === 'battery_saver'
+        ? 1
+        : Math.min(window.devicePixelRatio || 1, 2);
 
     const drawScene = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = getEffectiveDpr();
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
       renderFactoryScene({
@@ -299,7 +309,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = getEffectiveDpr();
       const targetW = Math.max(1, Math.floor(rect.width * dpr));
       const targetH = Math.max(1, Math.floor(rect.height * dpr));
       if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -316,28 +326,52 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       drawScene();
     };
 
+    resizeCanvasRef.current = resizeCanvas;
     resizeCanvas();
     const ro = new ResizeObserver(resizeCanvas);
     ro.observe(canvas);
 
-    const scheduleNext = () => {
-      timerId = window.setTimeout(() => {
-        animationFrameId = window.requestAnimationFrame(renderLoop);
-      }, 28);
-    };
-
     const renderLoop = (now: number) => {
+      animationFrameId = window.requestAnimationFrame(renderLoop);
+
+      const isBatterySaver = settingsRef.current.performanceMode === 'battery_saver';
+      // In Battery Saver mode when not actively dragging/panning, cap visual redraws to ~30 FPS
+      const isInteracting =
+        interactionRef.current.isPanning ||
+        interactionRef.current.draggingNodeId !== null ||
+        interactionRef.current.wiringFrom !== null ||
+        interactionRef.current.smoothZoomTarget !== null;
+      if (isBatterySaver && !isInteracting && now - lastRenderTime < 31) {
+        return;
+      }
+      lastRenderTime = now;
+
       const rawDt = (now - lastTime) / 1000;
       lastTime = now;
-      const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
+      const frameDt = Math.min(Math.max(rawDt, 0.001), 0.15);
 
-      const simResult = stepSimulation(nodesRef.current, connectionsRef.current, dt);
-      nodesRef.current = simResult.nodes;
-      connectionsRef.current = simResult.connections;
+      simAccumulatorSec = Math.min(simAccumulatorSec + frameDt, FIXED_SIM_DT * 3);
+      let ranSimStep = false;
+      while (simAccumulatorSec >= FIXED_SIM_DT) {
+        const simResult = stepSimulation(
+          nodesRef.current,
+          connectionsRef.current,
+          FIXED_SIM_DT
+        );
+        nodesRef.current = simResult.nodes;
+        connectionsRef.current = simResult.connections;
+        simAccumulatorSec -= FIXED_SIM_DT;
+        ranSimStep = true;
+      }
 
-      if (selectedNodeIdRef.current) {
-        const liveNode = simResult.nodes.find((n) => n.id === selectedNodeIdRef.current);
-        if (liveNode && hasInspectorSnapshotChanged(selectedNodeSnapshotRef.current, liveNode)) {
+      if (ranSimStep && selectedNodeIdRef.current) {
+        const liveNode = nodesRef.current.find(
+          (n) => n.id === selectedNodeIdRef.current
+        );
+        if (
+          liveNode &&
+          hasInspectorSnapshotChanged(selectedNodeSnapshotRef.current, liveNode)
+        ) {
           setSelectedNodeSnapshot({
             ...liveNode,
             inputs: liveNode.inputs.map((p) => ({ ...p })),
@@ -346,9 +380,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
       }
 
-      interactionRef.current.elapsedTime += dt;
+      interactionRef.current.elapsedTime += frameDt;
 
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = getEffectiveDpr();
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
 
@@ -370,7 +404,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           );
           interactionRef.current.smoothZoomTarget = null;
         } else {
-          const stepZ = curZ + diff * Math.min(1, dt * 14);
+          const stepZ = curZ + diff * Math.min(1, frameDt * 14);
           applyZoomAboutScreenPoint(
             stepZ,
             interactionRef.current.smoothZoomAnchorX,
@@ -382,13 +416,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }
 
       drawScene();
-      scheduleNext();
     };
 
     animationFrameId = window.requestAnimationFrame(renderLoop);
     return () => {
       drawNowRef.current = null;
-      window.clearTimeout(timerId);
+      resizeCanvasRef.current = null;
       window.cancelAnimationFrame(animationFrameId);
       ro.disconnect();
     };
@@ -796,13 +829,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         interactionRef.current.dragHasCollision = !check.valid;
 
         if (moved) {
-          const nextNodes = nodesRef.current.map((n) => {
+          nodesRef.current = nodesRef.current.map((n) => {
             if (n.id !== nodeId) return n;
             return { ...n, x: clamped.x, y: clamped.y };
           });
-          const simResult = stepSimulation(nextNodes, connectionsRef.current, 0);
-          nodesRef.current = simResult.nodes;
-          connectionsRef.current = simResult.connections;
         }
       }
       drawNowRef.current?.();
@@ -877,6 +907,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         playSynthSfx('error', settingsRef.current);
         showToast('Buildings cannot overlap! Returned to original position.');
       } else {
+        const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
+        nodesRef.current = simResult.nodes;
+        connectionsRef.current = simResult.connections;
         onGraphMutated();
       }
     }

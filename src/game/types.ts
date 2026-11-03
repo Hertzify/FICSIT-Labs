@@ -6,6 +6,7 @@ export type TouchWiringMode = 'drag' | 'tap' | 'both';
 export interface SettingsConfig {
   conveyorStyle: ConveyorLineStyle;
   gridSnap: boolean;
+  snapMode: boolean; // Satisfactory-style magnetic port & center alignment with laser guidelines
   gridSize: number; // 24 px default
   uiScale: number; // 0.85 to 1.15
   showPortRates: boolean; // Toggle item rate numbers on port dots

@@ -48,7 +48,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             viewBox="0 0 340 60"
             className="w-52 h-auto shrink-0"
             role="img"
-            aria-label="FICSIT Node Labs Emblem"
+            aria-label="FICSIT Labs Emblem"
           >
             <rect
               x="2"
@@ -78,7 +78,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               fontSize="23"
               letterSpacing="0.04em"
             >
-              FICSIT NODE LABS
+              FICSIT LABS
             </text>
             <text
               x="62"
@@ -177,7 +177,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       {/* Single Flat Control-Hint Line in Bottom Margin */}
       <div className="pointer-events-none flex items-center justify-between text-[11px] text-slate-400 font-mono px-1">
         <span className="truncate">
-          Drag Pan · Pinch/Double-Tap Zoom (Zoom Out for Icon Boxes) · Tap/Drag Ports Wire · [Q] Build
+          Drag Pan · Pinch/Double-Tap Zoom (Zoom Out for Icon Boxes) · Tap/Drag Ports Wire · Tap Build
         </span>
         <div className="flex items-center gap-2 shrink-0 ml-2 pointer-events-auto">
           <button

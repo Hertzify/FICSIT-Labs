@@ -15,6 +15,90 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.11',
+    tag: '0.0.11 dev build',
+    date: '2026-11-03',
+    categories: [
+      {
+        category: '🧲 Satisfactory Snap Mode & Visual Guidelines',
+        items: [
+          {
+            title: 'Smart Magnetic Port & Centerline Snapping',
+            description: 'Moving or placing machines magnetically snaps to connected ports, nearby compatible ports, and building centerlines within an 18px attraction zone.',
+          },
+          {
+            title: 'Dynamic Cyan & Amber Laser Guidelines',
+            description: 'Live cyan dashed laser guides with circular reticles render for port alignment; amber dashed laser guides project across the factory floor for center axis alignment.',
+          },
+          {
+            title: 'Touch Snap Mode HUD Toggle',
+            description: 'Added a dedicated Snap: ON / OFF touch toggle button beside the belt selector and in Settings, allowing instant one-tap control.',
+          },
+        ],
+      },
+      {
+        category: '📐 Standardized Port Heights & Straight Belts',
+        items: [
+          {
+            title: 'Standardized 24px Grid Machine Proportions',
+            description: 'Single-port machines (Miner, Smelter, Constructor, Storage, Deposit) normalized to 144px height (port at +96px); multi-port machines (Assembler, Splitter, Merger) normalized to 168px height (+72px, +96px, +120px).',
+          },
+          {
+            title: '100% Straight Collinear Belts',
+            description: 'Horizontally aligned machines connect with clean 2-point straight conveyor belts with zero stair-stepping, unnecessary kinks, or detour jogs.',
+          },
+        ],
+      },
+      {
+        category: '📊 Belt HUD & In-Transit Telemetry Polish',
+        items: [
+          {
+            title: 'Always-Visible Elevated Belt HUD',
+            description: 'Belt telemetry badges and in-transit percentage HUD now render at top z-index, preventing badges from disappearing under machine nodes when placed close together.',
+          },
+          {
+            title: 'Consistent In-Transit Drag Telemetry',
+            description: 'Fixed an issue where in-transit progress badges flickered or disappeared while actively dragging machines around.',
+          },
+          {
+            title: 'Strictly Upright Item Icons',
+            description: 'Resource items on conveyor belts now remain strictly upright without tilting 90 degrees sideways on vertical belt segments.',
+          },
+        ],
+      },
+      {
+        category: '🔄 Conveyor Routing & Travel Physics',
+        items: [
+          {
+            title: 'Loop Detour Elimination',
+            description: 'Fixed routing pathfinder to eliminate spurious upward circular loops when connected nodes are placed in close vertical proximity.',
+          },
+          {
+            title: 'Physical Transit Speed Preservation',
+            description: 'Preserved physical conveyor speed rules and transit delays on close-quarters vertical connections without forgetting belt transfer rates.',
+          },
+        ],
+      },
+      {
+        category: '📱 Mobile-First Controls & Game Polish',
+        items: [
+          {
+            title: 'Complete Desktop Keyboard Purge',
+            description: 'Removed all desktop keydown listeners ([Esc], [Q], [Delete], [1-4]) and purged all keyboard shortcut hint badges across UI menus for a clean mobile-first touch UX.',
+          },
+          {
+            title: 'FICSIT Labs Rebranding',
+            description: 'Updated application title, header emblem, and metadata to FICSIT Labs.',
+          },
+          {
+            title: 'Starter Map Collision Adjustment',
+            description: 'Relocated starter copper deposit to prevent physical overlap with the Starter HUB.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.10',
     tag: '0.0.10 dev build',
     date: '2026-11-02',
@@ -51,8 +135,8 @@ export const CHANGELOG_DATA: ChangelogRelease[] = [
             description: 'Belt trigger button stays visible at all times and turns bright amber while its tab is open.',
           },
           {
-            title: 'Click-Anywhere Dismissal',
-            description: 'Tapping anywhere on the screen or pressing Escape immediately closes the belt tab.',
+            title: 'Tap-Anywhere Dismissal',
+            description: 'Tapping anywhere on the screen immediately closes the belt tab.',
           },
           {
             title: 'Bottom-Right Build Button',

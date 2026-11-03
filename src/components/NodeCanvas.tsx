@@ -18,18 +18,21 @@ import {
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
+  computeNodeSnapAlignment,
   computeOrthogonalConveyorPath,
+  computePolylineLength,
   createConveyorConnection,
   createMachineNode,
   doesPathIntersectNode,
   findConveyorCrossings,
   getBeltTierDef,
+  getPortWorldPosition,
   isMacroIconZoom,
   isNodePositionValid,
   MAX_ZOOM,
   MIN_ZOOM,
   sampleOrthogonalPath,
-  snapToGrid,
+  SnapGuideline,
   stepSimulation,
   upgradeConveyorBeltTier,
   WORLD_HEIGHT,
@@ -64,18 +67,12 @@ interface PortHit {
 }
 
 function getPortWorldCoords(
-  node: MachineNode,
+  node: { x: number; y: number; width: number; height: number },
   side: 'input' | 'output',
   index: number,
   total: number
 ): { x: number; y: number } {
-  const topArea = 56;
-  const bottomArea = node.height - 24;
-  const usableHeight = Math.max(32, bottomArea - topArea);
-  const step = usableHeight / (total + 1);
-  const py = node.y + topArea + step * (index + 1);
-  const px = side === 'input' ? node.x : node.x + node.width;
-  return { x: px, y: py };
+  return getPortWorldPosition(node, side, index, total);
 }
 
 function drawRoundedRect(
@@ -274,6 +271,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     smoothZoomTarget: number | null;
     smoothZoomAnchorX: number;
     smoothZoomAnchorY: number;
+    activeGuidelines: SnapGuideline[];
   }>({
     isPanning: false,
     draggingNodeId: null,
@@ -306,6 +304,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     smoothZoomTarget: null,
     smoothZoomAnchorX: 0,
     smoothZoomAnchorY: 0,
+    activeGuidelines: [],
   });
 
   const showToast = (msg: string) => {
@@ -513,11 +512,15 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
         const p1 = getPortWorldCoords(fromNode, 'output', outIdx, fromNode.outputs.length);
         const p2 = getPortWorldCoords(toNode, 'input', inIdx, toNode.inputs.length);
-        // Exclude the source and destination machine from obstacles so ports can be reached
-        const obstacles = allActiveNodes.filter(
-          (n) => n.id !== fromNode.id && n.id !== toNode.id
+        const pts = computeOrthogonalConveyorPath(
+          p1.x,
+          p1.y,
+          p2.x,
+          p2.y,
+          allActiveNodes,
+          fromNode,
+          toNode
         );
-        const pts = computeOrthogonalConveyorPath(p1.x, p1.y, p2.x, p2.y, obstacles);
         connPathMap.set(conn.id, pts);
         allBeltPathsList.push({ connId: conn.id, pts });
       }
@@ -541,10 +544,27 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
         const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
         const enteringRate = conn.sourceRatePerMin ?? conn.ratePerMin;
-        const isFlowing = conn.ratePerMin > 0;
-        const isInTransit = !conn.firstItemArrived && enteringRate > 0;
+        const packets = conn.inFlightItems ?? [];
+        const polyLen = Math.max(36, computePolylineLength(pts));
+        const visiblePackets = packets.filter((p) => p.distancePx <= polyLen);
+        const leadingDist =
+          visiblePackets.length > 0
+            ? Math.max(...visiblePackets.map((p) => p.distancePx))
+            : 0;
+        const estSpacing =
+          enteringRate > 0
+            ? Math.max(
+                18,
+                (tierDef.speedPxPerSec * 60) / Math.min(tierDef.capacityPerMin, enteringRate)
+              )
+            : 18;
+        const hasLiveFrontGap =
+          visiblePackets.length > 0 && polyLen - leadingDist > estSpacing + 6;
+        const isInTransit =
+          (!conn.firstItemArrived || hasLiveFrontGap) &&
+          (enteringRate > 0 || visiblePackets.length > 0);
+        const isFlowing = conn.ratePerMin > 0 && !isInTransit;
         const itemColor = getItemAccentColor(conn.itemName);
-        const lengthPx = Math.max(72, conn.lengthPx ?? 240);
 
         // Outer Industrial Conveyor Track Rails (16px wide bed so items sit snugly inside)
         drawPolyline(pts);
@@ -589,24 +609,26 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         ctx.stroke();
 
         // Render Physical Resource Items Traveling Along the Belt (`conn.inFlightItems`)
-        const packets = conn.inFlightItems ?? [];
         if (!macroMode && cam.zoom >= 0.35 && packets.length > 0) {
           const itemImg = getCanvasItemImage(conn.itemName);
           if (itemImg) {
             // Draw from source (back) to destination (front) so leading items layer cleanly
             for (let i = packets.length - 1; i >= 0; i--) {
               const pkt = packets[i];
-              const rawRatio = Math.max(0, Math.min(1, pkt.distancePx / lengthPx));
-              // Keep items inside the visible belt span between the two 7.5px port sockets
-              const portMarginT = Math.min(0.12, 9 / lengthPx);
-              const t = portMarginT + rawRatio * (1 - portMarginT * 2);
+              if (pkt.distancePx > polyLen) continue;
+              // Exact 1:1 physical distance along the orthogonal polyline
+              const portMarginPx = Math.min(9, polyLen * 0.12);
+              const clampedDist =
+                portMarginPx +
+                (Math.max(0, Math.min(polyLen, pkt.distancePx)) / polyLen) *
+                  Math.max(1, polyLen - portMarginPx * 2);
+              const t = Math.max(0, Math.min(1, clampedDist / polyLen));
               const sample = sampleOrthogonalPath(pts, t);
 
               const boxSize = 15.5;
               const half = boxSize * 0.5;
               ctx.save();
               ctx.translate(sample.x, sample.y);
-              ctx.rotate(sample.angle);
               drawRoundedRect(ctx, -half, -half, boxSize, boxSize, 3.2);
               ctx.fillStyle = '#0F172A';
               ctx.fill();
@@ -617,56 +639,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
               ctx.restore();
             }
           }
-        }
-
-        // Floating Belt Telemetry Badge (positioned ABOVE the belt so tightly squeezed items are 100% visible)
-        if (!macroMode && cfg.showPortRates) {
-          const mid = sampleOrthogonalPath(pts, 0.5);
-          const leadingDist =
-            packets.length > 0 ? Math.max(...packets.map((p) => p.distancePx)) : 0;
-          const transitPct = Math.min(99, Math.round((leadingDist / lengthPx) * 100));
-
-          const badgeText = isInTransit
-            ? `${tierDef.shortLabel} · Transit ${transitPct}%`
-            : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}`;
-
-          const badgeY = mid.y - 21;
-          ctx.beginPath();
-          ctx.moveTo(mid.x, mid.y - 8);
-          ctx.lineTo(mid.x, badgeY + 8);
-          ctx.strokeStyle = '#334155';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          ctx.font = '600 9px "JetBrains Mono", monospace';
-          const beltImg = getCanvasBuildingImage(tierDef.id);
-          const iconPad = beltImg ? 14 : 0;
-          const tw = ctx.measureText(badgeText).width + 10 + iconPad;
-          drawRoundedRect(ctx, mid.x - tw / 2, badgeY - 8.5, tw, 17, 4);
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-          ctx.fill();
-          ctx.strokeStyle = isInTransit
-            ? '#38BDF8'
-            : tierDef.tier >= 2
-            ? tierDef.accentColor
-            : isFlowing
-            ? itemColor
-            : '#334155';
-          ctx.lineWidth = 1.1;
-          ctx.stroke();
-
-          if (beltImg) {
-            ctx.drawImage(beltImg, mid.x - tw / 2 + 3.5, badgeY - 6, 12, 12);
-          }
-
-          ctx.fillStyle = isInTransit
-            ? '#38BDF8'
-            : isFlowing
-            ? '#F8FAFC'
-            : '#94A3B8';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(badgeText, mid.x + iconPad * 0.45, badgeY);
         }
       }
 
@@ -711,13 +683,14 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const activeTierDef = getBeltTierDef(activeBeltTierRef.current);
         const mouseX = interactionRef.current.pointerWorldX;
         const mouseY = interactionRef.current.pointerWorldY;
-        const previewObstacles = allActiveNodes.filter((n) => n.id !== wf.nodeId);
+        const fromNodeObj = allActiveNodes.find((n) => n.id === wf.nodeId);
         const previewPts = computeOrthogonalConveyorPath(
           wf.x,
           wf.y,
           mouseX,
           mouseY,
-          previewObstacles
+          allActiveNodes,
+          fromNodeObj
         );
         drawPolyline(previewPts);
         ctx.strokeStyle = activeTierDef.accentColor;
@@ -1143,21 +1116,138 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
       }
 
+      // 4.5 Render Floating Belt Telemetry Badges (Top Layer so they always draw ON TOP of Machine Nodes)
+      if (!macroMode && cfg.showPortRates) {
+        const placedBadges: { x: number; y: number; w: number; h: number }[] = [];
+        const badgeH = 18;
+
+        for (const conn of connectionsRef.current) {
+          const pts = connPathMap.get(conn.id);
+          if (!pts || pts.length < 2) continue;
+
+          const tierDef = getBeltTierDef(conn.beltTier, conn.maxCapacityPerMin);
+          const enteringRate = conn.sourceRatePerMin ?? conn.ratePerMin;
+          const packets = conn.inFlightItems ?? [];
+          const polyLen = Math.max(36, computePolylineLength(pts));
+          const lengthPx = Math.max(36, conn.lengthPx ?? Math.round(polyLen));
+          const visiblePackets = packets.filter((p) => p.distancePx <= polyLen);
+          const leadingDist =
+            visiblePackets.length > 0
+              ? Math.max(...visiblePackets.map((p) => p.distancePx))
+              : 0;
+          const estSpacing =
+            enteringRate > 0
+              ? Math.max(
+                  18,
+                  (tierDef.speedPxPerSec * 60) /
+                    Math.min(tierDef.capacityPerMin, enteringRate)
+                )
+              : 18;
+          const hasLiveFrontGap =
+            visiblePackets.length > 0 && polyLen - leadingDist > estSpacing + 6;
+          const isInTransit =
+            (!conn.firstItemArrived || hasLiveFrontGap) &&
+            (enteringRate > 0 || visiblePackets.length > 0);
+          const isFlowing = conn.ratePerMin > 0 && !isInTransit;
+          const itemColor = getItemAccentColor(conn.itemName);
+
+          const transitPct = Math.min(
+            99,
+            Math.round((leadingDist / Math.max(lengthPx, polyLen)) * 100)
+          );
+          const badgeText = isInTransit
+            ? `${tierDef.shortLabel} · Transit ${transitPct}%`
+            : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}`;
+
+          ctx.font = '600 9px "JetBrains Mono", monospace';
+          const beltImg = getCanvasBuildingImage(tierDef.id);
+          const iconPad = beltImg ? 14 : 0;
+          const tw = ctx.measureText(badgeText).width + 10 + iconPad;
+
+          const mid = sampleOrthogonalPath(pts, 0.5);
+          const badgeX = mid.x;
+          let badgeY = mid.y - 22;
+
+          // Prevent two belt badges from overlapping each other when two belts share a midpoint
+          for (const b of placedBadges) {
+            if (
+              Math.abs(badgeX - b.x) < (tw + b.w) * 0.5 + 4 &&
+              Math.abs(badgeY - b.y) < badgeH + 3
+            ) {
+              badgeY = b.y - (badgeH + 4);
+            }
+          }
+          placedBadges.push({ x: badgeX, y: badgeY, w: tw, h: badgeH });
+
+          // Leader line from belt midpoint to badge
+          ctx.beginPath();
+          ctx.moveTo(mid.x, mid.y - 7);
+          ctx.lineTo(badgeX, badgeY + badgeH * 0.5);
+          ctx.strokeStyle = '#64748B';
+          ctx.lineWidth = 1.3;
+          ctx.stroke();
+
+          // Drop shadow so badge clearly pops above any underlying machine node card
+          ctx.save();
+          drawRoundedRect(
+            ctx,
+            badgeX - tw / 2 + 1.5,
+            badgeY - badgeH / 2 + 2.5,
+            tw,
+            badgeH,
+            4
+          );
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+          ctx.fill();
+          ctx.restore();
+
+          drawRoundedRect(ctx, badgeX - tw / 2, badgeY - badgeH / 2, tw, badgeH, 4);
+          ctx.fillStyle = '#0F172A';
+          ctx.fill();
+          ctx.strokeStyle = isInTransit
+            ? '#38BDF8'
+            : tierDef.tier >= 2
+            ? tierDef.accentColor
+            : isFlowing
+            ? itemColor
+            : '#64748B';
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+
+          if (beltImg) {
+            ctx.drawImage(beltImg, badgeX - tw / 2 + 3.5, badgeY - 6, 12, 12);
+          }
+
+          ctx.fillStyle = isInTransit
+            ? '#38BDF8'
+            : isFlowing
+            ? '#F8FAFC'
+            : '#94A3B8';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(badgeText, badgeX + iconPad * 0.45, badgeY);
+        }
+      }
+
       // Ghost Blueprint Hologram for Building Placement
+      let ghostGuidelines: SnapGuideline[] = [];
       if (pendingBuildRef.current) {
         const bDef = BUILDINGS[pendingBuildRef.current];
         if (bDef) {
-          const rawX = snapToGrid(
-            interactionRef.current.pointerWorldX - bDef.width / 2,
-            cfg.gridSize,
-            cfg.gridSnap
+          const snapRes = computeNodeSnapAlignment(
+            {
+              buildingId: bDef.id,
+              x: interactionRef.current.pointerWorldX - bDef.width / 2,
+              y: interactionRef.current.pointerWorldY - bDef.height / 2,
+              width: bDef.width,
+              height: bDef.height,
+            },
+            nodesRef.current,
+            connectionsRef.current,
+            cfg
           );
-          const rawY = snapToGrid(
-            interactionRef.current.pointerWorldY - bDef.height / 2,
-            cfg.gridSize,
-            cfg.gridSnap
-          );
-          const clamped = clampNodeToWorld(rawX, rawY, bDef.width, bDef.height);
+          ghostGuidelines = snapRes.guidelines;
+          const clamped = clampNodeToWorld(snapRes.x, snapRes.y, bDef.width, bDef.height);
           const candidateNode = {
             id: 'ghost_preview',
             x: clamped.x,
@@ -1182,6 +1272,28 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ctx.stroke();
           ctx.setLineDash([]);
 
+          // Render preview port sockets on ghost building so user sees exact alignment
+          for (let i = 0; i < bDef.inputPortCount; i++) {
+            const pt = getPortWorldCoords(candidateNode, 'input', i, bDef.inputPortCount);
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#06B6D4';
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+          }
+          for (let i = 0; i < bDef.outputPortCount; i++) {
+            const pt = getPortWorldCoords(candidateNode, 'output', i, bDef.outputPortCount);
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#F59E0B';
+            ctx.fill();
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+          }
+
           const ghostImg = getCanvasBuildingImage(bDef.id);
           if (ghostImg) {
             ctx.globalAlpha = 0.65;
@@ -1197,10 +1309,75 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             ? 'NO OVERLAP: MACHINE COLLISION'
             : intersectsBelts
             ? 'NO OVERLAP: BELT COLLISION'
-            : `CLICK TO PLACE ${bDef.name.toUpperCase()}`;
+            : `TAP TO PLACE ${bDef.name.toUpperCase()}`;
           ctx.fillText(label, clamped.x + bDef.width / 2, clamped.y + bDef.height / 2);
           ctx.restore();
         }
+      }
+
+      // 5. Render Satisfactory-Style Snap Mode Alignment Laser Guidelines (Topmost Layer)
+      const guidelinesToDraw =
+        interactionRef.current.activeGuidelines.length > 0
+          ? interactionRef.current.activeGuidelines
+          : ghostGuidelines;
+
+      if (guidelinesToDraw.length > 0 && cfg.snapMode !== false) {
+        ctx.save();
+        for (const gl of guidelinesToDraw) {
+          const isPort = gl.kind === 'port';
+
+          // Outer laser glow
+          ctx.beginPath();
+          ctx.moveTo(gl.x1, gl.y1);
+          ctx.lineTo(gl.x2, gl.y2);
+          ctx.strokeStyle = isPort ? `${gl.color}44` : '#38BDF82A';
+          ctx.lineWidth = isPort ? 7 / Math.min(1, cam.zoom) : 4 / Math.min(1, cam.zoom);
+          ctx.lineCap = 'round';
+          ctx.stroke();
+
+          // Crisp dashed laser core
+          ctx.beginPath();
+          ctx.moveTo(gl.x1, gl.y1);
+          ctx.lineTo(gl.x2, gl.y2);
+          ctx.strokeStyle = gl.color;
+          ctx.lineWidth = isPort ? 2.4 / Math.min(1, cam.zoom) : 1.6 / Math.min(1, cam.zoom);
+          ctx.setLineDash(isPort ? [8, 5] : [5, 5]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          if (isPort) {
+            // Target reticles on both aligned ports
+            for (const endPt of [
+              { x: gl.x1, y: gl.y1 },
+              { x: gl.x2, y: gl.y2 },
+            ]) {
+              ctx.beginPath();
+              ctx.arc(endPt.x, endPt.y, 11, 0, Math.PI * 2);
+              ctx.strokeStyle = gl.color;
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            }
+
+            // Alignment confirmation pill at laser midpoint
+            if (gl.label && Math.hypot(gl.x2 - gl.x1, gl.y2 - gl.y1) >= 48) {
+              const mx = (gl.x1 + gl.x2) * 0.5;
+              const my = (gl.y1 + gl.y2) * 0.5 + 16;
+              ctx.font = '700 9px "JetBrains Mono", monospace';
+              const ltw = ctx.measureText(gl.label).width + 12;
+              drawRoundedRect(ctx, mx - ltw * 0.5, my - 8, ltw, 16, 4);
+              ctx.fillStyle = '#0B0F17EE';
+              ctx.fill();
+              ctx.strokeStyle = gl.color;
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
+              ctx.fillStyle = gl.color;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(gl.label, mx, my);
+            }
+          }
+        }
+        ctx.restore();
       }
 
       ctx.restore();
@@ -1419,17 +1596,19 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const bId = pendingBuildRef.current;
       const bDef = BUILDINGS[bId];
       if (bDef) {
-        const rawX = snapToGrid(
-          world.x - bDef.width / 2,
-          settingsRef.current.gridSize,
-          settingsRef.current.gridSnap
+        const snapRes = computeNodeSnapAlignment(
+          {
+            buildingId: bDef.id,
+            x: world.x - bDef.width / 2,
+            y: world.y - bDef.height / 2,
+            width: bDef.width,
+            height: bDef.height,
+          },
+          nodesRef.current,
+          connectionsRef.current,
+          settingsRef.current
         );
-        const rawY = snapToGrid(
-          world.y - bDef.height / 2,
-          settingsRef.current.gridSize,
-          settingsRef.current.gridSnap
-        );
-        const clamped = clampNodeToWorld(rawX, rawY, bDef.width, bDef.height);
+        const clamped = clampNodeToWorld(snapRes.x, snapRes.y, bDef.width, bDef.height);
         const candidateNode = {
           id: 'candidate',
           x: clamped.x,
@@ -1461,9 +1640,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             p1.y,
             p2.x,
             p2.y,
-            currentNodes.filter((n) => n.id !== fn.id && n.id !== tn.id)
+            currentNodes,
+            fn,
+            tn
           );
-          return doesPathIntersectNode(path, candidateNode as any, 2);
+          return doesPathIntersectNode(path, candidateNode as any, 16);
         });
 
         if (blocksBelts) {
@@ -1671,20 +1852,31 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const nodeId = interactionRef.current.draggingNodeId;
       const rawX = world.x - interactionRef.current.dragOffsetX;
       const rawY = world.y - interactionRef.current.dragOffsetY;
-      const snappedX = snapToGrid(
-        rawX,
-        settingsRef.current.gridSize,
-        settingsRef.current.gridSnap
-      );
-      const snappedY = snapToGrid(
-        rawY,
-        settingsRef.current.gridSize,
-        settingsRef.current.gridSnap
-      );
 
       const targetNode = nodesRef.current.find((n) => n.id === nodeId);
       if (targetNode) {
-        const clamped = clampNodeToWorld(snappedX, snappedY, targetNode.width, targetNode.height);
+        const snapRes = computeNodeSnapAlignment(
+          {
+            id: targetNode.id,
+            buildingId: targetNode.buildingId,
+            x: rawX,
+            y: rawY,
+            width: targetNode.width,
+            height: targetNode.height,
+          },
+          nodesRef.current,
+          connectionsRef.current,
+          settingsRef.current
+        );
+        interactionRef.current.activeGuidelines = snapRes.guidelines;
+
+        const clamped = clampNodeToWorld(
+          snapRes.x,
+          snapRes.y,
+          targetNode.width,
+          targetNode.height
+        );
+        const moved = clamped.x !== targetNode.x || clamped.y !== targetNode.y;
         const check = isNodePositionValid(
           nodesRef.current,
           { ...targetNode, x: clamped.x, y: clamped.y },
@@ -1692,10 +1884,15 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         );
         interactionRef.current.dragHasCollision = !check.valid;
 
-        nodesRef.current = nodesRef.current.map((n) => {
-          if (n.id !== nodeId) return n;
-          return { ...n, x: clamped.x, y: clamped.y };
-        });
+        if (moved) {
+          const nextNodes = nodesRef.current.map((n) => {
+            if (n.id !== nodeId) return n;
+            return { ...n, x: clamped.x, y: clamped.y };
+          });
+          const simResult = stepSimulation(nextNodes, connectionsRef.current, 0);
+          nodesRef.current = simResult.nodes;
+          connectionsRef.current = simResult.connections;
+        }
       }
       drawNowRef.current?.();
       return;
@@ -1774,9 +1971,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }
     }
 
+    interactionRef.current.activeGuidelines = [];
     interactionRef.current.dragHasCollision = false;
     interactionRef.current.draggingNodeId = null;
     interactionRef.current.isPanning = false;
+    drawNowRef.current?.();
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {

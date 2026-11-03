@@ -52,31 +52,43 @@ export function getBeltTierDef(
   return CONVEYOR_BELT_TIERS[6];
 }
 
+export function getPortOffsetY(index: number, total: number): number {
+  if (total <= 1) return 96; // 4 * 24px grid units
+  if (total === 2) return index === 0 ? 72 : 120; // 3 * 24px and 5 * 24px grid units
+  return 72 + index * 24; // 72, 96, 120 (exact 24px grid pitch)
+}
+
 export function getPortWorldPosition(
-  node: MachineNode,
+  node: { x: number; y: number; width: number; height: number },
   side: 'input' | 'output',
   index: number,
   total: number
 ): { x: number; y: number } {
-  const topArea = 56;
-  const bottomArea = node.height - 24;
-  const usableHeight = Math.max(32, bottomArea - topArea);
-  const step = usableHeight / (total + 1);
-  const py = node.y + topArea + step * (index + 1);
+  const py = node.y + getPortOffsetY(index, total);
   const px = side === 'input' ? node.x : node.x + node.width;
   return { x: px, y: py };
+}
+
+export function computePolylineLength(pts: { x: number; y: number }[]): number {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  }
+  return total;
 }
 
 export function computeConveyorLengthPx(
   fromNode: MachineNode,
   outIdx: number,
   toNode: MachineNode,
-  inIdx: number
+  inIdx: number,
+  obstacles: MachineNode[] = []
 ): number {
   const p1 = getPortWorldPosition(fromNode, 'output', Math.max(0, outIdx), fromNode.outputs.length);
   const p2 = getPortWorldPosition(toNode, 'input', Math.max(0, inIdx), toNode.inputs.length);
-  const straightDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-  return Math.max(72, Math.round(straightDist * 1.08));
+  const pts = computeOrthogonalConveyorPath(p1.x, p1.y, p2.x, p2.y, obstacles, fromNode, toNode);
+  const polyLen = computePolylineLength(pts);
+  return Math.max(36, Math.round(polyLen));
 }
 
 /**
@@ -119,7 +131,7 @@ export function doesSegmentIntersectBox(
   p1: { x: number; y: number },
   p2: { x: number; y: number },
   box: { x: number; y: number; width: number; height: number },
-  pad = 4
+  pad = 12
 ): boolean {
   const minX = Math.min(p1.x, p2.x);
   const maxX = Math.max(p1.x, p2.x);
@@ -131,15 +143,20 @@ export function doesSegmentIntersectBox(
   const bT = box.y - pad;
   const bB = box.y + box.height + pad;
 
+  // Zero-length segment
+  if (Math.abs(p1.x - p2.x) < 1e-4 && Math.abs(p1.y - p2.y) < 1e-4) {
+    return false;
+  }
+
   // Horizontal segment
   if (Math.abs(p1.y - p2.y) < 1e-4) {
-    return p1.y >= bT && p1.y <= bB && maxX >= bL && minX <= bR;
+    return p1.y >= bT && p1.y <= bB && maxX > bL + 1e-3 && minX < bR - 1e-3;
   }
   // Vertical segment
   if (Math.abs(p1.x - p2.x) < 1e-4) {
-    return p1.x >= bL && p1.x <= bR && maxY >= bT && minY <= bB;
+    return p1.x >= bL && p1.x <= bR && maxY > bT + 1e-3 && minY < bB - 1e-3;
   }
-  return maxX >= bL && minX <= bR && maxY >= bT && minY <= bB;
+  return maxX > bL + 1e-3 && minX < bR - 1e-3 && maxY > bT + 1e-3 && minY < bB - 1e-3;
 }
 
 /**
@@ -148,7 +165,7 @@ export function doesSegmentIntersectBox(
 export function doesPathIntersectNode(
   path: { x: number; y: number }[],
   node: MachineNode,
-  pad = 4
+  pad = 12
 ): boolean {
   for (let i = 1; i < path.length; i++) {
     if (doesSegmentIntersectBox(path[i - 1], path[i], node, pad)) {
@@ -159,78 +176,238 @@ export function doesPathIntersectNode(
 }
 
 /**
- * Computes a clean 90-degree orthogonal conveyor belt path between ports,
- * actively routing around obstacle nodes so belts never go over machine nodes.
+ * Simplifies a polyline by merging consecutive collinear segments and removing zero-length steps.
+ */
+export function simplifyPolyline(pts: { x: number; y: number }[]): { x: number; y: number }[] {
+  if (pts.length <= 2) return pts;
+  const result: { x: number; y: number }[] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const curr = pts[i];
+    const prev = result[result.length - 1];
+    // Skip duplicate point
+    if (Math.abs(curr.x - prev.x) < 0.1 && Math.abs(curr.y - prev.y) < 0.1) {
+      continue;
+    }
+    if (result.length >= 2) {
+      const pPrev = result[result.length - 2];
+      const isColinearH =
+        Math.abs(pPrev.y - prev.y) < 0.1 && Math.abs(prev.y - curr.y) < 0.1;
+      const isColinearV =
+        Math.abs(pPrev.x - prev.x) < 0.1 && Math.abs(prev.x - curr.x) < 0.1;
+      if (isColinearH || isColinearV) {
+        result[result.length - 1] = curr;
+        continue;
+      }
+    }
+    result.push(curr);
+  }
+  return result;
+}
+
+/**
+ * Computes a clean, shortest-path 90-degree orthogonal conveyor belt path between ports,
+ * routing through the horizontal gap between vertically aligned nodes or tightly around
+ * immediate obstacles without ever looping far away.
  */
 export function computeOrthogonalConveyorPath(
   x1: number,
   y1: number,
   x2: number,
   y2: number,
-  obstacles: MachineNode[] = []
+  obstacles: MachineNode[] = [],
+  fromNode?: MachineNode,
+  toNode?: MachineNode
 ): { x: number; y: number }[] {
-  const pad = 10;
-  const isSegmentBlocked = (pA: { x: number; y: number }, pB: { x: number; y: number }) => {
-    return obstacles.some((obs) => doesSegmentIntersectBox(pA, pB, obs, pad));
+  const CLEARANCE = 12;
+  const STUB = 22;
+
+  // Infer source and destination machines if not explicitly provided
+  const srcNode =
+    fromNode ??
+    obstacles.find(
+      (n) =>
+        Math.abs(x1 - (n.x + n.width)) <= 8 &&
+        y1 >= n.y - 10 &&
+        y1 <= n.y + n.height + 10
+    );
+  const dstNode =
+    toNode ??
+    obstacles.find(
+      (n) =>
+        Math.abs(x2 - n.x) <= 8 &&
+        y2 >= n.y - 10 &&
+        y2 <= n.y + n.height + 10
+    );
+
+  // Third-party obstacles (excluding srcNode and dstNode) require full 12px clearance,
+  // while srcNode and dstNode use 1px clearance so belts can route cleanly through narrow gaps when nodes are very close.
+  const otherObstacles = obstacles.filter(
+    (n) => n.id !== srcNode?.id && n.id !== dstNode?.id
+  );
+  const allObstacles: { x: number; y: number; width: number; height: number; id?: string }[] = [
+    ...otherObstacles,
+  ];
+  if (srcNode) allObstacles.push(srcNode);
+  if (dstNode) allObstacles.push(dstNode);
+
+  const isInternalBlocked = (pA: { x: number; y: number }, pB: { x: number; y: number }) => {
+    if (otherObstacles.some((obs) => doesSegmentIntersectBox(pA, pB, obs, CLEARANCE))) {
+      return true;
+    }
+    if (srcNode && doesSegmentIntersectBox(pA, pB, srcNode, 1)) {
+      return true;
+    }
+    if (dstNode && doesSegmentIntersectBox(pA, pB, dstNode, 1)) {
+      return true;
+    }
+    return false;
   };
 
-  // Standard forward routing: S-bend with vertical corridor
-  if (x2 >= x1 + 36) {
-    const midX = x1 + (x2 - x1) * 0.5;
-    const pA = { x: x1, y: y1 };
-    const pB = { x: midX, y: y1 };
-    const pC = { x: midX, y: y2 };
-    const pD = { x: x2, y: y2 };
+  const pStart = { x: x1, y: y1 };
+  const pEnd = { x: x2, y: y2 };
 
-    if (!isSegmentBlocked(pA, pB) && !isSegmentBlocked(pB, pC) && !isSegmentBlocked(pC, pD)) {
-      return [pA, pB, pC, pD];
+  // Topology 1: Forward H-V-H routing whenever destination port is to the right of (or at) source port
+  if (x2 >= x1) {
+    const fStub = Math.min(STUB, Math.max(1, (x2 - x1) * 0.45));
+    const fExit = { x: x1 + fStub, y: y1 };
+    const fEnter = { x: x2 - fStub, y: y2 };
+
+    if (Math.abs(y1 - y2) < 1e-4 && !isInternalBlocked(fExit, fEnter)) {
+      return [pStart, pEnd];
     }
 
-    // Try shifting midX to the left or right of colliding obstacles
-    const colliding = obstacles.filter((obs) => doesSegmentIntersectBox(pB, pC, obs, pad));
-    for (const obs of colliding) {
-      const leftX = obs.x - 20;
-      if (leftX > x1 + 16 && leftX < x2 - 16) {
-        const altB = { x: leftX, y: y1 };
-        const altC = { x: leftX, y: y2 };
-        if (!isSegmentBlocked(pA, altB) && !isSegmentBlocked(altB, altC) && !isSegmentBlocked(altC, pD)) {
-          return [pA, altB, altC, pD];
-        }
-      }
-      const rightX = obs.x + obs.width + 20;
-      if (rightX > x1 + 16 && rightX < x2 - 16) {
-        const altB = { x: rightX, y: y1 };
-        const altC = { x: rightX, y: y2 };
-        if (!isSegmentBlocked(pA, altB) && !isSegmentBlocked(altB, altC) && !isSegmentBlocked(altC, pD)) {
-          return [pA, altB, altC, pD];
-        }
+    const defaultMidX = (x1 + x2) * 0.5;
+    const candidateMidXs: number[] = [defaultMidX, fExit.x, fEnter.x];
+
+    for (const obs of otherObstacles) {
+      if (obs.x + obs.width >= fExit.x && obs.x <= fEnter.x) {
+        const leftX = obs.x - CLEARANCE - 6;
+        const rightX = obs.x + obs.width + CLEARANCE + 6;
+        if (leftX >= fExit.x && leftX <= fEnter.x) candidateMidXs.push(leftX);
+        if (rightX >= fExit.x && rightX <= fEnter.x) candidateMidXs.push(rightX);
       }
     }
 
-    // If still blocked, route around obstacles vertically (above or below)
-    const minYObs = obstacles.length > 0 ? Math.min(...obstacles.map((o) => o.y)) - 28 : y1 - 40;
-    const maxYObs = obstacles.length > 0 ? Math.max(...obstacles.map((o) => o.y + o.height)) + 28 : y2 + 40;
-    const detourY = Math.abs(y1 - minYObs) < Math.abs(y1 - maxYObs) ? minYObs : maxYObs;
-    return [
-      { x: x1, y: y1 },
-      { x: x1 + 18, y: y1 },
-      { x: x1 + 18, y: detourY },
-      { x: x2 - 18, y: detourY },
-      { x: x2 - 18, y: y2 },
-      { x: x2, y: y2 },
-    ];
+    // Sort by closeness to symmetric midpoint
+    candidateMidXs.sort((a, b) => Math.abs(a - defaultMidX) - Math.abs(b - defaultMidX));
+
+    for (const midX of candidateMidXs) {
+      const pB = { x: midX, y: y1 };
+      const pC = { x: midX, y: y2 };
+      if (
+        !isInternalBlocked(fExit, pB) &&
+        !isInternalBlocked(pB, pC) &&
+        !isInternalBlocked(pC, fEnter)
+      ) {
+        return simplifyPolyline([pStart, fExit, pB, pC, fEnter, pEnd]);
+      }
+    }
   }
 
-  // Backward, vertical, or tight alignment: route around
-  const detourY = y1 <= y2 ? Math.min(y1, y2) - 44 : Math.max(y1, y2) + 44;
-  return [
-    { x: x1, y: y1 },
-    { x: x1 + 22, y: y1 },
-    { x: x1 + 22, y: detourY },
-    { x: x2 - 22, y: detourY },
-    { x: x2 - 22, y: y2 },
-    { x: x2, y: y2 },
-  ];
+  const pExit = { x: x1 + STUB, y: y1 };
+  const pEnter = { x: x2 - STUB, y: y2 };
+
+  // Topology 2: H-V-H-V-H routing (for vertically aligned nodes, backward connections, or blocked forward corridors)
+  const exitXs: number[] = [pExit.x];
+  if (dstNode && dstNode.x + dstNode.width + STUB > pExit.x) {
+    exitXs.push(dstNode.x + dstNode.width + STUB);
+  }
+
+  const enterXs: number[] = [pEnter.x];
+  if (srcNode && srcNode.x - STUB < pEnter.x) {
+    enterXs.push(srcNode.x - STUB);
+  }
+
+  const candidateMidYs: number[] = [(y1 + y2) * 0.5];
+
+  // If srcNode and dstNode have a vertical gap between them, prioritize the exact center of that gap!
+  if (srcNode && dstNode) {
+    if (srcNode.y > dstNode.y + dstNode.height) {
+      candidateMidYs.unshift(((dstNode.y + dstNode.height) + srcNode.y) * 0.5);
+    } else if (dstNode.y > srcNode.y + srcNode.height) {
+      candidateMidYs.unshift(((srcNode.y + srcNode.height) + dstNode.y) * 0.5);
+    }
+  }
+
+  const margin = CLEARANCE + 8; // 20px outside node top/bottom edge
+  if (srcNode) {
+    candidateMidYs.push(srcNode.y - margin, srcNode.y + srcNode.height + margin);
+  }
+  if (dstNode) {
+    candidateMidYs.push(dstNode.y - margin, dstNode.y + dstNode.height + margin);
+  }
+  if (srcNode && dstNode) {
+    candidateMidYs.push(
+      Math.min(srcNode.y, dstNode.y) - margin,
+      Math.max(srcNode.y + srcNode.height, dstNode.y + dstNode.height) + margin
+    );
+  } else {
+    candidateMidYs.push(Math.min(y1, y2) - 40, Math.max(y1, y2) + 40);
+  }
+
+  // Include tight bypasses around any nearby obstacles that actually lie in the local bounding box
+  const localMinX = Math.min(...exitXs, ...enterXs) - 40;
+  const localMaxX = Math.max(...exitXs, ...enterXs) + 40;
+  const localMinY = Math.min(y1, y2) - 220;
+  const localMaxY = Math.max(y1, y2) + 220;
+
+  for (const obs of allObstacles) {
+    if (
+      obs.x + obs.width >= localMinX &&
+      obs.x <= localMaxX &&
+      obs.y + obs.height >= localMinY &&
+      obs.y <= localMaxY
+    ) {
+      candidateMidYs.push(obs.y - margin, obs.y + obs.height + margin);
+    }
+  }
+
+  let bestPath: { x: number; y: number }[] | null = null;
+  let bestLen = Infinity;
+
+  for (const exX of exitXs) {
+    for (const enX of enterXs) {
+      for (const midY of candidateMidYs) {
+        const p1Stub = { x: exX, y: y1 };
+        const p2Turn = { x: exX, y: midY };
+        const p3Turn = { x: enX, y: midY };
+        const p4Stub = { x: enX, y: y2 };
+
+        if (
+          !isInternalBlocked(pExit, p1Stub) &&
+          !isInternalBlocked(p1Stub, p2Turn) &&
+          !isInternalBlocked(p2Turn, p3Turn) &&
+          !isInternalBlocked(p3Turn, p4Stub) &&
+          !isInternalBlocked(p4Stub, pEnter)
+        ) {
+          const cand = simplifyPolyline([pStart, p1Stub, p2Turn, p3Turn, p4Stub, pEnd]);
+          const len = computePolylineLength(cand);
+          if (len < bestLen) {
+            bestLen = len;
+            bestPath = cand;
+          }
+        }
+      }
+    }
+  }
+
+  if (bestPath) {
+    return bestPath;
+  }
+
+  // Fallback tight local loop around the two ports (never goes far off-screen)
+  const fallbackY =
+    srcNode && dstNode
+      ? Math.min(srcNode.y, dstNode.y) - margin
+      : Math.min(y1, y2) - 40;
+  return simplifyPolyline([
+    pStart,
+    pExit,
+    { x: pExit.x, y: fallbackY },
+    { x: pEnter.x, y: fallbackY },
+    pEnter,
+    pEnd,
+  ]);
 }
 
 /**
@@ -393,6 +570,384 @@ export function computeConveyorBeltFlowVisuals(ratePerMin: number): {
 export function snapToGrid(value: number, gridSize: number, enabled: boolean): number {
   if (!enabled || gridSize <= 0) return Math.round(value);
   return Math.round(value / gridSize) * gridSize;
+}
+
+export interface SnapGuideline {
+  axis: 'horizontal' | 'vertical';
+  kind: 'port' | 'center';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  label?: string;
+}
+
+export interface NodeSnapResult {
+  x: number;
+  y: number;
+  snappedX: boolean;
+  snappedY: boolean;
+  guidelines: SnapGuideline[];
+}
+
+/**
+ * Satisfactory-style Smart Snap Mode resolver:
+ * Snaps a dragged or ghost-preview building to:
+ * 1. Connected input/output ports (highest priority so wired belts lock 100% straight)
+ * 2. Nearby compatible input/output ports within a horizontal factory corridor
+ * 3. Nearby building centerlines / edges
+ * 4. Standard 24px blueprint world grid fallback
+ * Also emits active visual laser guidelines for canvas rendering.
+ */
+export function computeNodeSnapAlignment(
+  candidate: {
+    id?: string;
+    buildingId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+  nodes: MachineNode[],
+  connections: ConveyorConnection[],
+  options: { gridSnap: boolean; gridSize: number; snapMode?: boolean }
+): NodeSnapResult {
+  const baseX = snapToGrid(candidate.x, options.gridSize, options.gridSnap);
+  const baseY = snapToGrid(candidate.y, options.gridSize, options.gridSnap);
+
+  if (options.snapMode === false) {
+    return {
+      x: baseX,
+      y: baseY,
+      snappedX: false,
+      snappedY: false,
+      guidelines: [],
+    };
+  }
+
+  const bDef = BUILDINGS[candidate.buildingId];
+  const inCount = bDef?.inputPortCount ?? 1;
+  const outCount = bDef?.outputPortCount ?? 1;
+  const PORT_SNAP_THRESHOLD = 18;
+  const CENTER_SNAP_THRESHOLD = 14;
+  const MAX_H_CORRIDOR = 960;
+  const MAX_V_CORRIDOR = 840;
+
+  let finalX = baseX;
+  let finalY = baseY;
+  let snappedX = false;
+  let snappedY = false;
+
+  // ---------------------------------------------------------------------------
+  // 1. Evaluate Y-Axis Snap (Connected Ports -> Nearby Compatible Ports -> Center Y)
+  // ---------------------------------------------------------------------------
+  let bestYDiff = PORT_SNAP_THRESHOLD + 1;
+  let bestTargetY: number | null = null;
+
+  // Priority 1A: Connected Ports (if dragging an existing wired node)
+  if (candidate.id) {
+    const attachedConns = connections.filter(
+      (c) => c.toNodeId === candidate.id || c.fromNodeId === candidate.id
+    );
+    for (const conn of attachedConns) {
+      if (conn.toNodeId === candidate.id) {
+        const srcNode = nodes.find((n) => n.id === conn.fromNodeId);
+        if (!srcNode) continue;
+        const outIdx = Math.max(
+          0,
+          srcNode.outputs.findIndex((p) => p.id === conn.fromPortId)
+        );
+        const srcPt = getPortWorldPosition(
+          srcNode,
+          'output',
+          outIdx,
+          Math.max(1, srcNode.outputs.length)
+        );
+        const inIdx = Math.max(0, parseInt(conn.toPortId.split('_in_')[1] ?? '0', 10) || 0);
+        const candOffset = getPortOffsetY(inIdx, Math.max(1, inCount));
+        const idealY = srcPt.y - candOffset;
+        const diff = Math.abs(candidate.y - idealY);
+        if (diff < bestYDiff) {
+          bestYDiff = diff;
+          bestTargetY = idealY;
+        }
+      } else if (conn.fromNodeId === candidate.id) {
+        const dstNode = nodes.find((n) => n.id === conn.toNodeId);
+        if (!dstNode) continue;
+        const inIdx = Math.max(
+          0,
+          dstNode.inputs.findIndex((p) => p.id === conn.toPortId)
+        );
+        const dstPt = getPortWorldPosition(
+          dstNode,
+          'input',
+          inIdx,
+          Math.max(1, dstNode.inputs.length)
+        );
+        const outIdx = Math.max(0, parseInt(conn.fromPortId.split('_out_')[1] ?? '0', 10) || 0);
+        const candOffset = getPortOffsetY(outIdx, Math.max(1, outCount));
+        const idealY = dstPt.y - candOffset;
+        const diff = Math.abs(candidate.y - idealY);
+        if (diff < bestYDiff) {
+          bestYDiff = diff;
+          bestTargetY = idealY;
+        }
+      }
+    }
+  }
+
+  // Priority 1B: Nearby Compatible Ports in Horizontal Corridor
+  if (bestTargetY === null) {
+    let bestHorizDist = Infinity;
+    for (const other of nodes) {
+      if (candidate.id && other.id === candidate.id) continue;
+      const vDist = Math.abs(
+        other.y + other.height * 0.5 - (candidate.y + candidate.height * 0.5)
+      );
+      if (vDist > 320) continue;
+
+      // Other node is to the left -> match other's outputs to candidate's inputs
+      if (other.x + other.width <= candidate.x + 60 && inCount > 0 && other.outputs.length > 0) {
+        const hDist = Math.abs(candidate.x - (other.x + other.width));
+        if (hDist <= MAX_H_CORRIDOR) {
+          for (let oIdx = 0; oIdx < other.outputs.length; oIdx++) {
+            const otherPt = getPortWorldPosition(
+              other,
+              'output',
+              oIdx,
+              other.outputs.length
+            );
+            for (let iIdx = 0; iIdx < inCount; iIdx++) {
+              const candOffset = getPortOffsetY(iIdx, inCount);
+              const idealY = otherPt.y - candOffset;
+              const diff = Math.abs(candidate.y - idealY);
+              if (
+                diff <= PORT_SNAP_THRESHOLD &&
+                (diff < bestYDiff - 1 || (Math.abs(diff - bestYDiff) <= 1 && hDist < bestHorizDist))
+              ) {
+                bestYDiff = diff;
+                bestHorizDist = hDist;
+                bestTargetY = idealY;
+              }
+            }
+          }
+        }
+      }
+
+      // Other node is to the right -> match other's inputs to candidate's outputs
+      if (other.x >= candidate.x + candidate.width - 60 && outCount > 0 && other.inputs.length > 0) {
+        const hDist = Math.abs(other.x - (candidate.x + candidate.width));
+        if (hDist <= MAX_H_CORRIDOR) {
+          for (let iIdx = 0; iIdx < other.inputs.length; iIdx++) {
+            const otherPt = getPortWorldPosition(
+              other,
+              'input',
+              iIdx,
+              other.inputs.length
+            );
+            for (let oIdx = 0; oIdx < outCount; oIdx++) {
+              const candOffset = getPortOffsetY(oIdx, outCount);
+              const idealY = otherPt.y - candOffset;
+              const diff = Math.abs(candidate.y - idealY);
+              if (
+                diff <= PORT_SNAP_THRESHOLD &&
+                (diff < bestYDiff - 1 || (Math.abs(diff - bestYDiff) <= 1 && hDist < bestHorizDist))
+              ) {
+                bestYDiff = diff;
+                bestHorizDist = hDist;
+                bestTargetY = idealY;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Priority 1C: Nearby Building Center Y
+  if (bestTargetY === null) {
+    let bestCenterDiff = CENTER_SNAP_THRESHOLD + 1;
+    for (const other of nodes) {
+      if (candidate.id && other.id === candidate.id) continue;
+      const hDist = Math.abs(
+        other.x + other.width * 0.5 - (candidate.x + candidate.width * 0.5)
+      );
+      if (hDist > MAX_H_CORRIDOR) continue;
+      const otherCenterY = other.y + other.height * 0.5;
+      const idealY = Math.round(otherCenterY - candidate.height * 0.5);
+      const diff = Math.abs(candidate.y - idealY);
+      if (diff < bestCenterDiff) {
+        bestCenterDiff = diff;
+        bestTargetY = idealY;
+      }
+    }
+  }
+
+  if (bestTargetY !== null) {
+    finalY = bestTargetY;
+    snappedY = true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. Evaluate X-Axis Snap (Vertical Column Alignment with Nearby Buildings)
+  // ---------------------------------------------------------------------------
+  let bestXDiff = CENTER_SNAP_THRESHOLD + 1;
+  let bestTargetX: number | null = null;
+  for (const other of nodes) {
+    if (candidate.id && other.id === candidate.id) continue;
+    const vDist = Math.abs(
+      other.y + other.height * 0.5 - (finalY + candidate.height * 0.5)
+    );
+    if (vDist > MAX_V_CORRIDOR) continue;
+
+    const otherCenterX = other.x + other.width * 0.5;
+    const idealX =
+      other.width === candidate.width
+        ? other.x
+        : Math.round(otherCenterX - candidate.width * 0.5);
+    const diff = Math.abs(candidate.x - idealX);
+    if (diff < bestXDiff) {
+      bestXDiff = diff;
+      bestTargetX = idealX;
+    }
+  }
+
+  if (bestTargetX !== null) {
+    finalX = bestTargetX;
+    snappedX = true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3. Emit Active Visual Laser Guidelines for All Aligned Ports & Centers
+  // ---------------------------------------------------------------------------
+  const guidelines: SnapGuideline[] = [];
+  const alignedNodeIdsH = new Set<string>();
+
+  for (const other of nodes) {
+    if (candidate.id && other.id === candidate.id) continue;
+    const hCenterDist = Math.abs(
+      other.x + other.width * 0.5 - (finalX + candidate.width * 0.5)
+    );
+    const vCenterDist = Math.abs(
+      other.y + other.height * 0.5 - (finalY + candidate.height * 0.5)
+    );
+
+    const isConnectedToOther =
+      Boolean(candidate.id) &&
+      connections.some(
+        (c) =>
+          (c.fromNodeId === other.id && c.toNodeId === candidate.id) ||
+          (c.fromNodeId === candidate.id && c.toNodeId === other.id)
+      );
+
+    if (hCenterDist <= MAX_H_CORRIDOR || isConnectedToOther) {
+      // Check output(other) -> input(candidate)
+      if (other.x + other.width <= finalX + 40 && inCount > 0) {
+        for (let oIdx = 0; oIdx < other.outputs.length; oIdx++) {
+          const otherPt = getPortWorldPosition(
+            other,
+            'output',
+            oIdx,
+            other.outputs.length
+          );
+          for (let iIdx = 0; iIdx < inCount; iIdx++) {
+            const candPtY = finalY + getPortOffsetY(iIdx, inCount);
+            if (Math.abs(candPtY - otherPt.y) <= 0.5) {
+              guidelines.push({
+                axis: 'horizontal',
+                kind: 'port',
+                x1: otherPt.x,
+                y1: otherPt.y,
+                x2: finalX,
+                y2: candPtY,
+                color: isConnectedToOther ? '#F59E0B' : '#38BDF8',
+                label: 'PORT ALIGNED',
+              });
+              alignedNodeIdsH.add(other.id);
+              snappedY = true;
+            }
+          }
+        }
+      }
+
+      // Check output(candidate) -> input(other)
+      if (other.x >= finalX + candidate.width - 40 && outCount > 0) {
+        for (let iIdx = 0; iIdx < other.inputs.length; iIdx++) {
+          const otherPt = getPortWorldPosition(
+            other,
+            'input',
+            iIdx,
+            other.inputs.length
+          );
+          for (let oIdx = 0; oIdx < outCount; oIdx++) {
+            const candPtY = finalY + getPortOffsetY(oIdx, outCount);
+            if (Math.abs(candPtY - otherPt.y) <= 0.5) {
+              guidelines.push({
+                axis: 'horizontal',
+                kind: 'port',
+                x1: finalX + candidate.width,
+                y1: candPtY,
+                x2: otherPt.x,
+                y2: otherPt.y,
+                color: isConnectedToOther ? '#F59E0B' : '#38BDF8',
+                label: 'PORT ALIGNED',
+              });
+              alignedNodeIdsH.add(other.id);
+              snappedY = true;
+            }
+          }
+        }
+      }
+
+      // Horizontal center alignment guideline (if not already showing a port laser to this node)
+      if (!alignedNodeIdsH.has(other.id)) {
+        const candCenterY = finalY + candidate.height * 0.5;
+        const otherCenterY = other.y + other.height * 0.5;
+        if (Math.abs(candCenterY - otherCenterY) <= 0.5) {
+          const minX = Math.min(finalX + candidate.width * 0.5, other.x + other.width * 0.5);
+          const maxX = Math.max(finalX + candidate.width * 0.5, other.x + other.width * 0.5);
+          guidelines.push({
+            axis: 'horizontal',
+            kind: 'center',
+            x1: minX,
+            y1: candCenterY,
+            x2: maxX,
+            y2: otherCenterY,
+            color: '#38BDF888',
+          });
+        }
+      }
+    }
+
+    // Vertical center alignment guideline
+    if (vCenterDist <= MAX_V_CORRIDOR) {
+      const candCenterX = finalX + candidate.width * 0.5;
+      const otherCenterX = other.x + other.width * 0.5;
+      if (Math.abs(candCenterX - otherCenterX) <= 0.5) {
+        const minY = Math.min(finalY + candidate.height * 0.5, other.y + other.height * 0.5);
+        const maxY = Math.max(finalY + candidate.height * 0.5, other.y + other.height * 0.5);
+        guidelines.push({
+          axis: 'vertical',
+          kind: 'center',
+          x1: candCenterX,
+          y1: minY,
+          x2: otherCenterX,
+          y2: maxY,
+          color: '#38BDF888',
+        });
+        snappedX = true;
+      }
+    }
+  }
+
+  return {
+    x: finalX,
+    y: finalY,
+    snappedX,
+    snappedY,
+    guidelines,
+  };
 }
 
 export function clampNodeToWorld(
@@ -560,6 +1115,9 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
   );
 
   const result = filtered.map((n) => {
+    const bDef = BUILDINGS[n.buildingId];
+    const syncedHeight = bDef ? bDef.height : n.height;
+    const syncedWidth = bDef ? bDef.width : n.width;
     if (n.buildingId === 'resource_deposit') {
       const spec = SECTOR_01_DEPOSIT_SPECS.find((s) => s.id === n.id);
       if (spec) {
@@ -570,11 +1128,20 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
           purity: spec.purity,
           x: spec.x,
           y: spec.y,
+          width: syncedWidth,
+          height: syncedHeight,
           isWorldDeposit: true,
         };
       }
     }
-    return n;
+    // Migrate legacy starter_hub y=2772 to 2808 so its input port aligns straight with starter_constructor
+    const migratedY = n.id === 'starter_hub' && n.y === 2772 ? 2808 : n.y;
+    return {
+      ...n,
+      y: migratedY,
+      width: syncedWidth,
+      height: syncedHeight,
+    };
   });
 
   const existingIds = new Set(result.map((n) => n.id));
@@ -679,23 +1246,42 @@ export function stepSimulation(
     const inIdx = toNode ? toNode.inputs.findIndex((p) => p.id === c.toPortId) : 0;
     const lengthPx =
       fromNode && toNode
-        ? computeConveyorLengthPx(fromNode, outIdx, toNode, inIdx)
+        ? computeConveyorLengthPx(fromNode, outIdx, toNode, inIdx, nextNodes)
         : c.lengthPx ?? 240;
     const travelTimeSec = Number((lengthPx / tierDef.speedPxPerSec).toFixed(2));
 
-    // If a node was dragged further away, items on the belt must travel the additional distance
+    // If a node was dragged further away or belt path lengthened, items must travel the additional distance
     const wasStretchedFurther =
-      c.lengthPx !== undefined && lengthPx > c.lengthPx + 36;
-    const isLegacyInstantConn =
-      c.firstItemArrived === undefined && c.inFlightItems === undefined;
+      c.lengthPx !== undefined && lengthPx > c.lengthPx + 0.5;
+    const isPreSettledUnpopulated =
+      c.inFlightItems === undefined && (c.firstItemArrived ?? true);
 
-    let inFlightItems: BeltItemPacket[] = c.inFlightItems
+    const inFlightItems: BeltItemPacket[] = c.inFlightItems
       ? c.inFlightItems.map((pkt) => ({ ...pkt }))
       : [];
 
-    let firstItemArrived = wasStretchedFurther
-      ? false
-      : c.firstItemArrived ?? isLegacyInstantConn;
+    const prevRate = c.sourceRatePerMin ?? c.ratePerMin ?? tierDef.capacityPerMin;
+    const estSpacing =
+      prevRate > 0
+        ? Math.max(
+            BELT_ITEM_FOOTPRINT_PX,
+            (tierDef.speedPxPerSec * 60) / Math.min(tierDef.capacityPerMin, prevRate)
+          )
+        : BELT_ITEM_FOOTPRINT_PX;
+    const maxDist =
+      inFlightItems.length > 0
+        ? Math.max(...inFlightItems.map((p) => p.distancePx))
+        : -1;
+    const gapToFrontPx =
+      maxDist >= 0
+        ? lengthPx - maxDist
+        : lengthPx + (1 - (c.spawnAccumulator ?? 0)) * estSpacing;
+    const hasFrontGap = !isPreSettledUnpopulated && gapToFrontPx > estSpacing + 6;
+
+    const firstItemArrived =
+      wasStretchedFurther || hasFrontGap
+        ? false
+        : c.firstItemArrived ?? isPreSettledUnpopulated;
 
     return {
       ...c,
@@ -703,7 +1289,7 @@ export function stepSimulation(
       maxCapacityPerMin: tierDef.capacityPerMin,
       lengthPx,
       travelTimeSec,
-      spawnAccumulator: c.spawnAccumulator ?? (isLegacyInstantConn ? 0.5 : 1),
+      spawnAccumulator: c.spawnAccumulator ?? (isPreSettledUnpopulated ? 0.5 : 1),
       inFlightItems,
       firstItemArrived,
     };
@@ -960,16 +1546,12 @@ export function stepSimulation(
           )
         : BELT_ITEM_FOOTPRINT_PX;
 
-    const expectedSteadyCount =
-      enteringRate > 0 ? Math.max(1, Math.floor(lengthPx / idealSpacingPx)) : 0;
-
-    // Pre-populate or migrate legacy sparse belts that already settled (firstItemArrived = true)
+    // Pre-populate initial starter belts that start settled with empty inFlightItems
     if (
       conn.firstItemArrived &&
       enteringRate > 0 &&
-      (items.length === 0 || items.length < Math.floor(expectedSteadyCount * 0.6))
+      items.length === 0
     ) {
-      items.length = 0;
       // Populate from destination back toward source at exact idealSpacingPx (18px on a full belt)
       for (let dist = lengthPx - idealSpacingPx * 0.5; dist >= 0; dist -= idealSpacingPx) {
         items.push({
@@ -1005,7 +1587,9 @@ export function stepSimulation(
     let arrivedThisTick = false;
     for (const pkt of items) {
       if (pkt.distancePx >= lengthPx) {
-        arrivedThisTick = true;
+        if (dt > 0) {
+          arrivedThisTick = true;
+        }
       } else {
         remaining.push(pkt);
       }
@@ -1054,8 +1638,21 @@ export function stepSimulation(
 
     conn.inFlightItems = remaining;
 
-    // If firstItemArrived just flipped true on this tick, immediately update destination port rate
-    if (arrivedThisTick && enteringRate > 0) {
+    const frontDist = remaining.length > 0 ? remaining[0].distancePx : -1;
+    const postGapToFrontPx =
+      frontDist >= 0
+        ? lengthPx - frontDist
+        : lengthPx + (1 - (conn.spawnAccumulator ?? 0)) * idealSpacingPx;
+
+    if (postGapToFrontPx > idealSpacingPx + 6) {
+      conn.firstItemArrived = false;
+      conn.ratePerMin = 0;
+      const toNode = nodeMap.get(conn.toNodeId);
+      const inPort = toNode?.inputs.find((p) => p.id === conn.toPortId);
+      if (inPort) {
+        inPort.actualRatePerMin = 0;
+      }
+    } else if (arrivedThisTick && enteringRate > 0) {
       conn.ratePerMin = enteringRate;
       const toNode = nodeMap.get(conn.toNodeId);
       const inPort = toNode?.inputs.find((p) => p.id === conn.toPortId);
@@ -1113,7 +1710,9 @@ export function createStarterFactory(): {
     'starter_constructor',
     'construct_iron_plate'
   );
-  const hub = createMachineNode('the_hub', baseX + 1632, baseY - 12, 'starter_hub', null);
+  // Place starter_hub at baseY + 24 so its Input 1 (+72px) sits at baseY + 96px,
+  // forming a 100% straight horizontal conveyor belt from starter_constructor!
+  const hub = createMachineNode('the_hub', baseX + 1632, baseY + 24, 'starter_hub', null);
 
   const rawConns: ConveyorConnection[] = [
     {

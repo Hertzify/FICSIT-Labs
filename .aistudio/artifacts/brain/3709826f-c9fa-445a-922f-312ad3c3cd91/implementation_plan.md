@@ -1,111 +1,76 @@
-# FICSIT Node Labs — Step 1: Main Menu, Save System, Settings & Build Menu
+# Satisfactory-Style Snap Mode, Port Alignment & Mobile-Only Controls
 
-A 2D landscape widescreen Android adaptation of *Satisfactory* with an *Upload Labs*-inspired node interface. **Step 1** focuses strictly on the foundational pillars you selected: a *Satisfactory*-style **Main Menu with Save Slots & Auto-Save**, the **Settings Menu** with your exact chosen options, an **Infinite Pan/Zoom Node Canvas**, **Machine Node Cards**, and a **Satisfactory × Upload Labs Build Menu**—leaving HUD bars and overclocking for future steps after we discuss them.
+A precision building and conveyor alignment upgrade for **FICSIT Labs** designed exclusively for mobile touch play—standardizing port vertical offsets across the 24px world grid, introducing an always-on smart **Snap Mode** with a dedicated touch HUD button and visual laser guidelines, and stripping out all desktop keyboard shortcuts and keycap labels across the interface.
 
-## User Review & Confirmed Step 1 Scope
+## User Review & Critical Decisions
 
-> [!IMPORTANT]
-> Every feature in this plan directly reflects your selections. Unrequested HUD bars, overclock sliders, and FPS counters have been excluded so we build cleanly step by step.
-
-- **Confirmed Main Menu & Save Slots**: *Satisfactory*-style Main Menu featuring **Continue** (latest save), **New Game** (name your session), **Load Game** (multi-slot save browser with manual & auto-save slots), and **Settings**, plus a setting to **Skip Main Menu directly to the latest save** on startup.
-- **Confirmed Settings Menu Options**:
-  1. **Conveyor Line Style**: Curved Bezier vs. 90-Degree Orthogonal lines.
-  2. **Grid Snapping & UI Scale**: Snap-to-grid toggle + UI scale slider (`85%`–`115%`).
-  3. **Port Item Rate Numbers Toggle**: Show or hide the `items/min` rate numbers next to node input/output port dots.
-  4. **Touch Wiring Mode**: Drag-to-connect vs. Tap-Output-then-Tap-Input.
-  5. **Startup Behavior**: Toggle to **Skip Main Menu directly to latest save**.
-  6. **Audio & Haptics**: Master & SFX volume sliders + Android Haptic Vibration toggle.
-  7. **Save & Data Management**: Auto-Save toggle/interval, Save Export/Import (JSON string), and Factory Reset button.
-- **Confirmed Build Menu (HUD Deferred)**: No extra top/bottom HUD telemetry bars yet (we will design the HUD together in a later step). In-game workspace has only two minimal corner triggers (**Build Menu** and **Pause / Main Menu**) plus the **Satisfactory × Upload Labs Build Menu** modal optimized for Android landscape touch.
-- **Confirmed Node Card Anatomy**:
-  - Machine Name Header & Active Recipe Label.
-  - Input & Output Port Dots with toggleable `items/min` rate numbers.
-  - Animated Crafting/Extraction Progress Bar.
-  - Status & Efficiency percentage badge (*Overclocking is intentionally excluded until we unlock it in a later step*).
+- **Touch-Only HUD Toggle (Zero Keyboard Shortcuts)**: Snap Mode is enabled by default as an always-on smart snapping system, controlled strictly via a dedicated touch HUD toggle button (`Snap: ON / OFF`). All existing keyboard event listeners and desktop shortcut labels (such as `[Esc]` on the Menu button, `[B]`, `[Del]`, etc.) will be completely removed from the game.
+- **Alignment Targets & Visual Guidelines**: Dragging or placing a building by touch actively snaps to **connected input/output ports**, **nearby compatible input/output ports**, and **building centers/edges**, rendering high-contrast Satisfactory-style guideline lasers across the canvas to confirm exact alignment.
+- **Standardized Grid-Aligned Port Heights**: Building heights and port vertical offsets are standardized onto exact multiples of the 24px world grid so any two top-aligned or port-aligned nodes connect with a perfectly straight, zero-kink horizontal conveyor belt.
 
 ---
 
-## 1. User Experience & Visual Design (Step 1)
+## 1. Overview & Core Concept
 
-### Key User Flows
+Currently, each building category computes its input and output port coordinates dynamically as a fraction of its total card height (`136px`, `140px`, `142px`, `168px`, `176px`, `188px`). Because those heights are not uniform multiples of the 24px world grid, two buildings snapped to the exact same top row (`node.y`) place their ports 1px to 5px apart vertically—forcing the orthogonal belt router to insert a tiny vertical jog instead of a clean horizontal line.
 
-1. **Startup & *Satisfactory*-Style Main Menu**:
-   - On launch, if **"Skip Main Menu to Latest Save"** is enabled in Settings and a save exists, the game boots straight into your active factory workspace.
-   - Otherwise, it opens the widescreen **Main Menu** featuring an ambient animated node-pipeline background on the right and *Satisfactory*'s signature left-aligned vertical command menu:
-     - **Continue**: Immediately loads the most recent manual or auto-save slot.
-     - **New Game**: Prompts for a Factory Session Name and initializes a fresh canvas save slot.
-     - **Load Game**: Opens the **Save Slot Browser** showing your sessions and individual saves (Manual Saves & Rolling Auto-Saves with timestamps, session name, and machine count), with **Load**, **Delete**, and **Duplicate/Export** actions.
-     - **Settings**: Opens the Settings panel directly from the Main Menu.
-2. **Satisfactory × Upload Labs Build Menu (Android Landscape Optimized)**:
-   - Tapping the **Build** button (or pressing `Q` / `B`) opens a sleek dark-mode Build Window combining *Satisfactory*'s category architecture with *Upload Labs*' modular node aesthetic:
-     - **Top Category Tabs**: `Special`, `Production`, `Logistics`, `Organization`.
-     - **Subcategory & Machine Grid (Left/Center)**: Grouped rows (e.g., *Extractors*: Miner Mk.1; *Smelters*: Smelter; *Manufacturers*: Constructor; *Storage*: Storage Container; *Resource Deposits*: Iron, Copper, Limestone Nodes for testing).
-     - **Node Blueprint Inspector (Right Panel)**: Displays the selected machine's node-card preview, input/output port layout, base crafting speed, and a thumb-friendly **Place on Canvas** button.
-3. **Node Card Interaction & Port Wiring on Canvas**:
-   - **Pan & Zoom**: Smooth 1-finger pan (when tapping empty canvas) and pinch/wheel zoom across the dark blueprint grid.
-   - **Moving & Configuring Nodes**: Dragging a node card moves it (snapping to grid if enabled). Tapping a node opens a compact recipe/action popover to pick its recipe (e.g., Iron Ingot, Copper Ingot, Iron Plate, Iron Rod, Wire, Concrete) or dismantle it.
-   - **Wiring Conveyors**: Depending on your Settings choice, either **drag** from an Output port dot to an Input port dot, or **tap** an Output port dot and **tap** an Input port dot to connect them with a Curved or 90-Degree conveyor line. Tapping an existing line lets you disconnect it.
-
-### Visual Identity & Theme
-
-- **Aesthetic Direction**: *Upload Labs* dark-mode window nodes paired with *Satisfactory*'s FICSIT industrial amber/slate hierarchy.
-- **Color Palette (60-30-10)**:
-  - **60% Blueprint Canvas (`#0B0F17`)**: Deep obsidian grid with subtle minor (`#151E2E`) and major (`#1E293B`) coordinate lines.
-  - **30% Node Cards & Menus (`#131B2E` surface, `#26334D` 1px border)**: Clean dark-slate modular window cards with `#F8FAFC` crisp text and `#94A3B8` technical labels.
-  - **10% Industrial Accents**: FICSIT Amber (`#F59E0B`) for active categories, primary actions, and progress bars; Cyan (`#06B6D4`) and Emerald (`#10B981`) for port sockets and `100% OPTIMAL` status readouts.
-- **Typography**:
-  - `Outfit` for Main Menu headers, Build Menu category tabs, and Node Card titles.
-  - `Plus Jakarta Sans` for settings labels and descriptions.
-  - `JetBrains Mono` (`tabular-nums`) for port `items/min` rates, efficiency percentages, and save timestamps.
+This update resolves the issue at both the **geometric level** and the **touch interaction level**, while cleaning up desktop artifacts:
+1. **Grid-Quantized Port Geometry**: Single-port buildings share a unified `144px` (`6 × 24px`) chassis height with their primary port locked at `node.y + 96px` (`4 × 24px`), while multi-port buildings (Assemblers, Splitters, Mergers, and The HUB) space their ports on exact `24px` grid increments around that same `96px` baseline.
+2. **Satisfactory-Style Smart Snap Mode**: While dragging an existing machine or positioning a new building on the touch canvas, the position resolver evaluates nearby and connected machines within a magnetic capture corridor, snapping the node so its ports or centerlines lock into exact collinearity and projecting visual alignment lasers across the factory floor.
+3. **Complete Removal of Keyboard Shortcuts**: All `keydown`/`keyup` listeners and UI shortcut hints (`[Esc]`, `[B]`, `[1-3]`, `[Del]`, etc.) are removed so every button and HUD element is clean and tailored for mobile screens.
 
 ---
 
-## 2. Technical Architecture & Data Strategy
+## 2. User Experience & Visual Design
 
-### Architecture & Component Diagram
+- **Touch HUD Snap Mode Button**:
+  - Positioned in the bottom-left HUD dock directly beside the Conveyor Belt Mark selector (`Mk.1 / Mk.2 / Mk.3`).
+  - Displays a clean touch button (`Snap: ON` highlighted in FICSIT cyan/amber when active, `Snap: OFF` in muted slate when disabled) and persists in player settings.
+- **Clean Mobile HUD Labels**:
+  - Top-left menu button displays simply `Menu` (removing `[Esc]`), and all tooltips/buttons across the HUD, Build drawer, and Inspector use touch-only copy.
+- **Satisfactory-Style Laser Guidelines**:
+  - **Port-to-Port Alignment Laser (Cyan / Amber)**: When a building's input or output port locks onto the exact Y-coordinate of a connected or nearby compatible port, a glowing dashed guideline laser (`#38BDF8` for input alignment, `#F59E0B` for output alignment) spans directly between the two port sockets with target reticles at both ends.
+  - **Center / Edge Alignment Line (Subtle Slate-Cyan)**: When a building's horizontal or vertical center/top edge aligns with a neighboring machine in the same row or column, a clean architectural guide line renders across the shared axis.
+- **Zero-Kink Straight Conveyor Routing**:
+  - When two connected ports share the same Y-coordinate (`|y1 - y2| < 0.5px`) and the destination port faces the source port without intervening obstacles, the belt renders as a single straight horizontal segment with uniform item spacing and an unobstructed midpoint badge.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Priority Hierarchy for Magnetic Snapping**:
+  - *Decision*: Connected ports take first priority, followed by nearby compatible ports within a `900px` horizontal corridor, followed by building center/top-edge alignment, and finally the standard `24px` world grid.
+  - *Rationale*: When adjusting a machine that is already wired into a production line on a touchscreen, straightening the active conveyor belt is the player's primary intent. Prioritizing connected ports guarantees the belt snaps straight without requiring pixel-perfect finger placement.
+- **Grid-Quantized Multi-Port Spacing (`24px` Pitch)**:
+  - *Decision*: Standardize single-port offset to `+96px`, 2-port offsets to `+72px` and `+120px` on a `168px` (`7 × 24px`) chassis, and 3-port Splitter/Merger offsets to `+72px`, `+96px`, and `+120px` on a `168px` (`7 × 24px`) chassis.
+  - *Rationale*: Because every port offset (`+72px`, `+96px`, `+120px`) is an exact multiple of the `24px` world grid, *every* port on a Splitter, Merger, or Assembler can form a 100% straight horizontal belt with a Smelter, Constructor, Miner, or Storage Container simply by stepping the machine up or down by one `24px` grid unit.
+
+---
+
+## 4. Technical Architecture & Data Strategy
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                   FICSIT NODE LABS — STEP 1 SHELL (App)                     │
-│  Screen State: 'title' (Main Menu) | 'playing' (Canvas) | 'paused'          │
-│  Startup Check: If settings.skipMainMenu && latestSave -> boot to 'playing' │
-└───────────────────┬─────────────────────────────────────┬───────────────────┘
-                    │                                     │
-                    ▼                                     ▼
-┌───────────────────────────────────────┐ ┌───────────────────────────────────┐
-│   60 FPS NODE & CONVEYOR CANVAS       │ │   MENUS & MODALS (React Overlays) │
-│  (HTML5 2D Canvas + Touch Gestures)   │ │  (UI Scale Applied via CSS Var)   │
-├───────────────────────────────────────┤ ├───────────────────────────────────┤
-│ • Infinite Pan/Zoom Blueprint Grid    │ │ • Satisfactory-Style Main Menu    │
-│ • Node Card Renderer:                 │ │   (Continue, New, Load, Settings) │
-│   - Header + Recipe Name              │ │ • Multi-Slot Save Manager Modal   │
-│   - Input/Output Port Dots            │ │   (Manual Slots + Auto-Save Timer)│
-│   - Optional Port Rate Numbers        │ │ • Satisfactory x Upload Labs      │
-│   - Animated Progress Bar             │ │   Build Menu (Categories + Grid)  │
-│   - Status + Efficiency % Badge       │ │ • Node Recipe & Action Popover    │
-│ • Conveyor Line Renderer:             │ │ • Settings Modal (7 Confirmed     │
-│   - Curved Bezier OR 90° Orthogonal   │ │   Controls + Export/Import/Reset) │
-└───────────────────┬───────────────────┘ └─────────────────┬─────────────────┘
-                    │                                       │
-                    └───────────────────┬───────────────────┘
-                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              SAVE SLOT & SETTINGS ENGINE (localStorage)                     │
-│ • SettingsStore: lineStyle, gridSnap, uiScale, showPortRates, wiringMode,   │
-│                  skipMainMenu, masterVol, sfxVol, haptics, autoSaveEnabled  │
-│ • SaveSlotStore: slots[] (id, sessionName, kind: 'manual'|'autosave',       │
-│                  updatedAt, nodes[], connections[], cameraState)            │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                  Touch / Pointer Move (Drag Node / Build)               │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │ Raw World Coordinates (x, y)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Snap Mode Resolver (snapMode === ON)                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  1. Connected Port Match (|Δy| ≤ 14px) ──► Lock Port Y & Emit Laser     │
+│  2. Nearby Compatible Port (|Δy| ≤ 14px, Δx ≤ 900px) ──► Lock Port Y    │
+│  3. Building Center / Top Edge Match (|Δx| or |Δy| ≤ 12px) ──► Lock Axis│
+│  4. Fallback 24px World Grid Quantization (Math.round(v / 24) * 24)     │
+└─────────────────┬───────────────────────────────────┬───────────────────┘
+                  │ Snapped { x, y }                  │ Active Guidelines[]
+                  ▼                                   ▼
+┌───────────────────────────────────┐ ┌───────────────────────────────────┐
+│   Orthogonal Belt Path Router     │ │   Canvas Overlay Pass (Top HUD)   │
+│  Produces 2-Point Straight Segment│ │  Renders Dashed Cyan/Amber Lasers │
+│     When |y1 - y2| < 0.5px        │ │    & Port Alignment Reticles      │
+└───────────────────────────────────┘ └───────────────────────────────────┘
 ```
 
-### Interactive Component & State Mapping
-
-- **Main Menu & Save Manager**:
-  - `Continue` loads `SaveSlotStore.getLatestSlot()`.
-  - `New Game` creates a new session with an initial save slot and enters the canvas.
-  - `Load Game` lists all saved slots sorted by most recent; clicking `Load` hydrates `nodes`, `connections`, and `camera` into the canvas engine.
-  - `Auto-Save Timer` runs in the background during `'playing'` state (every 30s when enabled), updating the session's `autosave` slot non-intrusively.
-- **Settings Persistence & Live Reactivity**:
-  - Toggling **Conveyor Line Style** (`Curved` vs. `90-Degree`) or **Show Port Rate Numbers** (`On` vs. `Off`) immediately updates the canvas renderer on the next frame.
-  - Adjusting **UI Scale** updates the root `--ui-scale` multiplier across menus and popovers.
-  - **Haptic Vibration** triggers `navigator.vibrate?.(12)` (when supported on Android) on port connection, grid snap, and building placement, paired with Web Audio synth clicks.
+- **Unified Port Coordinate Calculation**: Both the simulation engine and the canvas renderer share a single deterministic port offset table indexed by total port count (`1 → [+96]`, `2 → [+72, +120]`, `3 → [+72, +96, +120]`), eliminating any discrepancy between visual port sockets and belt path endpoints.
+- **Starter & Existing Factory Migration**: Existing nodes and starter factory layouts automatically snap their Y coordinates to the nearest 24px grid multiple on load so existing saves immediately benefit from straight horizontal belts.

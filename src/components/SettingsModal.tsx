@@ -176,6 +176,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
 
+              {/* 3.5 Satisfactory Smart Snap Mode Toggle */}
+              <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Satisfactory Smart Snap Mode (Port &amp; Center Lasers)
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Magnetically align connected/nearby ports and building centers with visual laser guidelines
+                  </div>
+                </div>
+                <input
+                  aria-label="Satisfactory Smart Snap Mode"
+                  type="checkbox"
+                  checked={settings.snapMode !== false}
+                  onChange={(e) => updateField('snapMode', e.target.checked)}
+                  className="w-4 h-4 accent-cyan-400 rounded cursor-pointer shrink-0"
+                />
+              </div>
+
               {/* 4. UI Scale Slider */}
               <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D]">
                 <div className="flex items-center justify-between mb-1.5">

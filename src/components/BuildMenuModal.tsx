@@ -82,7 +82,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
             onClick={onClose}
             className="min-h-[36px] px-3 rounded-xl bg-[#131B2E] hover:bg-slate-800 border border-[#26334D] text-xs font-semibold text-slate-300 hover:text-white whitespace-nowrap shrink-0"
           >
-            Close [Esc]
+            Close
           </button>
         </div>
 

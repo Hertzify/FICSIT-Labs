@@ -1,6 +1,41 @@
-# Changelog — FICSIT Node Labs
+# Changelog — FICSIT Labs
 
-All notable changes for **FICSIT Node Labs** are documented below. Straight to the point, no fluff.
+All notable changes for **FICSIT Labs** are documented below. Straight to the point, no fluff.
+
+---
+
+## [0.0.11] — 2026-11-03 (`0.0.11 dev build`)
+
+### 🧲 Satisfactory-Style Snap Mode & Visual Alignment Guidelines
+- **Port & Centerline Magnetic Snapping**: Moving or placing buildings now magnetically snaps to connected ports, nearby compatible ports, and building centerlines within an 18px attraction radius.
+- **Dynamic Laser Guidelines**:
+  - **Port-to-Port Alignment**: Live cyan dashed laser guides (`#06b6d4`) with circular reticles appear when ports share identical horizontal or vertical axes.
+  - **Center Axis Alignment**: Amber dashed laser guides (`#f59e0b`) project across the factory floor when machine centers align.
+- **Dedicated Touch Snap HUD Toggle**: Added a bottom-left `Snap: ON / OFF` button next to the belt selector, allowing instant one-tap toggling of magnetic alignment without opening sub-menus. Also toggleable in the Settings modal.
+
+### 📐 Standardized Grid-Aligned Machine & Port Heights
+- **Uniform 24px Grid Proportions**:
+  - **Single-Port Buildings** (*Miner Mk.1, Smelter, Constructor, Storage Container, Resource Deposits*): Standardized to `144px` height (`6 × 24px` grid units) with port Y offset fixed at exactly `+96px`.
+  - **Multi-Port Buildings** (*Assembler, Splitter, Merger*): Standardized to `168px` height (`7 × 24px` grid units) with ports spaced on uniform `24px` grid increments (`+72px`, `+96px`, `+120px`).
+- **100% Straight Horizontal Belts**: Horizontally aligned machines connect with clean, 2-point straight conveyor lines with zero stair-stepping, unnecessary kinks, or detour jogs.
+
+### 📊 Belt HUD & In-Transit Telemetry Polish
+- **Always-Visible Overlay**: Belt telemetry badges and in-transit progress indicators now render at a high z-index overlay above all machine cards, preventing badges from disappearing or clipping underneath closely placed nodes.
+- **Persistent Drag Telemetry**: Fixed an issue where the in-transit HUD flickered or failed to appear while actively dragging or repositioning nodes.
+- **Upright Item Icons**: Conveyor item icons remain strictly upright and unrotated at all times, preventing resources from tilting 90 degrees on vertical belts.
+
+### 🔄 Close-Node Conveyor Routing & Speed Consistency
+- **Eliminated Spurious Detour Loops**: Fixed conveyor pathfinding bug where vertically aligned nodes in close proximity generated giant upward loop arcs.
+- **Physical Transit Speed Integrity**: Guaranteed that conveyor transfer rates and travel delay physics remain strictly enforced even on tight, close-quarters vertical connections.
+- **Envelope Clearance**: Belts maintain a clean 26px perimeter buffer around obstacle nodes without clipping card edges.
+
+### 📱 Pure Mobile-First Controls & Desktop Keyboard Purge
+- **Zero Keyboard Hints**: Stripped all desktop shortcut badges (`[Esc]`, `[Q]`) from the UI header, modals, and buttons.
+- **Removed Keyboard Event Listeners**: Purged desktop `keydown` handlers (`Escape`, `Q`, `Delete`, `1-4`) from the runtime to ensure a pure touch-first experience tailored for mobile gaming.
+
+### 🏷️ Game Rebranding & Map Collision Fixes
+- **FICSIT Labs Rebrand**: Official project name, UI header emblem, and application metadata updated to **FICSIT Labs**.
+- **Starter Map Adjustment**: Shifted starter copper deposit `world_dep_copper_normal_st1` to `x: 4560` to eliminate overlap with the Starter HUB.
 
 ---
 

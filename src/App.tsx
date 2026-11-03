@@ -132,73 +132,6 @@ export default function App() {
     triggerSessionAutoSave,
   ]);
 
-  // Global Keyboard Shortcuts
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
-      if (gameState === 'title') {
-        if (
-          (e.key === 'Enter' || e.key === ' ') &&
-          !showSettingsModal &&
-          !saveLoadModalMode
-        ) {
-          e.preventDefault();
-          const latest = saveSlots[0];
-          if (latest) {
-            hydrateSlotIntoEngine(latest);
-            setGameState('playing');
-          }
-        }
-        return;
-      }
-
-      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
-        e.preventDefault();
-        if (showBeltTab) {
-          setShowBeltTab(false);
-          return;
-        }
-        if (pendingBuildId) {
-          setPendingBuildId(null);
-          return;
-        }
-        if (showBuildMenu) {
-          setShowBuildMenu(false);
-          return;
-        }
-        if (showSettingsModal) {
-          setShowSettingsModal(false);
-          return;
-        }
-        if (saveLoadModalMode) {
-          setSaveLoadModalMode(null);
-          return;
-        }
-        setGameState((prev) => (prev === 'playing' ? 'paused' : 'playing'));
-        return;
-      }
-
-      if (gameState === 'playing' && (e.key === 'q' || e.key === 'Q' || e.key === 'b' || e.key === 'B')) {
-        e.preventDefault();
-        setShowBuildMenu((prev) => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    gameState,
-    showBeltTab,
-    showBuildMenu,
-    showSettingsModal,
-    saveLoadModalMode,
-    pendingBuildId,
-    saveSlots,
-    hydrateSlotIntoEngine,
-  ]);
-
   // Pressing anywhere in the screen automatically kills the belt tab
   useEffect(() => {
     if (!showBeltTab) return;
@@ -341,7 +274,6 @@ export default function App() {
               className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#131B2E] hover:bg-[#1C2742] border border-[#26334D] text-xs font-display font-bold text-white shadow-lg flex items-center gap-1.5 whitespace-nowrap"
             >
               <span>Menu</span>
-              <span className="text-[10px] font-mono text-slate-400">[Esc]</span>
             </button>
 
             <button
@@ -432,38 +364,70 @@ export default function App() {
               </div>
             )}
 
-            {/* Small Belt Selector Trigger Button (Always visible, changes color when tab is shown) */}
-            <button
-              type="button"
-              aria-label={`Select Conveyor Belt (Currently Mk.${activeBeltTier})`}
-              aria-expanded={showBeltTab}
-              onClick={() => {
-                playSynthSfx('click', settings);
-                setShowBeltTab((prev) => !prev);
-              }}
-              className={`min-h-[40px] px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 shadow-xl transition-all active:scale-95 border ${
-                showBeltTab
-                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 shadow-amber-500/25 ring-2 ring-amber-400/40'
-                  : 'bg-[#131B2E] hover:bg-[#1C2742] text-slate-200 hover:text-white border-[#26334D]'
-              }`}
-            >
-              {(() => {
-                const currentBeltDef = CONVEYOR_BELT_TIERS[activeBeltTier];
-              const iconUrl = currentBeltDef ? getBuildingIconUrl(currentBeltDef.id) : null;
-              return (
-                <>
-                  {iconUrl && (
-                    <img
-                      src={iconUrl}
-                      alt={`Mk.${activeBeltTier}`}
-                      className="w-4 h-4 object-contain shrink-0"
-                    />
-                  )}
-                  <span>Mk.{activeBeltTier}</span>
-                </>
-              );
-            })()}
-            </button>
+            {/* Bottom-Left Controls Row: Belt Selector + Satisfactory Snap Mode Toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label={`Select Conveyor Belt (Currently Mk.${activeBeltTier})`}
+                aria-expanded={showBeltTab}
+                onClick={() => {
+                  playSynthSfx('click', settings);
+                  setShowBeltTab((prev) => !prev);
+                }}
+                className={`min-h-[40px] px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 shadow-xl transition-all active:scale-95 border ${
+                  showBeltTab
+                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 shadow-amber-500/25 ring-2 ring-amber-400/40'
+                    : 'bg-[#131B2E] hover:bg-[#1C2742] text-slate-200 hover:text-white border-[#26334D]'
+                }`}
+              >
+                {(() => {
+                  const currentBeltDef = CONVEYOR_BELT_TIERS[activeBeltTier];
+                  const iconUrl = currentBeltDef ? getBuildingIconUrl(currentBeltDef.id) : null;
+                  return (
+                    <>
+                      {iconUrl && (
+                        <img
+                          src={iconUrl}
+                          alt={`Mk.${activeBeltTier}`}
+                          className="w-4 h-4 object-contain shrink-0"
+                        />
+                      )}
+                      <span>Mk.{activeBeltTier}</span>
+                    </>
+                  );
+                })()}
+              </button>
+
+              <button
+                type="button"
+                aria-label={`Toggle Snap Mode (Currently ${settings.snapMode !== false ? 'ON' : 'OFF'})`}
+                aria-pressed={settings.snapMode !== false}
+                onClick={() => {
+                  const nextSnap = settings.snapMode === false;
+                  handleUpdateSettings({
+                    ...settings,
+                    snapMode: nextSnap,
+                  });
+                  setAutoSaveNotice(
+                    nextSnap
+                      ? 'Snap Mode: ON (Port & Center Alignment)'
+                      : 'Snap Mode: OFF'
+                  );
+                }}
+                className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 shadow-xl transition-all active:scale-95 border whitespace-nowrap ${
+                  settings.snapMode !== false
+                    ? 'bg-[#131B2E] hover:bg-[#1C2742] text-cyan-300 border-cyan-500/70 shadow-cyan-500/15'
+                    : 'bg-[#131B2E]/90 hover:bg-[#1C2742] text-slate-400 border-[#26334D]'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    settings.snapMode !== false ? 'bg-cyan-400' : 'bg-slate-500'
+                  }`}
+                />
+                <span>Snap: {settings.snapMode !== false ? 'ON' : 'OFF'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Bottom-Right Small Build Button (Icon on top, small "build" text below) */}
@@ -473,8 +437,8 @@ export default function App() {
           >
             <button
               type="button"
-              aria-label="Build Menu [Q]"
-              title="Build Menu [Q]"
+              aria-label="Build Menu"
+              title="Build Menu"
               onClick={() => {
                 playSynthSfx('click', settings);
                 setShowBuildMenu(true);

@@ -12,6 +12,7 @@ const SAVES_KEY = 'ficsit_node_labs_saves_v1';
 export const DEFAULT_SETTINGS: SettingsConfig = {
   conveyorStyle: 'orthogonal',
   gridSnap: true,
+  snapMode: true,
   gridSize: 24,
   uiScale: 1.0,
   showPortRates: true,
@@ -96,7 +97,7 @@ export function loadSaveSlots(): SaveSlot[] {
             starter_miner: { x: 2544 + 336, y: 2784 },
             starter_smelter: { x: 2544 + 696, y: 2784 },
             starter_constructor: { x: 2544 + 1056, y: 2784 },
-            starter_hub: { x: 2544 + 1416, y: 2772 },
+            starter_hub: { x: 2544 + 1416, y: 2808 },
           };
           finalNodes = syncedNodes.map((n) =>
             offsets[n.id] ? { ...n, x: offsets[n.id].x, y: offsets[n.id].y } : n

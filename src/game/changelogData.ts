@@ -15,6 +15,28 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.14',
+    tag: '0.0.14 dev build',
+    date: '2026-11-03',
+    categories: [
+      {
+        category: '🛠️ Blueprint Grid Rendering & Camera Viewport Fix',
+        items: [
+          {
+            title: 'Fixed Horizontal Major Grid Line Cutoff',
+            description:
+              'Resolved a coordinate bug in canvasRenderer.ts where horizontal major grid lines terminated at endWorldY instead of endWorldX, causing grid lines to shift and disappear while panning or zooming.',
+          },
+          {
+            title: 'True Camera Viewport Grid Bounds',
+            description:
+              'Aligned blueprint grid line endpoints directly with the visible camera viewport bounds while preserving the 0.42x minor and 0.14x major grid zoom thresholds.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.13',
     tag: '0.0.13 dev build',
     date: '2026-11-03',

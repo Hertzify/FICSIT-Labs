@@ -2,7 +2,7 @@
 
 **FICSIT Labs** is a 2D factory automation tycoon for **Android (Landscape)** and **Web**, combining the deep production chains, resource purities, and conveyor belt physics of ***Satisfactory*** with a clean node-graph interface inspired by ***Upload Labs***.
 
-![Version](https://img.shields.io/badge/version-0.0.10%20dev%20build-F59E0B?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.0.14%20dev%20build-F59E0B?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Web-38BDF8?style=flat-square)
 ![Engine](https://img.shields.io/badge/engine-React%20%2B%20HTML5%20Canvas-22C55E?style=flat-square)
 

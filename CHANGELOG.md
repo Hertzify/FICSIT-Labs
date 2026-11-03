@@ -4,6 +4,42 @@ All notable changes for **FICSIT Labs** are documented below. Straight to the po
 
 ---
 
+## [0.0.14] — 2026-11-03 (`0.0.14 dev build`)
+
+### 🛠️ Blueprint Grid Rendering & Camera Viewport Fix
+- **Fixed Horizontal Major Grid Line Cutoff**: Resolved a coordinate bug in `canvasRenderer.ts` where horizontal major grid lines terminated at `endWorldY` instead of `endWorldX`, causing grid lines to shift and disappear while panning or zooming.
+- **True Camera Viewport Grid Bounds**: Aligned blueprint grid line endpoints directly with the visible camera viewport bounds while preserving the `0.42x` minor and `0.14x` major grid zoom thresholds.
+
+---
+
+## [0.0.13] — 2026-11-03 (`0.0.13 dev build`)
+
+### 🗂️ Modular Architecture & Code Organization
+- **Engine Domain Split (`geometry`, `snap`, `world`, `simulation`)**: Split `rules.ts` into focused domain modules for orthogonal geometry/pathfinding, bounded Snap Mode alignment, world deposits/save serialization, and factory tick simulation.
+- **Canvas Renderer & Inspector Separation**: Extracted the 2D HTML5 Canvas drawing pipeline into `canvasRenderer.ts` and the floating machine/deposit inspector UI into a memoized `NodeInspectorPanel.tsx` component.
+- **Dead & Duplicate Code Removal**: Removed unused legacy belt visual helpers, consolidated duplicate meter/pixel constants into `catalog.ts`, and simplified global pointer event listeners.
+
+### ⚡ Safe Runtime Performance Optimizations
+- **Geometry-Keyed Conveyor Belt Path Caching**: Cached obstacle-avoiding orthogonal belt paths and lengths by node geometry signature so stationary factories reuse precalculated routes across simulation and rendering passes.
+- **Smart Inspector State Diffing**: Eliminated 35 FPS React DOM re-render thrashing when a machine is selected by updating the inspector snapshot only when visible item counts, flow rates, or statuses change.
+- **Padded Camera Viewport Frustum Culling**: Skipped off-screen canvas draw calls for distant deposits, machines, and conveyor belts outside the active camera viewport plus a 240px safety margin.
+
+---
+
+## [0.0.12] — 2026-11-03 (`0.0.12 dev build`)
+
+### 🧲 Bounded Local Snap Mode Proximity
+- **240px (16m) Local Snap Range Limit**: Bounded Snap Mode and laser alignment guidelines to a tight 240px (~16m) edge-to-edge proximity around neighboring buildings, preventing buildings from snapping across the map.
+- **Local Connected Port Snapping**: Connected conveyor belts only trigger magnetic port snapping and amber guidelines when the two buildings are within local proximity.
+
+### 📦 Satisfactory Internal Building Storage & Stack Limits
+- **Canonical Item Stack Sizes (100 / 200 / 500)**: Implemented official Satisfactory stack limits (`100/stack` for Ores, Ingots, Reinforced Plates, and Rotors; `200/stack` for Plates, Rods, and Cable; `500/stack` for Wire, Concrete, and Screws).
+- **1-Stack Machine Input & Output Buffers**: Miners, Smelters, Constructors, and Assemblers buffer up to 1 full stack per input port and 1 full stack in their output slot, entering `BACKED UP` standby when output capacity reaches 100%.
+- **24-Slot Storage Container & HUB Capacity**: Storage Containers and The HUB store up to 24 full item stacks (`2,400–12,000` parts) and automatically discharge buffered items onto connected output belts.
+- **Dual Storage Capacity & Crafting Bars on Cards**: Machine cards display both a Storage Capacity Bar (`0%–100%` with exact `Stored / Max` item count) and the Crafting Cycle Progress Bar, plus individual Input/Output slot bars in the Inspector.
+
+---
+
 ## [0.0.11] — 2026-11-03 (`0.0.11 dev build`)
 
 ### 🧲 Satisfactory-Style Snap Mode & Visual Alignment Guidelines

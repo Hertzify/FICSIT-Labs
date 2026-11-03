@@ -289,50 +289,57 @@ export function renderFactoryScene(params: CanvasRenderParams) {
   // Bounded Blueprint Coordinate Grid
   const gridStep = cfg.gridSize || 24;
   const majorStep = gridStep * 4;
+  const rawMinX = -cam.x / cam.zoom;
+  const rawMaxX = (-cam.x + width) / cam.zoom;
+  const rawMinY = -cam.y / cam.zoom;
+  const rawMaxY = (-cam.y + height) / cam.zoom;
+
   const startWorldX = Math.max(
     0,
-    Math.floor(-cam.x / cam.zoom / majorStep) * majorStep
+    Math.floor(rawMinX / majorStep) * majorStep
   );
   const endWorldX = Math.min(
     WORLD_WIDTH,
-    startWorldX + width / cam.zoom + majorStep * 2
+    Math.ceil(rawMaxX / majorStep) * majorStep
   );
   const startWorldY = Math.max(
     0,
-    Math.floor(-cam.y / cam.zoom / majorStep) * majorStep
+    Math.floor(rawMinY / majorStep) * majorStep
   );
   const endWorldY = Math.min(
     WORLD_HEIGHT,
-    startWorldY + height / cam.zoom + majorStep * 2
+    Math.ceil(rawMaxY / majorStep) * majorStep
   );
 
-  ctx.lineWidth = 1 / cam.zoom;
-  if (!macroMode && cam.zoom >= 0.42) {
-    ctx.strokeStyle = '#131B2A';
-    ctx.beginPath();
-    for (let gx = startWorldX; gx <= endWorldX; gx += gridStep) {
-      ctx.moveTo(gx, startWorldY);
-      ctx.lineTo(gx, endWorldY);
+  if (startWorldX <= endWorldX && startWorldY <= endWorldY) {
+    ctx.lineWidth = 1 / cam.zoom;
+    if (!macroMode && cam.zoom >= 0.42) {
+      ctx.strokeStyle = '#131B2A';
+      ctx.beginPath();
+      for (let gx = startWorldX; gx <= endWorldX; gx += gridStep) {
+        ctx.moveTo(gx, startWorldY);
+        ctx.lineTo(gx, endWorldY);
+      }
+      for (let gy = startWorldY; gy <= endWorldY; gy += gridStep) {
+        ctx.moveTo(startWorldX, gy);
+        ctx.lineTo(endWorldX, gy);
+      }
+      ctx.stroke();
     }
-    for (let gy = startWorldY; gy <= endWorldY; gy += gridStep) {
-      ctx.moveTo(startWorldX, gy);
-      ctx.lineTo(endWorldX, gy);
-    }
-    ctx.stroke();
-  }
 
-  if (cam.zoom >= 0.14) {
-    ctx.strokeStyle = '#1B263B';
-    ctx.beginPath();
-    for (let gx = startWorldX; gx <= endWorldX; gx += majorStep) {
-      ctx.moveTo(gx, startWorldY);
-      ctx.lineTo(gx, endWorldY);
+    if (cam.zoom >= 0.14) {
+      ctx.strokeStyle = '#1B263B';
+      ctx.beginPath();
+      for (let gx = startWorldX; gx <= endWorldX; gx += majorStep) {
+        ctx.moveTo(gx, startWorldY);
+        ctx.lineTo(gx, endWorldY);
+      }
+      for (let gy = startWorldY; gy <= endWorldY; gy += majorStep) {
+        ctx.moveTo(startWorldX, gy);
+        ctx.lineTo(endWorldX, gy);
+      }
+      ctx.stroke();
     }
-    for (let gy = startWorldY; gy <= endWorldY; gy += majorStep) {
-      ctx.moveTo(startWorldX, gy);
-      ctx.lineTo(endWorldY, gy);
-    }
-    ctx.stroke();
   }
 
   // Sector Perimeter Border

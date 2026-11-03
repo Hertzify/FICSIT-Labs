@@ -250,7 +250,7 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.09 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.09');
-  assert.equal(APP_BUILD_TAG, '0.0.09 dev build');
+test('version tracking matches 0.0.10 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.10');
+  assert.equal(APP_BUILD_TAG, '0.0.10 dev build');
 });

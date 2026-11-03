@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 // 1. Patch AndroidManifest.xml with android:isGame="true", android:appCategory="game", and sensorLandscape
 const manifestPath = 'android/app/src/main/AndroidManifest.xml';
@@ -111,4 +112,64 @@ public class MainActivity extends BridgeActivity {
 `;
   fs.writeFileSync(mainActivityPath, javaSource, 'utf8');
   console.log('Patched MainActivity.java with immersive game fullscreen mode.');
+}
+
+// 4. Deploy Permanent Keystore & Patch build.gradle with versionCode and stable signing
+// This ensures every APK built across any GitHub Actions runner has the IDENTICAL signature
+// so Android allows in-place updates without uninstalling.
+const targetKeystorePath = 'android/app/app-release.keystore';
+if (fs.existsSync('android/app')) {
+  if (fs.existsSync('signing/app-release.keystore')) {
+    fs.copyFileSync('signing/app-release.keystore', targetKeystorePath);
+    console.log(`Copied signing/app-release.keystore to ${targetKeystorePath}.`);
+  } else if (fs.existsSync('signing/keystore.base64')) {
+    const b64 = fs.readFileSync('signing/keystore.base64', 'utf8').trim();
+    fs.writeFileSync(targetKeystorePath, Buffer.from(b64, 'base64'));
+    console.log(`Decoded signing/keystore.base64 into ${targetKeystorePath}.`);
+  }
+}
+
+const gradlePath = 'android/app/build.gradle';
+if (fs.existsSync(gradlePath)) {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const cleanVer = (pkg.version || '0.0.09').replace(/[^0-9.]/g, '');
+  const parts = cleanVer.split('.').map((n) => parseInt(n, 10) || 0);
+  // Semantic integer version code: e.g. 0.0.09 -> 9; 0.1.0 -> 100; 1.0.0 -> 10000
+  const versionCode = (parts[0] || 0) * 10000 + (parts[1] || 0) * 100 + (parts[2] || 0);
+  const versionName = pkg.version || '0.0.09';
+
+  let gradle = fs.readFileSync(gradlePath, 'utf8');
+
+  // Update versionCode and versionName
+  gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`);
+  gradle = gradle.replace(/versionName\s+["'][^"']+["']/, `versionName "${versionName}"`);
+
+  // Inject permanent signingConfigs and wire into both debug and release buildTypes
+  if (!gradle.includes('signingConfigs {')) {
+    const newBuildTypes = `signingConfigs {
+        release {
+            storeFile file('app-release.keystore')
+            storePassword 'ficsit-node-labs'
+            keyAlias 'ficsit'
+            keyPassword 'ficsit-node-labs'
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
+        release {
+            signingConfig signingConfigs.release`;
+
+    if (/buildTypes\s*\{\s*release\s*\{/.test(gradle)) {
+      gradle = gradle.replace(/buildTypes\s*\{\s*release\s*\{/, newBuildTypes);
+    } else {
+      gradle = gradle.replace(/buildTypes\s*\{/, newBuildTypes);
+    }
+  }
+
+  fs.writeFileSync(gradlePath, gradle, 'utf8');
+  console.log(
+    `Patched build.gradle: versionCode=${versionCode}, versionName="${versionName}", signingConfig applied to all builds.`
+  );
 }

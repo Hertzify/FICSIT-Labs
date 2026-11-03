@@ -4,6 +4,14 @@ All notable changes for **FICSIT Node Labs** are documented below. Straight to t
 
 ---
 
+## [0.0.10] — 2026-11-02 (`0.0.10 dev build`)
+
+### 📦 Android In-Place Updates & Keystore
+- **Permanent Signing Keystore**: Bound a permanent cryptographic key (`signing/app-release.keystore`) across all automated builds so Android allows in-place updates without uninstalling.
+- **Auto-Incremented Version Code**: Automated Android `versionCode` computation from `package.json` to prevent package conflicts on newer Android versions.
+
+---
+
 ## [0.0.09] — 2026-11-02 (`0.0.09 dev build`)
 
 ### 🎛️ Minimal HUD & Corner Controls

@@ -15,6 +15,26 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.10',
+    tag: '0.0.10 dev build',
+    date: '2026-11-02',
+    categories: [
+      {
+        category: '📦 Android In-Place Updates & Keystore',
+        items: [
+          {
+            title: 'Permanent Signing Keystore',
+            description: 'Fixed update failure by binding a permanent cryptographic signing key across all GitHub builds, allowing seamless updates without uninstalling.',
+          },
+          {
+            title: 'Auto-Incrementing Version Code',
+            description: 'Automated Android versionCode directly from package.json so the package installer recognizes each release as an update.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.09',
     tag: '0.0.09 dev build',
     date: '2026-11-02',

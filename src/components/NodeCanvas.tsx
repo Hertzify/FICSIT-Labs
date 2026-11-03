@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   BUILDINGS,
   CONVEYOR_BELT_TIER_LIST,
+  getBuildingMaxStorage,
+  getItemStackSize,
   PURITY_CONFIG,
   RECIPES,
+  STORAGE_CONTAINER_SLOTS,
 } from '../game/catalog';
 import { playSynthSfx } from '../game/audio';
 import {
@@ -717,6 +720,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           statusColor = '#10B981';
         } else if (node.status === 'working') {
           statusColor = '#F59E0B';
+        } else if (node.status === 'backed_up') {
+          statusColor = '#F59E0B';
         } else if (node.status === 'waiting') {
           statusColor = '#38BDF8';
         } else if (node.status === 'starved') {
@@ -952,6 +957,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             statusText = `${node.efficiency}% OPTIMAL`;
           } else if (node.status === 'working') {
             statusText = `${node.efficiency}% ACTIVE`;
+          } else if (node.status === 'backed_up') {
+            statusText = 'BACKED UP';
           } else if (node.status === 'waiting') {
             statusText = 'WAITING';
           } else if (node.status === 'starved') {
@@ -964,13 +971,22 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ctx.fillText(statusText, node.x + node.width - 12, node.y + 18);
         }
 
+        const maxCap =
+          node.maxStoredCount ??
+          getBuildingMaxStorage(
+            node.buildingId,
+            node.recipeId,
+            node.outputs[0]?.itemName ?? node.inputs[0]?.itemName ?? null
+          );
+        const storedInt = Math.min(maxCap, Math.floor(node.storedCount ?? 0));
+
         const recipeTitle = isDeposit
           ? `${recipe?.outputs[0]?.itemName ?? 'Ore'} Vein (${purityInfo.multiplier}x Purity)`
           : recipe?.name ??
             (node.buildingId === 'the_hub'
-              ? `Stored: ${Math.floor(node.storedCount)} Parts`
+              ? `24-Slot Depot · ${storedInt}/${maxCap}`
               : node.buildingId === 'storage_container'
-              ? `Buffer: ${Math.floor(node.storedCount)} Items`
+              ? `24-Slot Buffer · ${storedInt}/${maxCap}`
               : 'Logistics Pass-Through');
 
         if (primaryItemImg) {
@@ -987,32 +1003,106 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
 
         const barX = node.x + 14;
-        const barY = node.y + node.height - 20;
         const barW = node.width - 28;
-        const barH = 7;
 
-        drawRoundedRect(ctx, barX, barY, barW, barH, 3.5);
-        ctx.fillStyle = '#0B0F17';
-        ctx.fill();
-        ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        const fillRatio =
-          isDeposit ||
-          node.buildingId === 'splitter' ||
-          node.buildingId === 'merger' ||
-          node.buildingId === 'storage_container' ||
-          node.buildingId === 'the_hub'
-            ? node.efficiency > 0
-              ? 1
-              : 0
-            : Math.max(0, Math.min(1, node.progress));
-
-        if (fillRatio > 0.01) {
-          drawRoundedRect(ctx, barX, barY, Math.max(6, barW * fillRatio), barH, 3.5);
-          ctx.fillStyle = accent;
+        if (isDeposit) {
+          // Single extraction indicator bar for natural world deposits
+          const barY = node.y + node.height - 20;
+          const barH = 7;
+          drawRoundedRect(ctx, barX, barY, barW, barH, 3.5);
+          ctx.fillStyle = '#0B0F17';
           ctx.fill();
+          ctx.strokeStyle = '#1E293B';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          if (node.efficiency > 0) {
+            drawRoundedRect(ctx, barX, barY, barW, barH, 3.5);
+            ctx.fillStyle = accent;
+            ctx.fill();
+          }
+        } else {
+          // 1. STORAGE CAPACITY BAR (Fills 0% -> 100% with Stored / Max item count)
+          const storageBarY = node.y + node.height - 30;
+          const storageBarH = 11;
+          const storedRatio =
+            maxCap > 0 ? Math.max(0, Math.min(1, (node.storedCount ?? 0) / maxCap)) : 0;
+          const isFull = storedRatio >= 0.995;
+
+          drawRoundedRect(ctx, barX, storageBarY, barW, storageBarH, 4);
+          ctx.fillStyle = '#0B0F17';
+          ctx.fill();
+          ctx.strokeStyle = isFull ? '#F59E0B' : '#1E293B';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          if (storedRatio > 0.005) {
+            drawRoundedRect(
+              ctx,
+              barX,
+              storageBarY,
+              Math.max(6, barW * storedRatio),
+              storageBarH,
+              4
+            );
+            ctx.fillStyle = isFull ? '#D97706' : '#0D9488';
+            ctx.fill();
+          }
+
+          // Inline Storage Label & Exact Item Count (`Stored / Max`)
+          const isContainer =
+            node.buildingId === 'storage_container' || node.buildingId === 'the_hub';
+          const isLogistics =
+            node.buildingId === 'splitter' || node.buildingId === 'merger';
+          const leftLabel = isContainer
+            ? '24 SLOTS'
+            : isLogistics
+            ? 'BUFFER'
+            : 'STORAGE';
+          const rightLabel = isLogistics
+            ? `0 / ${maxCap}`
+            : `${storedInt} / ${maxCap}${isFull ? ' FULL' : ''}`;
+
+          ctx.font = '700 8.5px "JetBrains Mono", monospace';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#CBD5E1';
+          ctx.fillText(leftLabel, barX + 5, storageBarY + storageBarH * 0.5 + 0.5);
+
+          ctx.textAlign = 'right';
+          ctx.fillStyle = isFull ? '#FDE68A' : '#F8FAFC';
+          ctx.fillText(rightLabel, barX + barW - 5, storageBarY + storageBarH * 0.5 + 0.5);
+
+          // 2. CRAFTING / EXTRACTION CYCLE PROGRESS BAR (Below Storage Bar)
+          const cycleBarY = node.y + node.height - 14;
+          const cycleBarH = 6;
+
+          drawRoundedRect(ctx, barX, cycleBarY, barW, cycleBarH, 3);
+          ctx.fillStyle = '#0B0F17';
+          ctx.fill();
+          ctx.strokeStyle = '#1E293B';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          const cycleFillRatio =
+            isLogistics || isContainer
+              ? node.efficiency > 0
+                ? 1
+                : 0
+              : Math.max(0, Math.min(1, node.progress));
+
+          if (cycleFillRatio > 0.01) {
+            drawRoundedRect(
+              ctx,
+              barX,
+              cycleBarY,
+              Math.max(6, barW * cycleFillRatio),
+              cycleBarH,
+              3
+            );
+            ctx.fillStyle = accent;
+            ctx.fill();
+          }
         }
 
         // Input Port Dots, Official Resource Icons & Stacked Rate Readouts
@@ -1423,6 +1513,13 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const simResult = stepSimulation(nodesRef.current, connectionsRef.current, dt);
       nodesRef.current = simResult.nodes;
       connectionsRef.current = simResult.connections;
+
+      if (selectedNodeIdRef.current) {
+        const liveNode = simResult.nodes.find((n) => n.id === selectedNodeIdRef.current);
+        if (liveNode) {
+          setSelectedNodeSnapshot({ ...liveNode });
+        }
+      }
 
       interactionRef.current.elapsedTime += dt;
 
@@ -2197,6 +2294,148 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 </div>
               </div>
             )
+          )}
+
+          {/* Satisfactory Internal Building Storage & Input/Output Buffers */}
+          {!isSelectedWorldDeposit && (
+            <div className="mt-2 pt-2 border-t border-[#26334D] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-slate-300">
+                  Internal Part Storage
+                </span>
+                {(selectedNodeSnapshot.storedCount > 0.5 ||
+                  selectedNodeSnapshot.inputs.some((p) => (p.bufferedCount ?? 0) > 0.5)) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      nodesRef.current = nodesRef.current.map((n) => {
+                        if (n.id !== selectedNodeSnapshot.id) return n;
+                        return {
+                          ...n,
+                          storedCount: 0,
+                          inputs: n.inputs.map((p) => ({ ...p, bufferedCount: 0 })),
+                          outputs: n.outputs.map((p) => ({ ...p, bufferedCount: 0 })),
+                        };
+                      });
+                      const updated =
+                        nodesRef.current.find((n) => n.id === selectedNodeSnapshot.id) ?? null;
+                      setSelectedNodeSnapshot(updated ? { ...updated } : null);
+                      playSynthSfx('click', settings);
+                      onGraphMutated();
+                      showToast('Flushed internal building buffers');
+                      drawNowRef.current?.();
+                    }}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-amber-300 border border-amber-500/30"
+                  >
+                    Flush Buffer
+                  </button>
+                )}
+              </div>
+
+              {/* Input Slot Buffers (1 Stack per Input Port on Production Machines) */}
+              {selectedNodeSnapshot.recipeId &&
+                selectedNodeSnapshot.inputs.map((inPort) => {
+                  const maxBuf =
+                    inPort.maxBuffer ?? getItemStackSize(inPort.itemName ?? inPort.label);
+                  const curBuf = Math.min(maxBuf, Math.floor(inPort.bufferedCount ?? 0));
+                  const pct = maxBuf > 0 ? Math.min(100, Math.round((curBuf / maxBuf) * 100)) : 0;
+                  const iconUrl = getItemIconUrl(inPort.itemName ?? inPort.label);
+                  return (
+                    <div
+                      key={inPort.id}
+                      className="p-2 rounded-lg bg-[#0B0F17] border border-[#26334D] space-y-1"
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="flex items-center gap-1.5 text-cyan-300 truncate">
+                          {iconUrl && (
+                            <img
+                              src={iconUrl}
+                              alt={inPort.label}
+                              className="w-3.5 h-3.5 object-contain shrink-0"
+                            />
+                          )}
+                          <span className="truncate">In: {inPort.label}</span>
+                        </span>
+                        <span className="text-slate-200 font-semibold shrink-0">
+                          {curBuf} / {maxBuf} (1 Stack)
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                        <div
+                          className="h-full bg-cyan-400 transition-all duration-150"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {/* Output Slot / 24-Slot Container Buffer */}
+              {(() => {
+                const isContainer =
+                  selectedNodeSnapshot.buildingId === 'storage_container' ||
+                  selectedNodeSnapshot.buildingId === 'the_hub';
+                const activeItemName =
+                  selectedNodeSnapshot.outputs[0]?.itemName ??
+                  selectedNodeSnapshot.inputs.find((p) => p.itemName)?.itemName ??
+                  (selectedNodeSnapshot.recipeId
+                    ? RECIPES[selectedNodeSnapshot.recipeId]?.outputs[0]?.itemName
+                    : null) ??
+                  'Parts';
+                const maxCap =
+                  selectedNodeSnapshot.maxStoredCount ??
+                  getBuildingMaxStorage(
+                    selectedNodeSnapshot.buildingId,
+                    selectedNodeSnapshot.recipeId,
+                    activeItemName
+                  );
+                const curStored = Math.min(
+                  maxCap,
+                  Math.floor(selectedNodeSnapshot.storedCount ?? 0)
+                );
+                const pct =
+                  maxCap > 0 ? Math.min(100, Math.round((curStored / maxCap) * 100)) : 0;
+                const isFull = curStored >= maxCap && maxCap > 0;
+                const iconUrl = getItemIconUrl(activeItemName);
+                const slotLabel = isContainer
+                  ? `${STORAGE_CONTAINER_SLOTS} Slots`
+                  : '1 Stack';
+
+                return (
+                  <div className="p-2 rounded-lg bg-[#0B0F17] border border-[#26334D] space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-mono">
+                      <span className="flex items-center gap-1.5 text-amber-300 truncate">
+                        {iconUrl && (
+                          <img
+                            src={iconUrl}
+                            alt={activeItemName}
+                            className="w-3.5 h-3.5 object-contain shrink-0"
+                          />
+                        )}
+                        <span className="truncate">
+                          {isContainer ? 'Container' : 'Out'}: {activeItemName}
+                        </span>
+                      </span>
+                      <span
+                        className={`font-semibold shrink-0 ${
+                          isFull ? 'text-amber-400' : 'text-slate-200'
+                        }`}
+                      >
+                        {curStored} / {maxCap} ({slotLabel})
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-150 ${
+                          isFull ? 'bg-amber-500' : 'bg-teal-400'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           )}
 
           {/* Connected Conveyor Belt Tier Upgrade Controls */}

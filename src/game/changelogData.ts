@@ -15,6 +15,53 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.12',
+    tag: '0.0.12 dev build',
+    date: '2026-11-03',
+    categories: [
+      {
+        category: '🧲 Bounded Local Snap Mode Proximity',
+        items: [
+          {
+            title: '240px (16m) Local Snap Range Limit',
+            description:
+              'Bounded Snap Mode and laser alignment guidelines to a tight 240px (~16m) edge-to-edge proximity around neighboring buildings, preventing buildings from snapping across the map.',
+          },
+          {
+            title: 'Local Connected Port Snapping',
+            description:
+              'Connected conveyor belts only trigger magnetic port snapping and amber guidelines when the two buildings are within local proximity.',
+          },
+        ],
+      },
+      {
+        category: '📦 Satisfactory Internal Building Storage & Stack Limits',
+        items: [
+          {
+            title: 'Canonical Item Stack Sizes (100 / 200 / 500)',
+            description:
+              'Implemented official Satisfactory stack limits: 100/stack for Ores, Ingots, Reinforced Plates, and Rotors; 200/stack for Plates, Rods, and Cable; 500/stack for Wire, Concrete, and Screws.',
+          },
+          {
+            title: '1-Stack Machine Input & Output Buffers',
+            description:
+              'Miners, Smelters, Constructors, and Assemblers buffer up to 1 full stack per input port and 1 full stack in their output slot, entering BACKED UP standby when output capacity reaches 100%.',
+          },
+          {
+            title: '24-Slot Storage Container & HUB Capacity',
+            description:
+              'Storage Containers and The HUB store up to 24 full item stacks (2,400–12,000 parts) and automatically discharge buffered items onto connected output belts.',
+          },
+          {
+            title: 'Dual Storage Capacity & Crafting Bars on Cards',
+            description:
+              'Machine cards now display both a Storage Capacity Bar (0%–100% with exact Stored / Max item count) and the Crafting Cycle Progress Bar, plus individual Input/Output slot bars in the Inspector.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.11',
     tag: '0.0.11 dev build',
     date: '2026-11-03',

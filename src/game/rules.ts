@@ -1,9 +1,12 @@
 import {
   BUILDINGS,
   CONVEYOR_BELT_TIERS,
+  getBuildingMaxStorage,
+  getItemStackSize,
   PURITY_CONFIG,
   RECIPES,
   SECTOR_01_DEPOSIT_SPECS,
+  STORAGE_CONTAINER_SLOTS,
 } from './catalog';
 import {
   BeltItemPacket,
@@ -592,13 +595,34 @@ export interface NodeSnapResult {
 }
 
 /**
- * Satisfactory-style Smart Snap Mode resolver:
- * Snaps a dragged or ghost-preview building to:
- * 1. Connected input/output ports (highest priority so wired belts lock 100% straight)
- * 2. Nearby compatible input/output ports within a horizontal factory corridor
- * 3. Nearby building centerlines / edges
+ * Maximum local edge-to-edge proximity (in world pixels) for Satisfactory-style
+ * magnetic Snap Mode and alignment laser guidelines (240px = 16 meters / 10 grid cells).
+ * Buildings further away than this threshold will not snap or project laser lines.
+ */
+export const MAX_SNAP_PROXIMITY_PX = 240;
+
+export function getBoxEdgeGap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): { hGap: number; vGap: number; isWithinLocalProximity: boolean } {
+  const hGap = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
+  const vGap = Math.max(0, a.y - (b.y + b.height), b.y - (a.y + a.height));
+  return {
+    hGap,
+    vGap,
+    isWithinLocalProximity:
+      hGap <= MAX_SNAP_PROXIMITY_PX && vGap <= MAX_SNAP_PROXIMITY_PX,
+  };
+}
+
+/**
+ * Satisfactory-style Smart Snap Mode resolver (Bounded Local Range):
+ * Snaps a dragged or ghost-preview building ONLY to nearby neighbors within 240px (16m):
+ * 1. Connected input/output ports within local proximity (highest priority so wired belts lock 100% straight)
+ * 2. Nearby compatible input/output ports within local proximity
+ * 3. Nearby building centerlines / edges within local proximity
  * 4. Standard 24px blueprint world grid fallback
- * Also emits active visual laser guidelines for canvas rendering.
+ * Also emits active visual laser guidelines strictly culled to the 240px neighborhood.
  */
 export function computeNodeSnapAlignment(
   candidate: {
@@ -631,8 +655,6 @@ export function computeNodeSnapAlignment(
   const outCount = bDef?.outputPortCount ?? 1;
   const PORT_SNAP_THRESHOLD = 18;
   const CENTER_SNAP_THRESHOLD = 14;
-  const MAX_H_CORRIDOR = 960;
-  const MAX_V_CORRIDOR = 840;
 
   let finalX = baseX;
   let finalY = baseY;
@@ -641,11 +663,12 @@ export function computeNodeSnapAlignment(
 
   // ---------------------------------------------------------------------------
   // 1. Evaluate Y-Axis Snap (Connected Ports -> Nearby Compatible Ports -> Center Y)
+  //    All candidates must lie within MAX_SNAP_PROXIMITY_PX (240px) edge-to-edge!
   // ---------------------------------------------------------------------------
   let bestYDiff = PORT_SNAP_THRESHOLD + 1;
   let bestTargetY: number | null = null;
 
-  // Priority 1A: Connected Ports (if dragging an existing wired node)
+  // Priority 1A: Connected Ports (if dragging an existing wired node within local range)
   if (candidate.id) {
     const attachedConns = connections.filter(
       (c) => c.toNodeId === candidate.id || c.fromNodeId === candidate.id
@@ -654,6 +677,9 @@ export function computeNodeSnapAlignment(
       if (conn.toNodeId === candidate.id) {
         const srcNode = nodes.find((n) => n.id === conn.fromNodeId);
         if (!srcNode) continue;
+        const gap = getBoxEdgeGap(candidate, srcNode);
+        if (!gap.isWithinLocalProximity) continue;
+
         const outIdx = Math.max(
           0,
           srcNode.outputs.findIndex((p) => p.id === conn.fromPortId)
@@ -675,6 +701,9 @@ export function computeNodeSnapAlignment(
       } else if (conn.fromNodeId === candidate.id) {
         const dstNode = nodes.find((n) => n.id === conn.toNodeId);
         if (!dstNode) continue;
+        const gap = getBoxEdgeGap(candidate, dstNode);
+        if (!gap.isWithinLocalProximity) continue;
+
         const inIdx = Math.max(
           0,
           dstNode.inputs.findIndex((p) => p.id === conn.toPortId)
@@ -697,39 +726,35 @@ export function computeNodeSnapAlignment(
     }
   }
 
-  // Priority 1B: Nearby Compatible Ports in Horizontal Corridor
+  // Priority 1B: Nearby Compatible Ports in Local Corridor (<= 240px)
   if (bestTargetY === null) {
     let bestHorizDist = Infinity;
     for (const other of nodes) {
       if (candidate.id && other.id === candidate.id) continue;
-      const vDist = Math.abs(
-        other.y + other.height * 0.5 - (candidate.y + candidate.height * 0.5)
-      );
-      if (vDist > 320) continue;
+      const gap = getBoxEdgeGap(candidate, other);
+      if (!gap.isWithinLocalProximity) continue;
 
       // Other node is to the left -> match other's outputs to candidate's inputs
       if (other.x + other.width <= candidate.x + 60 && inCount > 0 && other.outputs.length > 0) {
-        const hDist = Math.abs(candidate.x - (other.x + other.width));
-        if (hDist <= MAX_H_CORRIDOR) {
-          for (let oIdx = 0; oIdx < other.outputs.length; oIdx++) {
-            const otherPt = getPortWorldPosition(
-              other,
-              'output',
-              oIdx,
-              other.outputs.length
-            );
-            for (let iIdx = 0; iIdx < inCount; iIdx++) {
-              const candOffset = getPortOffsetY(iIdx, inCount);
-              const idealY = otherPt.y - candOffset;
-              const diff = Math.abs(candidate.y - idealY);
-              if (
-                diff <= PORT_SNAP_THRESHOLD &&
-                (diff < bestYDiff - 1 || (Math.abs(diff - bestYDiff) <= 1 && hDist < bestHorizDist))
-              ) {
-                bestYDiff = diff;
-                bestHorizDist = hDist;
-                bestTargetY = idealY;
-              }
+        const hDist = gap.hGap;
+        for (let oIdx = 0; oIdx < other.outputs.length; oIdx++) {
+          const otherPt = getPortWorldPosition(
+            other,
+            'output',
+            oIdx,
+            other.outputs.length
+          );
+          for (let iIdx = 0; iIdx < inCount; iIdx++) {
+            const candOffset = getPortOffsetY(iIdx, inCount);
+            const idealY = otherPt.y - candOffset;
+            const diff = Math.abs(candidate.y - idealY);
+            if (
+              diff <= PORT_SNAP_THRESHOLD &&
+              (diff < bestYDiff - 1 || (Math.abs(diff - bestYDiff) <= 1 && hDist < bestHorizDist))
+            ) {
+              bestYDiff = diff;
+              bestHorizDist = hDist;
+              bestTargetY = idealY;
             }
           }
         }
@@ -737,27 +762,25 @@ export function computeNodeSnapAlignment(
 
       // Other node is to the right -> match other's inputs to candidate's outputs
       if (other.x >= candidate.x + candidate.width - 60 && outCount > 0 && other.inputs.length > 0) {
-        const hDist = Math.abs(other.x - (candidate.x + candidate.width));
-        if (hDist <= MAX_H_CORRIDOR) {
-          for (let iIdx = 0; iIdx < other.inputs.length; iIdx++) {
-            const otherPt = getPortWorldPosition(
-              other,
-              'input',
-              iIdx,
-              other.inputs.length
-            );
-            for (let oIdx = 0; oIdx < outCount; oIdx++) {
-              const candOffset = getPortOffsetY(oIdx, outCount);
-              const idealY = otherPt.y - candOffset;
-              const diff = Math.abs(candidate.y - idealY);
-              if (
-                diff <= PORT_SNAP_THRESHOLD &&
-                (diff < bestYDiff - 1 || (Math.abs(diff - bestYDiff) <= 1 && hDist < bestHorizDist))
-              ) {
-                bestYDiff = diff;
-                bestHorizDist = hDist;
-                bestTargetY = idealY;
-              }
+        const hDist = gap.hGap;
+        for (let iIdx = 0; iIdx < other.inputs.length; iIdx++) {
+          const otherPt = getPortWorldPosition(
+            other,
+            'input',
+            iIdx,
+            other.inputs.length
+          );
+          for (let oIdx = 0; oIdx < outCount; oIdx++) {
+            const candOffset = getPortOffsetY(oIdx, outCount);
+            const idealY = otherPt.y - candOffset;
+            const diff = Math.abs(candidate.y - idealY);
+            if (
+              diff <= PORT_SNAP_THRESHOLD &&
+              (diff < bestYDiff - 1 || (Math.abs(diff - bestYDiff) <= 1 && hDist < bestHorizDist))
+            ) {
+              bestYDiff = diff;
+              bestHorizDist = hDist;
+              bestTargetY = idealY;
             }
           }
         }
@@ -765,15 +788,14 @@ export function computeNodeSnapAlignment(
     }
   }
 
-  // Priority 1C: Nearby Building Center Y
+  // Priority 1C: Nearby Building Center Y (<= 240px)
   if (bestTargetY === null) {
     let bestCenterDiff = CENTER_SNAP_THRESHOLD + 1;
     for (const other of nodes) {
       if (candidate.id && other.id === candidate.id) continue;
-      const hDist = Math.abs(
-        other.x + other.width * 0.5 - (candidate.x + candidate.width * 0.5)
-      );
-      if (hDist > MAX_H_CORRIDOR) continue;
+      const gap = getBoxEdgeGap(candidate, other);
+      if (!gap.isWithinLocalProximity) continue;
+
       const otherCenterY = other.y + other.height * 0.5;
       const idealY = Math.round(otherCenterY - candidate.height * 0.5);
       const diff = Math.abs(candidate.y - idealY);
@@ -790,16 +812,14 @@ export function computeNodeSnapAlignment(
   }
 
   // ---------------------------------------------------------------------------
-  // 2. Evaluate X-Axis Snap (Vertical Column Alignment with Nearby Buildings)
+  // 2. Evaluate X-Axis Snap (Vertical Column Alignment with Nearby Buildings <= 240px)
   // ---------------------------------------------------------------------------
   let bestXDiff = CENTER_SNAP_THRESHOLD + 1;
   let bestTargetX: number | null = null;
   for (const other of nodes) {
     if (candidate.id && other.id === candidate.id) continue;
-    const vDist = Math.abs(
-      other.y + other.height * 0.5 - (finalY + candidate.height * 0.5)
-    );
-    if (vDist > MAX_V_CORRIDOR) continue;
+    const gap = getBoxEdgeGap({ ...candidate, y: finalY }, other);
+    if (!gap.isWithinLocalProximity) continue;
 
     const otherCenterX = other.x + other.width * 0.5;
     const idealX =
@@ -819,19 +839,21 @@ export function computeNodeSnapAlignment(
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Emit Active Visual Laser Guidelines for All Aligned Ports & Centers
+  // 3. Emit Active Visual Laser Guidelines ONLY for Local Neighbors (<= 240px)
   // ---------------------------------------------------------------------------
   const guidelines: SnapGuideline[] = [];
   const alignedNodeIdsH = new Set<string>();
+  const snappedCandBox = {
+    x: finalX,
+    y: finalY,
+    width: candidate.width,
+    height: candidate.height,
+  };
 
   for (const other of nodes) {
     if (candidate.id && other.id === candidate.id) continue;
-    const hCenterDist = Math.abs(
-      other.x + other.width * 0.5 - (finalX + candidate.width * 0.5)
-    );
-    const vCenterDist = Math.abs(
-      other.y + other.height * 0.5 - (finalY + candidate.height * 0.5)
-    );
+    const gap = getBoxEdgeGap(snappedCandBox, other);
+    if (!gap.isWithinLocalProximity) continue;
 
     const isConnectedToOther =
       Boolean(candidate.id) &&
@@ -841,103 +863,99 @@ export function computeNodeSnapAlignment(
           (c.fromNodeId === candidate.id && c.toNodeId === other.id)
       );
 
-    if (hCenterDist <= MAX_H_CORRIDOR || isConnectedToOther) {
-      // Check output(other) -> input(candidate)
-      if (other.x + other.width <= finalX + 40 && inCount > 0) {
-        for (let oIdx = 0; oIdx < other.outputs.length; oIdx++) {
-          const otherPt = getPortWorldPosition(
-            other,
-            'output',
-            oIdx,
-            other.outputs.length
-          );
-          for (let iIdx = 0; iIdx < inCount; iIdx++) {
-            const candPtY = finalY + getPortOffsetY(iIdx, inCount);
-            if (Math.abs(candPtY - otherPt.y) <= 0.5) {
-              guidelines.push({
-                axis: 'horizontal',
-                kind: 'port',
-                x1: otherPt.x,
-                y1: otherPt.y,
-                x2: finalX,
-                y2: candPtY,
-                color: isConnectedToOther ? '#F59E0B' : '#38BDF8',
-                label: 'PORT ALIGNED',
-              });
-              alignedNodeIdsH.add(other.id);
-              snappedY = true;
-            }
+    // Check output(other) -> input(candidate)
+    if (other.x + other.width <= finalX + 40 && inCount > 0) {
+      for (let oIdx = 0; oIdx < other.outputs.length; oIdx++) {
+        const otherPt = getPortWorldPosition(
+          other,
+          'output',
+          oIdx,
+          other.outputs.length
+        );
+        for (let iIdx = 0; iIdx < inCount; iIdx++) {
+          const candPtY = finalY + getPortOffsetY(iIdx, inCount);
+          if (Math.abs(candPtY - otherPt.y) <= 0.5) {
+            guidelines.push({
+              axis: 'horizontal',
+              kind: 'port',
+              x1: otherPt.x,
+              y1: otherPt.y,
+              x2: finalX,
+              y2: candPtY,
+              color: isConnectedToOther ? '#F59E0B' : '#38BDF8',
+              label: 'PORT ALIGNED',
+            });
+            alignedNodeIdsH.add(other.id);
+            snappedY = true;
           }
-        }
-      }
-
-      // Check output(candidate) -> input(other)
-      if (other.x >= finalX + candidate.width - 40 && outCount > 0) {
-        for (let iIdx = 0; iIdx < other.inputs.length; iIdx++) {
-          const otherPt = getPortWorldPosition(
-            other,
-            'input',
-            iIdx,
-            other.inputs.length
-          );
-          for (let oIdx = 0; oIdx < outCount; oIdx++) {
-            const candPtY = finalY + getPortOffsetY(oIdx, outCount);
-            if (Math.abs(candPtY - otherPt.y) <= 0.5) {
-              guidelines.push({
-                axis: 'horizontal',
-                kind: 'port',
-                x1: finalX + candidate.width,
-                y1: candPtY,
-                x2: otherPt.x,
-                y2: otherPt.y,
-                color: isConnectedToOther ? '#F59E0B' : '#38BDF8',
-                label: 'PORT ALIGNED',
-              });
-              alignedNodeIdsH.add(other.id);
-              snappedY = true;
-            }
-          }
-        }
-      }
-
-      // Horizontal center alignment guideline (if not already showing a port laser to this node)
-      if (!alignedNodeIdsH.has(other.id)) {
-        const candCenterY = finalY + candidate.height * 0.5;
-        const otherCenterY = other.y + other.height * 0.5;
-        if (Math.abs(candCenterY - otherCenterY) <= 0.5) {
-          const minX = Math.min(finalX + candidate.width * 0.5, other.x + other.width * 0.5);
-          const maxX = Math.max(finalX + candidate.width * 0.5, other.x + other.width * 0.5);
-          guidelines.push({
-            axis: 'horizontal',
-            kind: 'center',
-            x1: minX,
-            y1: candCenterY,
-            x2: maxX,
-            y2: otherCenterY,
-            color: '#38BDF888',
-          });
         }
       }
     }
 
-    // Vertical center alignment guideline
-    if (vCenterDist <= MAX_V_CORRIDOR) {
-      const candCenterX = finalX + candidate.width * 0.5;
-      const otherCenterX = other.x + other.width * 0.5;
-      if (Math.abs(candCenterX - otherCenterX) <= 0.5) {
-        const minY = Math.min(finalY + candidate.height * 0.5, other.y + other.height * 0.5);
-        const maxY = Math.max(finalY + candidate.height * 0.5, other.y + other.height * 0.5);
+    // Check output(candidate) -> input(other)
+    if (other.x >= finalX + candidate.width - 40 && outCount > 0) {
+      for (let iIdx = 0; iIdx < other.inputs.length; iIdx++) {
+        const otherPt = getPortWorldPosition(
+          other,
+          'input',
+          iIdx,
+          other.inputs.length
+        );
+        for (let oIdx = 0; oIdx < outCount; oIdx++) {
+          const candPtY = finalY + getPortOffsetY(oIdx, outCount);
+          if (Math.abs(candPtY - otherPt.y) <= 0.5) {
+            guidelines.push({
+              axis: 'horizontal',
+              kind: 'port',
+              x1: finalX + candidate.width,
+              y1: candPtY,
+              x2: otherPt.x,
+              y2: otherPt.y,
+              color: isConnectedToOther ? '#F59E0B' : '#38BDF8',
+              label: 'PORT ALIGNED',
+            });
+            alignedNodeIdsH.add(other.id);
+            snappedY = true;
+          }
+        }
+      }
+    }
+
+    // Horizontal center alignment guideline (if not already showing a port laser to this node)
+    if (!alignedNodeIdsH.has(other.id)) {
+      const candCenterY = finalY + candidate.height * 0.5;
+      const otherCenterY = other.y + other.height * 0.5;
+      if (Math.abs(candCenterY - otherCenterY) <= 0.5) {
+        const minX = Math.min(finalX + candidate.width * 0.5, other.x + other.width * 0.5);
+        const maxX = Math.max(finalX + candidate.width * 0.5, other.x + other.width * 0.5);
         guidelines.push({
-          axis: 'vertical',
+          axis: 'horizontal',
           kind: 'center',
-          x1: candCenterX,
-          y1: minY,
-          x2: otherCenterX,
-          y2: maxY,
+          x1: minX,
+          y1: candCenterY,
+          x2: maxX,
+          y2: otherCenterY,
           color: '#38BDF888',
         });
-        snappedX = true;
       }
+    }
+
+    // Vertical center alignment guideline
+    const candCenterX = finalX + candidate.width * 0.5;
+    const otherCenterX = other.x + other.width * 0.5;
+    if (Math.abs(candCenterX - otherCenterX) <= 0.5) {
+      const minY = Math.min(finalY + candidate.height * 0.5, other.y + other.height * 0.5);
+      const maxY = Math.max(finalY + candidate.height * 0.5, other.y + other.height * 0.5);
+      guidelines.push({
+        axis: 'vertical',
+        kind: 'center',
+        x1: candCenterX,
+        y1: minY,
+        x2: otherCenterX,
+        y2: maxY,
+        color: '#38BDF888',
+      });
+      snappedX = true;
     }
   }
 
@@ -1025,6 +1043,7 @@ export function buildNodePorts(
   const inputs: PortSocket[] = [];
   for (let i = 0; i < bDef.inputPortCount; i++) {
     const ing = recipe?.inputs[i] ?? null;
+    const stackLimit = getItemStackSize(ing?.itemId ?? ing?.itemName ?? null);
     inputs.push({
       id: `${nodeId}_in_${i}`,
       index: i,
@@ -1033,6 +1052,8 @@ export function buildNodePorts(
       itemName: ing ? ing.itemName : null,
       targetRatePerMin: ing ? ing.ratePerMin : 60,
       actualRatePerMin: 0,
+      bufferedCount: 0,
+      maxBuffer: stackLimit,
     });
   }
 
@@ -1045,6 +1066,10 @@ export function buildNodePorts(
         : out
         ? out.ratePerMin
         : 60;
+    const stackLimit =
+      buildingId === 'storage_container'
+        ? STORAGE_CONTAINER_SLOTS * getItemStackSize(out?.itemId ?? out?.itemName ?? null)
+        : getItemStackSize(out?.itemId ?? out?.itemName ?? null);
     outputs.push({
       id: `${nodeId}_out_${i}`,
       index: i,
@@ -1053,6 +1078,8 @@ export function buildNodePorts(
       itemName: out ? out.itemName : null,
       targetRatePerMin: rate,
       actualRatePerMin: 0,
+      bufferedCount: 0,
+      maxBuffer: stackLimit,
     });
   }
 
@@ -1077,6 +1104,7 @@ export function createMachineNode(
   const purity =
     options?.purity ?? (buildingId === 'resource_deposit' ? 'normal' : undefined);
   const { inputs, outputs } = buildNodePorts(id, bDef.id, recipeId, purity);
+  const maxStoredCount = getBuildingMaxStorage(bDef.id, recipeId, outputs[0]?.itemName ?? null);
 
   return {
     id,
@@ -1093,6 +1121,7 @@ export function createMachineNode(
     efficiency: 0,
     progress: 0,
     storedCount: 0,
+    maxStoredCount,
     inputs,
     outputs,
   };
@@ -1136,11 +1165,18 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
     }
     // Migrate legacy starter_hub y=2772 to 2808 so its input port aligns straight with starter_constructor
     const migratedY = n.id === 'starter_hub' && n.y === 2772 ? 2808 : n.y;
+    const maxStoredCount = getBuildingMaxStorage(
+      n.buildingId,
+      n.recipeId,
+      n.outputs[0]?.itemName ?? n.inputs[0]?.itemName ?? null
+    );
     return {
       ...n,
       y: migratedY,
       width: syncedWidth,
       height: syncedHeight,
+      maxStoredCount,
+      storedCount: Math.min(maxStoredCount, Math.max(0, n.storedCount ?? 0)),
     };
   });
 
@@ -1166,12 +1202,19 @@ export function changeNodeRecipe(node: MachineNode, newRecipeId: string | null):
     newRecipeId,
     node.purity
   );
+  const maxStoredCount = getBuildingMaxStorage(
+    node.buildingId,
+    newRecipeId,
+    outputs[0]?.itemName ?? null
+  );
   return {
     ...node,
     recipeId: newRecipeId,
     inputs,
     outputs,
     progress: 0,
+    storedCount: 0,
+    maxStoredCount,
   };
 }
 
@@ -1295,10 +1338,58 @@ export function stepSimulation(
     };
   });
 
-  // Multi-pass flow propagation for settled belts
+  // Normalize node & port buffer capacities with official Satisfactory stack limits
+  for (const node of nextNodes) {
+    const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
+    if (node.buildingId === 'storage_container' || node.buildingId === 'the_hub') {
+      const activeItem =
+        node.outputs[0]?.itemName ??
+        node.inputs.find((p) => p.itemName)?.itemName ??
+        null;
+      const stackSize = getItemStackSize(activeItem);
+      const maxCap = STORAGE_CONTAINER_SLOTS * stackSize;
+      node.maxStoredCount = maxCap;
+      node.storedCount = Math.min(maxCap, Math.max(0, node.storedCount ?? 0));
+      for (const inPort of node.inputs) {
+        inPort.maxBuffer = stackSize;
+        inPort.bufferedCount = Math.min(stackSize, Math.max(0, inPort.bufferedCount ?? 0));
+      }
+      if (node.outputs[0]) {
+        node.outputs[0].maxBuffer = maxCap;
+        node.outputs[0].bufferedCount = node.storedCount;
+      }
+    } else if (recipe) {
+      for (let i = 0; i < node.inputs.length; i++) {
+        const req = recipe.inputs[i];
+        const port = node.inputs[i];
+        const maxBuf = getItemStackSize(req?.itemId ?? req?.itemName ?? port.itemName);
+        port.maxBuffer = maxBuf;
+        port.bufferedCount = Math.min(maxBuf, Math.max(0, port.bufferedCount ?? 0));
+      }
+      const outSpec = recipe.outputs[0];
+      const outMax = getItemStackSize(
+        outSpec?.itemId ?? outSpec?.itemName ?? node.outputs[0]?.itemName
+      );
+      node.maxStoredCount = outMax;
+      node.storedCount = Math.min(
+        outMax,
+        Math.max(0, node.storedCount ?? node.outputs[0]?.bufferedCount ?? 0)
+      );
+      if (node.outputs[0]) {
+        node.outputs[0].maxBuffer = outMax;
+        node.outputs[0].bufferedCount = node.storedCount;
+      }
+    } else {
+      const maxCap = getBuildingMaxStorage(node.buildingId, node.recipeId, null);
+      node.maxStoredCount = maxCap;
+      node.storedCount = Math.min(maxCap, Math.max(0, node.storedCount ?? 0));
+    }
+  }
+
+  // Multi-pass flow propagation for settled belts & Satisfactory internal buffers
   const maxPasses = Math.max(5, nextNodes.length);
   for (let pass = 0; pass < maxPasses; pass++) {
-    // Pass A: compute each node's output rates from its current arriving input rates
+    // Pass A: compute each node's output rates from its current arriving input rates & internal buffers
     for (const node of nextNodes) {
       const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
 
@@ -1320,16 +1411,19 @@ export function stepSimulation(
         const outPort = node.outputs[0];
         const incomingConn =
           inPort && nextConns.find((c) => c.toNodeId === node.id && c.toPortId === inPort.id);
+        const outgoingConn =
+          outPort && nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+        const outMax = node.maxStoredCount ?? 100;
+        const isOutputBufferFull = node.storedCount >= outMax - 0.01;
+        const hasBufferedOre = (inPort?.bufferedCount ?? 0) > 0.05;
 
         if (
           inPort &&
           outPort &&
-          incomingConn &&
-          inPort.actualRatePerMin > 0 &&
-          inPort.itemName
+          ((incomingConn && inPort.actualRatePerMin > 0 && inPort.itemName) || hasBufferedOre)
         ) {
-          const suppliedRate = inPort.actualRatePerMin;
-          const oreName = inPort.itemName;
+          const oreName =
+            inPort.itemName ?? recipe?.outputs[0]?.itemName ?? 'Iron Ore';
           if (oreName.toLowerCase().includes('copper')) {
             node.recipeId = 'mine_copper';
           } else if (oreName.toLowerCase().includes('limestone')) {
@@ -1337,27 +1431,55 @@ export function stepSimulation(
           } else {
             node.recipeId = 'mine_iron';
           }
+          const suppliedRate =
+            inPort.actualRatePerMin > 0 ? inPort.actualRatePerMin : 60;
           inPort.label = oreName;
+          inPort.itemName = oreName;
           inPort.targetRatePerMin = suppliedRate;
 
-          outPort.itemName = oreName;
-          outPort.label = oreName;
-          outPort.targetRatePerMin = suppliedRate;
-          outPort.actualRatePerMin = suppliedRate;
-
-          node.efficiency = 100;
-          node.status = 'optimal';
+          const outMaxBeltRate = outgoingConn ? outgoingConn.maxCapacityPerMin : 0;
+          // If output buffer (100 ore) is 100% full and no belt is draining it, Miner is BACKED UP!
+          if (isOutputBufferFull && outMaxBeltRate === 0) {
+            outPort.itemName = oreName;
+            outPort.label = oreName;
+            outPort.targetRatePerMin = suppliedRate;
+            outPort.actualRatePerMin = 0;
+            node.efficiency = 0;
+            node.status = 'backed_up';
+          } else {
+            const activeRate = isOutputBufferFull
+              ? Math.min(suppliedRate, outMaxBeltRate)
+              : suppliedRate;
+            outPort.itemName = oreName;
+            outPort.label = oreName;
+            outPort.targetRatePerMin = suppliedRate;
+            outPort.actualRatePerMin =
+              node.storedCount > 0.5 && outMaxBeltRate > activeRate
+                ? Math.min(suppliedRate, outMaxBeltRate)
+                : activeRate;
+            node.efficiency =
+              suppliedRate > 0 ? Math.round((activeRate / suppliedRate) * 100) : 0;
+            node.status =
+              node.efficiency === 0 && isOutputBufferFull
+                ? 'backed_up'
+                : node.efficiency >= 99
+                ? 'optimal'
+                : 'working';
+          }
         } else {
           const fallbackOre = recipe?.outputs[0]?.itemName ?? 'Iron Ore';
           if (inPort) {
             inPort.label = fallbackOre;
             inPort.targetRatePerMin = 60;
           }
+          const canDrainStoredOut = Boolean(outgoingConn && node.storedCount > 0.05);
           if (outPort) {
             outPort.label = fallbackOre;
             outPort.itemName = fallbackOre;
             outPort.targetRatePerMin = 60;
-            outPort.actualRatePerMin = 0;
+            outPort.actualRatePerMin = canDrainStoredOut
+              ? Math.min(60, outgoingConn!.maxCapacityPerMin)
+              : 0;
           }
           node.efficiency = 0;
           const isInTransit = Boolean(
@@ -1424,7 +1546,7 @@ export function stepSimulation(
         node.status = cappedOut > 0 ? 'optimal' : anyInTransit ? 'waiting' : 'idle';
       } else if (node.buildingId === 'storage_container' || node.buildingId === 'the_hub') {
         let totalIn = 0;
-        let itemLabel: string | null = null;
+        let itemLabel: string | null = node.outputs[0]?.itemName ?? null;
         let anyInTransit = false;
         for (const inPort of node.inputs) {
           totalIn += inPort.actualRatePerMin;
@@ -1439,13 +1561,43 @@ export function stepSimulation(
             anyInTransit = true;
           }
         }
-        if (node.outputs[0]) {
-          node.outputs[0].actualRatePerMin = totalIn;
-          node.outputs[0].itemName = itemLabel;
-          node.outputs[0].label = itemLabel ?? 'OUT 1';
+
+        const stackSize = getItemStackSize(itemLabel);
+        const maxCap = STORAGE_CONTAINER_SLOTS * stackSize;
+        node.maxStoredCount = maxCap;
+        const isContainerFull = node.storedCount >= maxCap - 0.01;
+
+        const outPort = node.outputs[0];
+        const outgoingConn =
+          outPort &&
+          nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+
+        if (outPort) {
+          // Storage Container can output incoming items OR discharge stored inventory onto a connected belt
+          const dischargeRate =
+            outgoingConn && node.storedCount > 0.05
+              ? Math.max(totalIn, outgoingConn.maxCapacityPerMin)
+              : totalIn;
+          outPort.actualRatePerMin = outgoingConn
+            ? Math.min(outgoingConn.maxCapacityPerMin, dischargeRate)
+            : totalIn;
+          outPort.itemName = itemLabel;
+          outPort.label = itemLabel ?? 'OUT 1';
+          outPort.maxBuffer = maxCap;
+          outPort.bufferedCount = node.storedCount;
         }
-        node.efficiency = totalIn > 0 ? 100 : 0;
-        node.status = totalIn > 0 ? 'optimal' : anyInTransit ? 'waiting' : 'idle';
+
+        const effectiveOut = outgoingConn ? (outPort?.actualRatePerMin ?? 0) : 0;
+        if (isContainerFull && totalIn > effectiveOut && effectiveOut === 0) {
+          node.efficiency = 0;
+          node.status = 'backed_up';
+        } else if (totalIn > 0 || effectiveOut > 0) {
+          node.efficiency = 100;
+          node.status = isContainerFull && totalIn > effectiveOut ? 'backed_up' : 'optimal';
+        } else {
+          node.efficiency = 0;
+          node.status = isContainerFull ? 'backed_up' : anyInTransit ? 'waiting' : 'idle';
+        }
       } else if (recipe) {
         let limitingRatio = 1.0;
         let anyInputConnected = false;
@@ -1457,6 +1609,7 @@ export function stepSimulation(
           if (!port) continue;
           port.targetRatePerMin = req.ratePerMin;
           port.label = req.itemName;
+          port.maxBuffer = getItemStackSize(req.itemId || req.itemName);
 
           const incomingConn = nextConns.find(
             (c) => c.toNodeId === node.id && c.toPortId === port.id
@@ -1471,18 +1624,43 @@ export function stepSimulation(
           const itemMatches =
             !port.itemName ||
             port.itemName.toLowerCase() === req.itemName.toLowerCase();
-          const supplied = itemMatches ? port.actualRatePerMin : 0;
-          const ratio = req.ratePerMin > 0 ? Math.min(1, supplied / req.ratePerMin) : 1;
+          const beltSupplied = itemMatches ? port.actualRatePerMin : 0;
+          // If the input slot has buffered ingredients (>= 0.05 items), the machine can draw from its internal input slot!
+          const hasBufferedIngredient = (port.bufferedCount ?? 0) > 0.05;
+          const effectiveSupplied = hasBufferedIngredient
+            ? Math.max(beltSupplied, req.ratePerMin)
+            : beltSupplied;
+          const ratio =
+            req.ratePerMin > 0 ? Math.min(1, effectiveSupplied / req.ratePerMin) : 1;
           limitingRatio = Math.min(limitingRatio, ratio);
+        }
+
+        const outSpec = recipe.outputs[0];
+        const outPort = node.outputs[0];
+        const outMax = getItemStackSize(outSpec?.itemId ?? outSpec?.itemName ?? null);
+        node.maxStoredCount = outMax;
+        const isOutputFull = node.storedCount >= outMax - 0.01;
+        const outgoingConn =
+          outPort &&
+          nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+
+        if (isOutputFull) {
+          const maxBeltOut = outgoingConn ? outgoingConn.maxCapacityPerMin : 0;
+          const recipeOutRate = outSpec?.ratePerMin ?? 30;
+          const outCapRatio =
+            recipeOutRate > 0 ? Math.min(1, maxBeltOut / recipeOutRate) : 0;
+          limitingRatio = Math.min(limitingRatio, outCapRatio);
         }
 
         const eff = Math.round(limitingRatio * 100);
         node.efficiency = eff;
 
-        if (eff >= 99) {
+        if (isOutputFull && eff === 0) {
+          node.status = 'backed_up';
+        } else if (eff >= 99) {
           node.status = 'optimal';
         } else if (eff > 0) {
-          node.status = 'working';
+          node.status = isOutputFull ? 'backed_up' : 'working';
         } else if (anyInputInTransit) {
           node.status = 'waiting';
         } else if (anyInputConnected) {
@@ -1492,18 +1670,30 @@ export function stepSimulation(
         }
 
         for (let i = 0; i < recipe.outputs.length; i++) {
-          const outSpec = recipe.outputs[i];
-          const outPort = node.outputs[i];
-          if (!outPort) continue;
-          outPort.targetRatePerMin = outSpec.ratePerMin;
-          outPort.itemName = outSpec.itemName;
-          outPort.label = outSpec.itemName;
-          outPort.actualRatePerMin = Math.round(outSpec.ratePerMin * limitingRatio);
+          const spec = recipe.outputs[i];
+          const pOut = node.outputs[i];
+          if (!pOut) continue;
+          pOut.targetRatePerMin = spec.ratePerMin;
+          pOut.itemName = spec.itemName;
+          pOut.label = spec.itemName;
+          pOut.maxBuffer = outMax;
+          pOut.bufferedCount = node.storedCount;
+
+          const craftedRate = Math.round(spec.ratePerMin * limitingRatio);
+          // If output buffer has stored items and an output belt is connected, allow draining stored items
+          if (outgoingConn && node.storedCount > 0.05 && craftedRate === 0) {
+            pOut.actualRatePerMin = Math.min(
+              spec.ratePerMin,
+              outgoingConn.maxCapacityPerMin
+            );
+          } else {
+            pOut.actualRatePerMin = craftedRate;
+          }
         }
       }
     }
 
-    // Pass B: update belt entering rates & delivered rates (only delivering if firstItemArrived is true)
+    // Pass B: update belt entering rates & delivered rates (respecting full destination buffers)
     for (const conn of nextConns) {
       const fromNode = nodeMap.get(conn.fromNodeId);
       const toNode = nodeMap.get(conn.toNodeId);
@@ -1513,7 +1703,30 @@ export function stepSimulation(
       const inPort = toNode.inputs.find((p) => p.id === conn.toPortId);
       if (!outPort || !inPort) continue;
 
-      const enteringRate = Math.min(conn.maxCapacityPerMin, outPort.actualRatePerMin);
+      // Determine how much the destination input port can accept if its internal buffer is 100% full
+      let destMaxAcceptRate = conn.maxCapacityPerMin;
+      if (toNode.buildingId === 'storage_container' || toNode.buildingId === 'the_hub') {
+        const maxCap = toNode.maxStoredCount ?? 2400;
+        if (toNode.storedCount >= maxCap - 0.01) {
+          const dstOutConn = nextConns.find((c) => c.fromNodeId === toNode.id);
+          destMaxAcceptRate = dstOutConn
+            ? Math.min(conn.maxCapacityPerMin, toNode.outputs[0]?.actualRatePerMin ?? 0)
+            : 0;
+        }
+      } else if (toNode.recipeId && RECIPES[toNode.recipeId]) {
+        const portMax = inPort.maxBuffer ?? 100;
+        if ((inPort.bufferedCount ?? 0) >= portMax - 0.01) {
+          const activeRatio =
+            toNode.status === 'backed_up' ? 0 : (toNode.efficiency ?? 0) / 100;
+          destMaxAcceptRate = Math.round(inPort.targetRatePerMin * activeRatio);
+        }
+      }
+
+      const enteringRate = Math.min(
+        conn.maxCapacityPerMin,
+        outPort.actualRatePerMin,
+        destMaxAcceptRate
+      );
       conn.sourceRatePerMin = enteringRate;
       if (outPort.itemName) {
         conn.itemName = outPort.itemName;
@@ -1552,7 +1765,6 @@ export function stepSimulation(
       enteringRate > 0 &&
       items.length === 0
     ) {
-      // Populate from destination back toward source at exact idealSpacingPx (18px on a full belt)
       for (let dist = lengthPx - idealSpacingPx * 0.5; dist >= 0; dist -= idealSpacingPx) {
         items.push({
           id: `${conn.id}_init_${Math.round(dist * 10)}`,
@@ -1563,11 +1775,8 @@ export function stepSimulation(
       conn.spawnAccumulator = 0.5;
     }
 
-    // Sort items from front (closest to destination lengthPx) to back (closest to source 0)
     items.sort((a, b) => b.distancePx - a.distancePx);
 
-    // Advance all in-flight packets toward the destination port (lengthPx) at tierDef.speedPxPerSec * dt
-    // while enforcing physical bumper-to-bumper collision (minimum BELT_ITEM_FOOTPRINT_PX = 18px gap)
     if (dt > 0 && items.length > 0) {
       const stepPx = tierDef.speedPxPerSec * dt;
       for (let i = 0; i < items.length; i++) {
@@ -1582,7 +1791,6 @@ export function stepSimulation(
       }
     }
 
-    // Check if leading packet(s) reached the destination input port (distancePx >= lengthPx)
     const remaining: BeltItemPacket[] = [];
     let arrivedThisTick = false;
     for (const pkt of items) {
@@ -1599,17 +1807,14 @@ export function stepSimulation(
       conn.firstItemArrived = true;
     }
 
-    // Spawn new tightly packed physical item packets at the source output port (distancePx >= 0)
     if (enteringRate > 0) {
       const itemsPerSec = enteringRate / 60;
       let acc = (conn.spawnAccumulator ?? 0) + itemsPerSec * dt;
 
-      // Guard against huge dt jumps creating too many iterations
       let safety = 0;
       while (acc >= 1 && safety < 64) {
         safety++;
         const lastPkt = remaining[remaining.length - 1];
-        // Exact fractional distance the newly emitted item has already traveled during this frame
         const overshootSec = (acc - 1) / itemsPerSec;
         const desiredDist = Math.max(0, overshootSec * tierDef.speedPxPerSec);
         const maxAllowedDist = lastPkt
@@ -1625,7 +1830,6 @@ export function stepSimulation(
           });
           acc -= 1;
         } else {
-          // Output port is physically blocked by the item immediately ahead of it (bumper-to-bumper)
           acc = 1;
           break;
         }
@@ -1663,21 +1867,82 @@ export function stepSimulation(
     }
   }
 
-  // Advance machine progress bars & storage counts using dt
+  // Advance machine crafting cycle progress bars & Satisfactory internal input/output buffers using dt
   for (const node of nextNodes) {
     const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
     const cycleSec = recipe?.cycleTimeSec ?? 2.0;
-    if (node.efficiency > 0) {
+
+    if (node.efficiency > 0 && node.status !== 'backed_up') {
       const speedFactor = node.efficiency / 100;
       node.progress = (node.progress + (dt * speedFactor) / cycleSec) % 1;
     } else {
       node.progress = 0;
     }
 
+    if (dt <= 0) continue;
+
     if (node.buildingId === 'storage_container' || node.buildingId === 'the_hub') {
       const inSum = node.inputs.reduce((acc, p) => acc + p.actualRatePerMin, 0);
-      if (inSum > 0) {
-        node.storedCount += (inSum / 60) * dt;
+      const outConn = nextConns.find((c) => c.fromNodeId === node.id);
+      const outSum = outConn ? (outConn.sourceRatePerMin ?? 0) : 0;
+      const maxCap = node.maxStoredCount ?? 2400;
+      const netPerSec = (inSum - outSum) / 60;
+      node.storedCount = Math.min(maxCap, Math.max(0, node.storedCount + netPerSec * dt));
+      if (node.outputs[0]) {
+        node.outputs[0].bufferedCount = node.storedCount;
+      }
+      if (node.storedCount >= maxCap - 0.01 && inSum > outSum) {
+        node.storedCount = maxCap;
+        node.status = 'backed_up';
+        if (outSum === 0) node.efficiency = 0;
+      }
+    } else if (recipe) {
+      const activeRatio =
+        node.status === 'backed_up' ? 0 : (node.efficiency ?? 0) / 100;
+
+      // Update each input port's 1-stack internal buffer
+      for (let i = 0; i < recipe.inputs.length; i++) {
+        const req = recipe.inputs[i];
+        const port = node.inputs[i];
+        if (!port) continue;
+        const maxBuf = port.maxBuffer ?? getItemStackSize(req.itemId || req.itemName);
+        const arrivingPerSec = port.actualRatePerMin / 60;
+        const consumedPerSec = (req.ratePerMin * activeRatio) / 60;
+        const nextBuf = Math.min(
+          maxBuf,
+          Math.max(0, (port.bufferedCount ?? 0) + (arrivingPerSec - consumedPerSec) * dt)
+        );
+        port.bufferedCount = nextBuf;
+      }
+
+      // Update output port's 1-stack internal buffer (node.storedCount)
+      const outSpec = recipe.outputs[0];
+      if (outSpec) {
+        const outMax = node.maxStoredCount ?? getItemStackSize(outSpec.itemId || outSpec.itemName);
+        const outPort = node.outputs[0];
+        const outConn =
+          outPort &&
+          nextConns.find((c) => c.fromNodeId === node.id && c.fromPortId === outPort.id);
+        const producedPerSec = (outSpec.ratePerMin * activeRatio) / 60;
+        const beltedOutPerSec = outConn ? (outConn.sourceRatePerMin ?? 0) / 60 : 0;
+        const nextStored = Math.min(
+          outMax,
+          Math.max(0, node.storedCount + (producedPerSec - beltedOutPerSec) * dt)
+        );
+        node.storedCount = nextStored;
+        if (outPort) {
+          outPort.bufferedCount = nextStored;
+          outPort.maxBuffer = outMax;
+        }
+        if (nextStored >= outMax - 0.01 && producedPerSec >= beltedOutPerSec) {
+          node.storedCount = outMax;
+          if (outPort) outPort.bufferedCount = outMax;
+          node.status = 'backed_up';
+          if (beltedOutPerSec <= 1e-4) {
+            node.efficiency = 0;
+            node.progress = 0;
+          }
+        }
       }
     }
   }

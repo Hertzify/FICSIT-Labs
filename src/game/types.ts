@@ -64,6 +64,8 @@ export interface PortSocket {
   itemName: string | null;
   targetRatePerMin: number;
   actualRatePerMin: number;
+  bufferedCount?: number; // Current items stored in this port's internal slot
+  maxBuffer?: number; // Satisfactory 1-stack capacity limit for this port (100, 200, or 500)
 }
 
 export type MachineStatus = 'optimal' | 'working' | 'waiting' | 'starved' | 'backed_up' | 'idle';
@@ -82,7 +84,8 @@ export interface MachineNode {
   status: MachineStatus;
   efficiency: number; // 0..100 integer
   progress: number; // 0..1 animation progress
-  storedCount: number; // For storage container / HUB
+  storedCount: number; // Current items in primary building storage (output buffer or container slots)
+  maxStoredCount?: number; // Maximum storage capacity (1 stack for machines, 24 stacks for containers)
   inputs: PortSocket[];
   outputs: PortSocket[];
 }

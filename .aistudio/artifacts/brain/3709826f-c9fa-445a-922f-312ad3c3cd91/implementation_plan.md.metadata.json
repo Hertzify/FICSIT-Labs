@@ -1,6 +1,6 @@
 {
-  "summary": "Revised implementation plan for mobile-first Satisfactory-style Snap Mode, standardized port height offsets, magnetic port/center alignment, touch HUD toggle button, and removal of all existing keyboard shortcuts and keycap labels.",
-  "updatedAt": "2026-11-03T14:21:02.191852923Z",
+  "summary": "Implementation plan for Version 12: Bounded Snap Mode proximity (240px / 15m local range across all snap priorities and alignment guidelines) and full Satisfactory-authentic internal building buffers (1-stack input/output port buffers on production machines, 24-slot Storage Containers, BACKED UP state at 100% output capacity, and dual crafting progress + storage capacity bars with item counts on node cards and Inspector).",
+  "updatedAt": "2026-11-03T15:02:39.768503288Z",
   "requestFeedback": true,
   "userFacing": true
 }

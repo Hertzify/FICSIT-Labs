@@ -1,76 +1,55 @@
-# Satisfactory-Style Snap Mode, Port Alignment & Mobile-Only Controls
+# Version 12 Implementation Plan: Local Snap Mode Proximity & Authentic Satisfactory Building Storage
 
-A precision building and conveyor alignment upgrade for **FICSIT Labs** designed exclusively for mobile touch play—standardizing port vertical offsets across the 24px world grid, introducing an always-on smart **Snap Mode** with a dedicated touch HUD button and visual laser guidelines, and stripping out all desktop keyboard shortcuts and keycap labels across the interface.
-
-## User Review & Critical Decisions
-
-- **Touch-Only HUD Toggle (Zero Keyboard Shortcuts)**: Snap Mode is enabled by default as an always-on smart snapping system, controlled strictly via a dedicated touch HUD toggle button (`Snap: ON / OFF`). All existing keyboard event listeners and desktop shortcut labels (such as `[Esc]` on the Menu button, `[B]`, `[Del]`, etc.) will be completely removed from the game.
-- **Alignment Targets & Visual Guidelines**: Dragging or placing a building by touch actively snaps to **connected input/output ports**, **nearby compatible input/output ports**, and **building centers/edges**, rendering high-contrast Satisfactory-style guideline lasers across the canvas to confirm exact alignment.
-- **Standardized Grid-Aligned Port Heights**: Building heights and port vertical offsets are standardized onto exact multiples of the 24px world grid so any two top-aligned or port-aligned nodes connect with a perfectly straight, zero-kink horizontal conveyor belt.
+## 1. Overview
+Version 12 introduces two core improvements modeled after *Satisfactory*:
+1. **Bounded Local Snap Mode Proximity (`240px` / `~15m`)**: Prevents buildings from snapping to or drawing alignment lasers toward distant machines across the factory floor, even if connected by a long conveyor belt.
+2. **Full *Satisfactory* Internal Building Buffers & Capacity Limits**: Implements canonical item stack sizes (`100`, `200`, `500`), 1-stack input and output buffers inside production/extraction machines, 24-slot Storage Containers, `BACKED UP` status when output storage reaches 100%, and **both** the crafting progress bar and a new storage capacity bar (`0%–100%` fill + `Stored / Max` item count) on node cards.
 
 ---
 
-## 1. Overview & Core Concept
-
-Currently, each building category computes its input and output port coordinates dynamically as a fraction of its total card height (`136px`, `140px`, `142px`, `168px`, `176px`, `188px`). Because those heights are not uniform multiples of the 24px world grid, two buildings snapped to the exact same top row (`node.y`) place their ports 1px to 5px apart vertically—forcing the orthogonal belt router to insert a tiny vertical jog instead of a clean horizontal line.
-
-This update resolves the issue at both the **geometric level** and the **touch interaction level**, while cleaning up desktop artifacts:
-1. **Grid-Quantized Port Geometry**: Single-port buildings share a unified `144px` (`6 × 24px`) chassis height with their primary port locked at `node.y + 96px` (`4 × 24px`), while multi-port buildings (Assemblers, Splitters, Mergers, and The HUB) space their ports on exact `24px` grid increments around that same `96px` baseline.
-2. **Satisfactory-Style Smart Snap Mode**: While dragging an existing machine or positioning a new building on the touch canvas, the position resolver evaluates nearby and connected machines within a magnetic capture corridor, snapping the node so its ports or centerlines lock into exact collinearity and projecting visual alignment lasers across the factory floor.
-3. **Complete Removal of Keyboard Shortcuts**: All `keydown`/`keyup` listeners and UI shortcut hints (`[Esc]`, `[B]`, `[1-3]`, `[Del]`, etc.) are removed so every button and HUD element is clean and tailored for mobile screens.
-
----
-
-## 2. User Experience & Visual Design
-
-- **Touch HUD Snap Mode Button**:
-  - Positioned in the bottom-left HUD dock directly beside the Conveyor Belt Mark selector (`Mk.1 / Mk.2 / Mk.3`).
-  - Displays a clean touch button (`Snap: ON` highlighted in FICSIT cyan/amber when active, `Snap: OFF` in muted slate when disabled) and persists in player settings.
-- **Clean Mobile HUD Labels**:
-  - Top-left menu button displays simply `Menu` (removing `[Esc]`), and all tooltips/buttons across the HUD, Build drawer, and Inspector use touch-only copy.
-- **Satisfactory-Style Laser Guidelines**:
-  - **Port-to-Port Alignment Laser (Cyan / Amber)**: When a building's input or output port locks onto the exact Y-coordinate of a connected or nearby compatible port, a glowing dashed guideline laser (`#38BDF8` for input alignment, `#F59E0B` for output alignment) spans directly between the two port sockets with target reticles at both ends.
-  - **Center / Edge Alignment Line (Subtle Slate-Cyan)**: When a building's horizontal or vertical center/top edge aligns with a neighboring machine in the same row or column, a clean architectural guide line renders across the shared axis.
-- **Zero-Kink Straight Conveyor Routing**:
-  - When two connected ports share the same Y-coordinate (`|y1 - y2| < 0.5px`) and the destination port faces the source port without intervening obstacles, the belt renders as a single straight horizontal segment with uniform item spacing and an unobstructed midpoint badge.
+## 2. Bounded Local Snap Mode (`src/game/rules.ts`)
+- **Strict Local Proximity Constant**:
+  - Replace the long-range `960px` / `840px` corridor constants and unbounded connected-port snap checks in `computeNodeSnapAlignment` with a strict local edge-to-edge proximity limit (`MAX_SNAP_PROXIMITY = 240`, ~15m in grid units).
+- **2D Bounding Box Distance Check Across All Priorities**:
+  - Require both horizontal and vertical edge-to-edge gaps (`hDist <= 240` and `vDist <= 240`) before considering any candidate building for:
+    - **Priority 1A**: Connected input/output port Y-alignment.
+    - **Priority 1B**: Nearby facing input/output port Y-alignment.
+    - **Priority 1C**: Building vertical center Y-alignment.
+    - **Priority 2**: Building horizontal X-alignment (center X and left/right edges).
+  - Cull all cyan/emerald snap laser guidelines beyond the `240px` neighborhood so dragging a machine only projects guidelines to immediate neighbors.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
-
-- **Priority Hierarchy for Magnetic Snapping**:
-  - *Decision*: Connected ports take first priority, followed by nearby compatible ports within a `900px` horizontal corridor, followed by building center/top-edge alignment, and finally the standard `24px` world grid.
-  - *Rationale*: When adjusting a machine that is already wired into a production line on a touchscreen, straightening the active conveyor belt is the player's primary intent. Prioritizing connected ports guarantees the belt snaps straight without requiring pixel-perfect finger placement.
-- **Grid-Quantized Multi-Port Spacing (`24px` Pitch)**:
-  - *Decision*: Standardize single-port offset to `+96px`, 2-port offsets to `+72px` and `+120px` on a `168px` (`7 × 24px`) chassis, and 3-port Splitter/Merger offsets to `+72px`, `+96px`, and `+120px` on a `168px` (`7 × 24px`) chassis.
-  - *Rationale*: Because every port offset (`+72px`, `+96px`, `+120px`) is an exact multiple of the `24px` world grid, *every* port on a Splitter, Merger, or Assembler can form a 100% straight horizontal belt with a Smelter, Constructor, Miner, or Storage Container simply by stepping the machine up or down by one `24px` grid unit.
+## 3. Canonical *Satisfactory* Stack Sizes & Building Buffers (`src/game/types.ts`, `src/game/rules.ts`)
+- **Item Stack Sizes (`ITEM_STACK_SIZES`)**:
+  - `100` items/stack: `iron_ore`, `copper_ore`, `limestone`, `iron_ingot`, `copper_ingot`, `reinforced_iron_plate`, `rotor`
+  - `200` items/stack: `iron_plate`, `iron_rod`, `cable`
+  - `500` items/stack: `wire`, `concrete`, `screw`
+- **Port & Building Storage State**:
+  - Add `bufferedCount?: number` and `maxBuffer?: number` to `PortState` (and `maxStoredCount?: number` on `MachineNode`) so each input port and output port tracks its stored items and stack limit.
+- **Production & Extraction Machine Buffers (`Miner Mk.1`, `Smelter`, `Constructor`, `Assembler`)**:
+  - **Input Slots (1 Stack per Input Port)**:
+    - Incoming belts deliver items into the target input port's buffer up to `1 × stackSize` (e.g., `100` Iron Ore).
+    - Once an input buffer reaches `100%` full, backpressure throttles the incoming belt to the machine's active consumption rate.
+    - If an incoming belt is disconnected or starved, the machine continues crafting by consuming directly from its buffered input items until empty.
+  - **Output Slot (1 Stack per Output Port)**:
+    - Crafted or mined items enter the machine's output buffer (`1 × stackSize`, e.g., `200` Iron Plates).
+    - Connected output belts pull items from the output buffer up to the belt's speed (`60/m` or `120/m`) and downstream demand.
+    - When production exceeds outgoing belt flow (or when no output belt is connected), excess crafted items accumulate in the output buffer.
+    - When the output buffer reaches **100% capacity**, the machine transitions to **`backed_up` (`BACKED UP`)** and pauses crafting until outgoing belts drain space in the buffer.
+- **Storage Container (`24 Slots`)**:
+  - Capacity is `24 × itemStackSize` (e.g., `2,400` Ingots, `4,800` Iron Plates, `12,000` Screws; defaults to `2,400` before an item type is locked in).
+  - Acts as a true flow buffer: accumulates incoming items up to 24 full stacks and discharges stored items onto connected output belts even if upstream inputs stop.
+  - Enters `backed_up` when `storedCount >= maxStoredCount` and throttles incoming belts once full.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                  Touch / Pointer Move (Drag Node / Build)               │
-└───────────────────────────────────┬─────────────────────────────────────┘
-                                    │ Raw World Coordinates (x, y)
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     Snap Mode Resolver (snapMode === ON)                │
-├─────────────────────────────────────────────────────────────────────────┤
-│  1. Connected Port Match (|Δy| ≤ 14px) ──► Lock Port Y & Emit Laser     │
-│  2. Nearby Compatible Port (|Δy| ≤ 14px, Δx ≤ 900px) ──► Lock Port Y    │
-│  3. Building Center / Top Edge Match (|Δx| or |Δy| ≤ 12px) ──► Lock Axis│
-│  4. Fallback 24px World Grid Quantization (Math.round(v / 24) * 24)     │
-└─────────────────┬───────────────────────────────────┬───────────────────┘
-                  │ Snapped { x, y }                  │ Active Guidelines[]
-                  ▼                                   ▼
-┌───────────────────────────────────┐ ┌───────────────────────────────────┐
-│   Orthogonal Belt Path Router     │ │   Canvas Overlay Pass (Top HUD)   │
-│  Produces 2-Point Straight Segment│ │  Renders Dashed Cyan/Amber Lasers │
-│     When |y1 - y2| < 0.5px        │ │    & Port Alignment Reticles      │
-└───────────────────────────────────┘ └───────────────────────────────────┘
-```
-
-- **Unified Port Coordinate Calculation**: Both the simulation engine and the canvas renderer share a single deterministic port offset table indexed by total port count (`1 → [+96]`, `2 → [+72, +120]`, `3 → [+72, +96, +120]`), eliminating any discrepancy between visual port sockets and belt path endpoints.
-- **Starter & Existing Factory Migration**: Existing nodes and starter factory layouts automatically snap their Y coordinates to the nearest 24px grid multiple on load so existing saves immediately benefit from straight horizontal belts.
+## 4. Node Card & Inspector UI (`src/components/NodeCanvas.tsx`, `src/App.tsx`)
+- **Both Bars on Building Cards**:
+  - Increase standard machine card footer space slightly (`getNodeHeight` adjusted cleanly) so every production, extraction, and storage building card renders:
+    1. **Storage Capacity Bar + Item Count**: Shows a dedicated storage bar that fills from `0%` to `100%` capacity alongside the exact `Stored / Max` item count (e.g., `142 / 200` or `1,250 / 4,800`). Turns amber when `100%` full (`BACKED UP`).
+    2. **Crafting / Extraction Cycle Progress Bar**: Kept below the storage bar to show active cycle progress when the machine is running.
+- **Inspector Popover Slot Breakdown**:
+  - In the bottom-right Node Inspector panel, display individual **Input Slot Buffers** (`Stored / Stack Limit` per ingredient) and **Output / Container Buffer** (`Stored / Max Capacity` and slot count) with fill bars and a button to clear/flush internal buffers if desired.
+- **Version 12 Badge & Changelog**:
+  - Update the version badge and changelog history entry to **v12**.

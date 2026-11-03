@@ -125,6 +125,85 @@ export const CONVEYOR_BELT_TIER_LIST: ConveyorBeltTierDef[] = [
   CONVEYOR_BELT_TIERS[6],
 ];
 
+/**
+ * Official Satisfactory Item Stack Sizes & Storage Slot Counts:
+ * - 100 items/stack: Ores, Ingots, Reinforced Iron Plates, Rotors
+ * - 200 items/stack: Iron Plates, Iron Rods, Cables
+ * - 500 items/stack: Wire, Concrete, Screws
+ * - Production Machines: 1 stack per input port + 1 stack per output port
+ * - Storage Container / HUB Terminal: 24 inventory slots (24 * stack size)
+ */
+export const STORAGE_CONTAINER_SLOTS = 24;
+
+export const ITEM_STACK_SIZES: Record<string, number> = {
+  iron_ore: 100,
+  'iron ore': 100,
+  copper_ore: 100,
+  'copper ore': 100,
+  limestone: 100,
+  iron_ingot: 100,
+  'iron ingot': 100,
+  copper_ingot: 100,
+  'copper ingot': 100,
+  iron_plate: 200,
+  'iron plate': 200,
+  iron_rod: 200,
+  'iron rod': 200,
+  wire: 500,
+  'copper wire': 500,
+  cable: 200,
+  'insulated cable': 200,
+  concrete: 500,
+  screw: 500,
+  screws: 500,
+  reinforced_plate: 100,
+  'reinforced plate': 100,
+  'reinforced iron plate': 100,
+  rotor: 100,
+  'modular rotor': 100,
+};
+
+export function getItemStackSize(itemIdOrName?: string | null): number {
+  if (!itemIdOrName) return 100;
+  const key = itemIdOrName.trim().toLowerCase();
+  if (ITEM_STACK_SIZES[key]) {
+    return ITEM_STACK_SIZES[key];
+  }
+  if (key.includes('screw') || key.includes('wire') || key.includes('concrete')) {
+    return 500;
+  }
+  if (key.includes('plate') && !key.includes('reinforced')) {
+    return 200;
+  }
+  if (key.includes('rod') || key.includes('cable')) {
+    return 200;
+  }
+  return 100;
+}
+
+export function getBuildingMaxStorage(
+  buildingId: string,
+  recipeId?: string | null,
+  itemName?: string | null
+): number {
+  if (buildingId === 'storage_container' || buildingId === 'the_hub') {
+    return STORAGE_CONTAINER_SLOTS * getItemStackSize(itemName);
+  }
+  if (buildingId === 'splitter' || buildingId === 'merger') {
+    return 9; // Satisfactory internal 9-item routing buffer
+  }
+  if (buildingId === 'resource_deposit') {
+    return 100;
+  }
+  const recipe = recipeId ? RECIPES[recipeId] : null;
+  const outItem =
+    recipe?.outputs[0]?.itemId ??
+    recipe?.outputs[0]?.itemName ??
+    itemName ??
+    null;
+  return getItemStackSize(outItem);
+}
+
 export const RECIPES: Record<string, RecipeDef> = {
   // Resource Deposits (Raw Nodes)
   deposit_iron: {

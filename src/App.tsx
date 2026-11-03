@@ -5,7 +5,7 @@ import { NodeCanvas } from './components/NodeCanvas';
 import { SaveLoadModal } from './components/SaveLoadModal';
 import { SettingsModal } from './components/SettingsModal';
 import { playSynthSfx } from './game/audio';
-import { CONVEYOR_BELT_TIER_LIST } from './game/catalog';
+import { CONVEYOR_BELT_TIER_LIST, CONVEYOR_BELT_TIERS } from './game/catalog';
 import { getBuildingIconUrl } from './game/icons';
 import {
   createInitialSeedSaveSlot,
@@ -57,9 +57,11 @@ export default function App() {
   >(null);
   const [pendingBuildId, setPendingBuildId] = useState<string | null>(null);
   const [activeBeltTier, setActiveBeltTier] = useState<ConveyorBeltTier>(1);
+  const [showBeltTab, setShowBeltTab] = useState(false);
   const [autoSaveNotice, setAutoSaveNotice] = useState<string | null>(null);
 
-  // Mutable refs for 60fps canvas engine
+  // Mutable refs for 60fps canvas engine and DOM interaction
+  const beltContainerRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<MachineNode[]>(activeSlot.nodes);
   const connectionsRef = useRef<ConveyorConnection[]>(activeSlot.connections);
   const cameraRef = useRef<CameraState>({ ...activeSlot.camera });
@@ -154,6 +156,10 @@ export default function App() {
 
       if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
         e.preventDefault();
+        if (showBeltTab) {
+          setShowBeltTab(false);
+          return;
+        }
         if (pendingBuildId) {
           setPendingBuildId(null);
           return;
@@ -184,6 +190,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     gameState,
+    showBeltTab,
     showBuildMenu,
     showSettingsModal,
     saveLoadModalMode,
@@ -191,6 +198,27 @@ export default function App() {
     saveSlots,
     hydrateSlotIntoEngine,
   ]);
+
+  // Pressing anywhere in the screen automatically kills the belt tab
+  useEffect(() => {
+    if (!showBeltTab) return;
+    const handleGlobalDismiss = (e: Event) => {
+      const target = e.target;
+      if (!(target instanceof Node) || (beltContainerRef.current && !beltContainerRef.current.contains(target))) {
+        setShowBeltTab(false);
+      }
+    };
+    window.addEventListener('pointerdown', handleGlobalDismiss);
+    window.addEventListener('mousedown', handleGlobalDismiss);
+    window.addEventListener('touchstart', handleGlobalDismiss);
+    window.addEventListener('click', handleGlobalDismiss);
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalDismiss);
+      window.removeEventListener('mousedown', handleGlobalDismiss);
+      window.removeEventListener('touchstart', handleGlobalDismiss);
+      window.removeEventListener('click', handleGlobalDismiss);
+    };
+  }, [showBeltTab]);
 
   const handleContinueLatest = () => {
     const latest = saveSlots[0] ?? activeSlot;
@@ -334,58 +362,140 @@ export default function App() {
             )}
           </div>
 
-          {/* Bottom-Left Android Thumb-Zone Build Menu Trigger + Conveyor Belt Tier Selector */}
+          {/* Transparent click-catcher to automatically close belt tab on any screen tap */}
+          {showBeltTab && (
+            <div
+              className="fixed inset-0 z-20"
+              onClick={() => setShowBeltTab(false)}
+              onPointerDown={() => setShowBeltTab(false)}
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Bottom-Left Compact Belt Button & Flyout Tab */}
           <div
+            ref={beltContainerRef}
             style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom left' }}
-            className="fixed bottom-3 left-3 pointer-events-auto flex items-center gap-2"
+            className="fixed bottom-3 left-3 pointer-events-auto z-30 flex flex-col items-start"
+          >
+            {/* Flyout Tab of Conveyor Belts Mk.1 - Mk.6 */}
+            {showBeltTab && (
+              <div
+                role="menu"
+                aria-label="Conveyor Belt Tiers"
+                className="mb-2 w-48 rounded-xl bg-[#0E1524]/95 backdrop-blur-md border border-[#26334D] p-1.5 shadow-2xl flex flex-col gap-1 animate-in fade-in slide-in-from-bottom-2 duration-150"
+              >
+                <div className="px-2 py-1 text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400 border-b border-[#26334D]/70 flex items-center justify-between">
+                  <span>Conveyor Belts</span>
+                  <span className="text-amber-400 font-bold">Mk.{activeBeltTier}</span>
+                </div>
+                {CONVEYOR_BELT_TIER_LIST.map((bt) => {
+                  const isSelected = activeBeltTier === bt.tier;
+                  const iconUrl = getBuildingIconUrl(bt.id);
+                  return (
+                    <button
+                      key={bt.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        playSynthSfx('click', settings);
+                        setActiveBeltTier(bt.tier);
+                        setAutoSaveNotice(`Belt: ${bt.name} (${bt.capacityPerMin}/m)`);
+                        setShowBeltTab(false);
+                      }}
+                      className={`w-full min-h-[34px] px-2 py-1 rounded-lg text-xs font-mono font-bold flex items-center justify-between gap-1.5 transition-colors ${
+                        isSelected
+                          ? 'bg-amber-500 text-slate-950 shadow'
+                          : 'bg-[#131B2E]/90 text-slate-200 hover:bg-[#1C2742] hover:text-white border border-[#26334D]/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {iconUrl && (
+                          <img
+                            src={iconUrl}
+                            alt={bt.shortLabel}
+                            className="w-4 h-4 object-contain shrink-0"
+                          />
+                        )}
+                        <span className="truncate">{bt.shortLabel}</span>
+                      </div>
+                      <span
+                        className={`text-[11px] shrink-0 ${
+                          isSelected ? 'text-slate-950 font-bold' : 'text-slate-400'
+                        }`}
+                      >
+                        {bt.capacityPerMin}/m
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Small Belt Selector Trigger Button (Always visible, changes color when tab is shown) */}
+            <button
+              type="button"
+              aria-label={`Select Conveyor Belt (Currently Mk.${activeBeltTier})`}
+              aria-expanded={showBeltTab}
+              onClick={() => {
+                playSynthSfx('click', settings);
+                setShowBeltTab((prev) => !prev);
+              }}
+              className={`min-h-[40px] px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 shadow-xl transition-all active:scale-95 border ${
+                showBeltTab
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 shadow-amber-500/25 ring-2 ring-amber-400/40'
+                  : 'bg-[#131B2E] hover:bg-[#1C2742] text-slate-200 hover:text-white border-[#26334D]'
+              }`}
+            >
+              {(() => {
+                const currentBeltDef = CONVEYOR_BELT_TIERS[activeBeltTier];
+              const iconUrl = currentBeltDef ? getBuildingIconUrl(currentBeltDef.id) : null;
+              return (
+                <>
+                  {iconUrl && (
+                    <img
+                      src={iconUrl}
+                      alt={`Mk.${activeBeltTier}`}
+                      className="w-4 h-4 object-contain shrink-0"
+                    />
+                  )}
+                  <span>Mk.{activeBeltTier}</span>
+                </>
+              );
+            })()}
+            </button>
+          </div>
+
+          {/* Bottom-Right Small Build Button (Icon on top, small "build" text below) */}
+          <div
+            style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'bottom right' }}
+            className="fixed bottom-3 right-3 pointer-events-auto z-20"
           >
             <button
               type="button"
+              aria-label="Build Menu [Q]"
+              title="Build Menu [Q]"
               onClick={() => {
                 playSynthSfx('click', settings);
                 setShowBuildMenu(true);
               }}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs shadow-xl flex items-center gap-2 active:scale-[0.98] whitespace-nowrap"
+              className="w-12 h-12 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 shadow-xl shadow-amber-500/20 border border-amber-400/80 flex flex-col items-center justify-center p-1 transition-transform select-none"
             >
-              <span>Build Menu</span>
-              <span className="text-[11px] font-mono opacity-80">[Q]</span>
+              <svg
+                className="w-5 h-5 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+              </svg>
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider leading-none mt-0.5">
+                build
+              </span>
             </button>
-
-            {/* Quick Belt Tier Selector (Mk.1 60/m, Mk.2 120/m, Mk.3 270/m, etc.) */}
-            <div className="min-h-[44px] px-2 py-1 rounded-xl bg-[#131B2E]/95 border border-[#26334D] shadow-xl flex items-center gap-1">
-              {CONVEYOR_BELT_TIER_LIST.map((bt) => {
-                const isSelected = activeBeltTier === bt.tier;
-                const iconUrl = getBuildingIconUrl(bt.id);
-                return (
-                  <button
-                    key={bt.id}
-                    type="button"
-                    onClick={() => {
-                      playSynthSfx('click', settings);
-                      setActiveBeltTier(bt.tier);
-                      setAutoSaveNotice(`Belt: ${bt.name} (${bt.capacityPerMin}/m)`);
-                    }}
-                    className={`min-h-[34px] px-2 py-1 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 whitespace-nowrap ${
-                      isSelected
-                        ? 'bg-amber-500 text-slate-950 shadow'
-                        : 'bg-[#0B0F17] text-slate-300 hover:text-white border border-[#26334D]'
-                    }`}
-                  >
-                    {iconUrl && (
-                      <img
-                        src={iconUrl}
-                        alt={bt.shortLabel}
-                        className="w-4 h-4 object-contain shrink-0"
-                      />
-                    )}
-                    <span>{bt.shortLabel}</span>
-                    <span className={isSelected ? 'text-slate-900' : 'text-slate-400'}>
-                      {bt.capacityPerMin}/m
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
       )}

@@ -6,6 +6,12 @@ All notable changes for **FICSIT Node Labs** are documented below. Straight to t
 
 ## [0.0.08] — 2026-11-02 (`0.0.08 dev build`)
 
+### 🎛️ Minimal HUD & Corner Controls
+- **Compact Belt Tab**: Replaced the wide belt bar with a small bottom-left button (`Mk.X`) that opens an upward flyout tab of all belt tiers (Mk.1–Mk.6).
+- **Persistent Colored Toggle**: Belt button remains visible at all times, turning bright amber when its tab is shown.
+- **Click-Anywhere Dismissal**: Tapping anywhere on the screen or pressing Escape immediately closes the belt tab.
+- **Bottom-Right Build Button**: Moved the Build button to the bottom-right corner as a compact icon button with small "build" text underneath.
+
 ### ⚡ Conveyor Belt Polish & Badges
 - **Belt Icon on Badges**: Belt telemetry now displays the conveyor belt tier icon instead of the resource icon.
 - **Cleaner Telemetry Text**: Removed the `m/s` speed and removed the `/m` suffix. Badges now read cleanly: `[Belt Icon] Mk.2 · 60/120`.

@@ -135,7 +135,10 @@ export interface ConveyorConnection {
   inFlightItems?: BeltItemPacket[]; // Discrete physical items currently traveling along the belt
   firstItemArrived?: boolean; // True once the leading item packet has physically reached the destination port
   isBackedUp?: boolean; // True when destination input storage is full and items are queued/stuck on the belt
+  waypoints?: { x: number; y: number }[]; // Optional custom user route guide points for shaping belt paths
 }
+
+export type ActiveCanvasTool = 'edit' | 'move' | 'select' | 'waypoint';
 
 export interface CameraState {
   x: number;

@@ -2,11 +2,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BuildMenuModal } from './components/BuildMenuModal';
 import { MainMenu } from './components/MainMenu';
 import { NodeCanvas } from './components/NodeCanvas';
+import { SatisfactoryToolbar } from './components/SatisfactoryToolbar';
 import { SaveLoadModal } from './components/SaveLoadModal';
 import { SettingsModal } from './components/SettingsModal';
 import { playSynthSfx } from './game/audio';
 import { CONVEYOR_BELT_TIER_LIST, CONVEYOR_BELT_TIERS } from './game/catalog';
+import { invalidateAllConveyorCaches } from './game/geometry';
+import { factoryHistory } from './game/history';
 import { getBuildingIconUrl } from './game/icons';
+import { stepSimulation } from './game/rules';
 import {
   createInitialSeedSaveSlot,
   DEFAULT_SETTINGS,
@@ -19,6 +23,7 @@ import {
   upsertSaveSlot,
 } from './game/storage';
 import {
+  ActiveCanvasTool,
   CameraState,
   ConveyorBeltTier,
   ConveyorConnection,
@@ -60,6 +65,16 @@ export default function App() {
   const [showBeltTab, setShowBeltTab] = useState(false);
   const [autoSaveNotice, setAutoSaveNotice] = useState<string | null>(null);
 
+  // Active Canvas Tool (Upload Labs toolbar controls in Satisfactory style)
+  const [activeTool, setActiveTool] = useState<ActiveCanvasTool>('edit');
+  const [, setHistoryVersion] = useState<number>(0);
+
+  useEffect(() => {
+    return factoryHistory.subscribe(() => {
+      setHistoryVersion((v) => v + 1);
+    });
+  }, []);
+
   // Mutable refs for 60fps canvas engine and DOM interaction
   const beltContainerRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<MachineNode[]>(activeSlot.nodes);
@@ -81,8 +96,16 @@ export default function App() {
       inputs: n.inputs.map((p) => ({ ...p })),
       outputs: n.outputs.map((p) => ({ ...p })),
     }));
-    connectionsRef.current = slot.connections.map((c) => ({ ...c }));
+    connectionsRef.current = slot.connections.map((c) => ({
+      ...c,
+      waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+      inFlightItems: c.inFlightItems
+        ? c.inFlightItems.map((pkt) => ({ ...pkt }))
+        : undefined,
+    }));
     cameraRef.current = { ...slot.camera };
+    invalidateAllConveyorCaches();
+    factoryHistory.clear();
     setActiveSlot(slot);
   }, []);
 
@@ -110,6 +133,32 @@ export default function App() {
     },
     [settings.autoSaveEnabled, saveSlots, activeSlot.sessionName]
   );
+
+  const handleUndo = useCallback(() => {
+    const res = factoryHistory.undo(nodesRef.current, connectionsRef.current);
+    if (!res) return;
+    invalidateAllConveyorCaches();
+    const simRes = stepSimulation(res.nodes, res.connections, 0);
+    nodesRef.current = simRes.nodes;
+    connectionsRef.current = simRes.connections;
+    playSynthSfx('click', settings);
+    setAutoSaveNotice(`Undo: ${res.description}`);
+    triggerSessionAutoSave(false);
+  }, [settings, triggerSessionAutoSave]);
+
+  const handleRedo = useCallback(() => {
+    const res = factoryHistory.redo(nodesRef.current, connectionsRef.current);
+    if (!res) return;
+    invalidateAllConveyorCaches();
+    const simRes = stepSimulation(res.nodes, res.connections, 0);
+    nodesRef.current = simRes.nodes;
+    connectionsRef.current = simRes.connections;
+    playSynthSfx('click', settings);
+    setAutoSaveNotice(`Redo: ${res.description}`);
+    triggerSessionAutoSave(false);
+  }, [settings, triggerSessionAutoSave]);
+
+
 
   useEffect(() => {
     if (!autoSaveNotice) return;
@@ -170,8 +219,18 @@ export default function App() {
       slotName,
       kind: 'manual',
       updatedAt: Date.now(),
-      nodes: nodesRef.current,
-      connections: connectionsRef.current,
+      nodes: nodesRef.current.map((n) => ({
+        ...n,
+        inputs: n.inputs.map((p) => ({ ...p })),
+        outputs: n.outputs.map((p) => ({ ...p })),
+      })),
+      connections: connectionsRef.current.map((c) => ({
+        ...c,
+        waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+        inFlightItems: c.inFlightItems
+          ? c.inFlightItems.map((pkt) => ({ ...pkt }))
+          : undefined,
+      })),
       camera: { ...cameraRef.current },
     };
     const updated = upsertSaveSlot(saveSlots, newSlot);
@@ -187,8 +246,18 @@ export default function App() {
     const overwritten: SaveSlot = {
       ...target,
       updatedAt: Date.now(),
-      nodes: nodesRef.current,
-      connections: connectionsRef.current,
+      nodes: nodesRef.current.map((n) => ({
+        ...n,
+        inputs: n.inputs.map((p) => ({ ...p })),
+        outputs: n.outputs.map((p) => ({ ...p })),
+      })),
+      connections: connectionsRef.current.map((c) => ({
+        ...c,
+        waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+        inFlightItems: c.inFlightItems
+          ? c.inFlightItems.map((pkt) => ({ ...pkt }))
+          : undefined,
+      })),
       camera: { ...cameraRef.current },
     };
     const updated = upsertSaveSlot(saveSlots, overwritten);
@@ -228,6 +297,10 @@ export default function App() {
         settings={settings}
         activeBeltTier={activeBeltTier}
         pendingBuildId={pendingBuildId}
+        activeTool={activeTool}
+        onSelectTool={setActiveTool}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         onClearPendingBuild={() => setPendingBuildId(null)}
         onGraphMutated={() => triggerSessionAutoSave(false)}
       />
@@ -254,6 +327,22 @@ export default function App() {
       {/* STATE 2: PLAYING WORKSPACE CORNER TRIGGERS */}
       {gameState === 'playing' && (
         <div className="fixed inset-0 z-10 pointer-events-none">
+          {/* Top-Center Satisfactory Control Toolbar (Edit, Move, Waypoint, Undo, Redo) */}
+          <SatisfactoryToolbar
+            activeTool={activeTool}
+            onSelectTool={(t) => {
+              playSynthSfx('click', settings);
+              setActiveTool(t);
+            }}
+            canUndo={factoryHistory.canUndo()}
+            canRedo={factoryHistory.canRedo()}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            undoDescription={factoryHistory.getUndoDescription()}
+            redoDescription={factoryHistory.getRedoDescription()}
+            uiScale={settings.uiScale}
+          />
+
           {/* Top-Left Session Name & Pause Menu Button */}
           <div
             style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top left' }}

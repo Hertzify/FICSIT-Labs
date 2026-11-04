@@ -78,8 +78,28 @@ export function stepSimulation(
   }));
 
   const nodeMap = new Map<string, MachineNode>();
+  const depositNodes: MachineNode[] = [];
+  const minerNodes: MachineNode[] = [];
   for (const n of nextNodes) {
     nodeMap.set(n.id, n);
+    if (n.buildingId === 'resource_deposit') {
+      depositNodes.push(n);
+    } else if (n.buildingId === 'miner_mk1') {
+      minerNodes.push(n);
+    }
+  }
+
+  // Pre-index which Miner Mk.1 is mounted on which Resource Deposit (1 miner max per deposit) in O(M * D)
+  const mountedDepositByMinerId = new Map<string, MachineNode>();
+  const claimedDepositIds = new Set<string>();
+  for (const miner of minerNodes) {
+    for (const dep of depositNodes) {
+      if (!claimedDepositIds.has(dep.id) && isMinerDirectlyOnDeposit(miner, dep, 4)) {
+        claimedDepositIds.add(dep.id);
+        mountedDepositByMinerId.set(miner.id, dep);
+        break;
+      }
+    }
   }
 
   const preSettledConnIds = new Set<string>();
@@ -93,7 +113,7 @@ export function stepSimulation(
     const inIdx = toNode ? toNode.inputs.findIndex((p) => p.id === c.toPortId) : 0;
     const lengthPx =
       fromNode && toNode
-        ? computeConveyorLengthPx(fromNode, outIdx, toNode, inIdx, nextNodes)
+        ? computeConveyorLengthPx(fromNode, outIdx, toNode, inIdx, nextNodes, c.waypoints)
         : c.lengthPx ?? 240;
     const travelTimeSec = Number((lengthPx / tierDef.speedPxPerSec).toFixed(2));
 
@@ -351,15 +371,8 @@ export function stepSimulation(
           const outMax = node.maxStoredCount ?? 100;
           const isOutputBufferFull = Math.round(node.storedCount ?? 0) >= outMax;
 
-          // Find the underlying Resource Deposit (Satisfactory extractor mechanic: 1 Miner sits directly on deposit)
-          const deposit = nextNodes.find(
-            (n) =>
-              n.buildingId === 'resource_deposit' &&
-              isMinerDirectlyOnDeposit(node, n, 4) &&
-              nextNodes.find(
-                (m) => m.buildingId === 'miner_mk1' && isMinerDirectlyOnDeposit(m, n, 4)
-              )?.id === node.id
-          );
+          // O(1) lookup of the underlying Resource Deposit
+          const deposit = mountedDepositByMinerId.get(node.id);
 
           if (!deposit) {
             // Unmounted Miner Mk.1 is on bare terrain without a Resource Deposit: strictly 0 extraction!
@@ -968,14 +981,7 @@ export function stepSimulation(
         } else if (node.buildingId === 'miner_mk1') {
           const outPort = node.outputs[0];
           const outMax = node.maxStoredCount ?? 100;
-          const deposit = nextNodes.find(
-            (n) =>
-              n.buildingId === 'resource_deposit' &&
-              isMinerDirectlyOnDeposit(node, n, 4) &&
-              nextNodes.find(
-                (m) => m.buildingId === 'miner_mk1' && isMinerDirectlyOnDeposit(m, n, 4)
-              )?.id === node.id
-          );
+          const deposit = mountedDepositByMinerId.get(node.id);
 
           if (!deposit) {
             // Unmounted Miner: NO WIRELESS MINING! Strictly 0 ore production when off deposit!

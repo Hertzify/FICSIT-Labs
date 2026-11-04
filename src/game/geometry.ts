@@ -39,6 +39,56 @@ export function computePolylineLength(pts: { x: number; y: number }[]): number {
 }
 
 /**
+ * Computes the shortest Euclidean distance from a point (px, py) to a line segment (x1, y1)-(x2, y2).
+ */
+export function distanceFromPointToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-8) {
+    return Math.hypot(px - x1, py - y1);
+  }
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
+/**
+ * Computes the shortest Euclidean distance from a point (px, py) to a multi-segment polyline.
+ */
+export function distanceFromPointToPolyline(
+  px: number,
+  py: number,
+  pts: { x: number; y: number }[]
+): number {
+  if (pts.length === 0) return Infinity;
+  if (pts.length === 1) return Math.hypot(px - pts[0].x, py - pts[0].y);
+  let minDist = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const d = distanceFromPointToSegment(
+      px,
+      py,
+      pts[i - 1].x,
+      pts[i - 1].y,
+      pts[i].x,
+      pts[i].y
+    );
+    if (d < minDist) {
+      minDist = d;
+    }
+  }
+  return minDist;
+}
+
+/**
  * Checks whether two machine nodes overlap (AABB collision detection).
  */
 export function doNodesOverlap(
@@ -235,37 +285,90 @@ export function computeOrthogonalConveyorPath(
   const CLEARANCE = 12;
   const STUB = 22;
 
-  // Flat geological resource deposits sit in the ground bedrock and do not block overhead conveyor belts
-  const buildingObstacles = obstacles.filter((n) => n.buildingId !== 'resource_deposit');
-
-  // Infer source and destination machines if not explicitly provided
+  // Infer source and destination machines if not explicitly provided.
+  // Prefer actual factory buildings/miners over ground resource deposits.
   const srcNode =
     fromNode ??
-    buildingObstacles.find(
+    obstacles.find(
+      (n) =>
+        n.buildingId !== 'resource_deposit' &&
+        Math.abs(x1 - (n.x + n.width)) <= 8 &&
+        y1 >= n.y - 10 &&
+        y1 <= n.y + n.height + 10
+    ) ??
+    obstacles.find(
       (n) =>
         Math.abs(x1 - (n.x + n.width)) <= 8 &&
         y1 >= n.y - 10 &&
         y1 <= n.y + n.height + 10
     );
+
   const dstNode =
     toNode ??
-    buildingObstacles.find(
+    obstacles.find(
+      (n) =>
+        n.buildingId !== 'resource_deposit' &&
+        Math.abs(x2 - n.x) <= 8 &&
+        y2 >= n.y - 10 &&
+        y2 <= n.y + n.height + 10
+    ) ??
+    obstacles.find(
       (n) =>
         Math.abs(x2 - n.x) <= 8 &&
         y2 >= n.y - 10 &&
         y2 <= n.y + n.height + 10
     );
 
-  // Third-party obstacles (excluding srcNode and dstNode) require full 12px clearance,
-  // while srcNode and dstNode use 1px clearance so belts can route cleanly through narrow gaps when nodes are very close.
-  const otherObstacles = buildingObstacles.filter(
-    (n) => n.id !== srcNode?.id && n.id !== dstNode?.id
+  // When a Miner Mk.1 is built directly on a Resource Deposit, that underlying deposit hosts the miner.
+  // We exempt the host deposit from being an external obstacle (treating it with 1px clearance like the miner),
+  // while ALL OTHER natural resource deposits are physical obstacles with standard clearance (12px),
+  // so belts route cleanly around resource deposits instead of passing underneath them.
+  const srcDeposit =
+    srcNode?.buildingId === 'miner_mk1'
+      ? obstacles.find(
+          (n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(srcNode, n, 8)
+        )
+      : srcNode?.buildingId === 'resource_deposit'
+      ? srcNode
+      : undefined;
+
+  const dstDeposit =
+    dstNode?.buildingId === 'miner_mk1'
+      ? obstacles.find(
+          (n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(dstNode, n, 8)
+        )
+      : dstNode?.buildingId === 'resource_deposit'
+      ? dstNode
+      : undefined;
+
+  const ignoredObstacleIds = new Set<string>();
+  if (srcNode) ignoredObstacleIds.add(srcNode.id);
+  if (dstNode) ignoredObstacleIds.add(dstNode.id);
+  if (srcDeposit) ignoredObstacleIds.add(srcDeposit.id);
+  if (dstDeposit) ignoredObstacleIds.add(dstDeposit.id);
+
+  // Third-party obstacles (including other resource deposits) require full 12px clearance,
+  // while srcNode and dstNode (and their hosting deposit) use 1px clearance so belts can exit cleanly.
+  // Spatially filter to local corridor around the two ports to avoid scanning distant world deposits.
+  const cullMinX = Math.min(x1, x2) - 480;
+  const cullMaxX = Math.max(x1, x2) + 480;
+  const cullMinY = Math.min(y1, y2) - 480;
+  const cullMaxY = Math.max(y1, y2) + 480;
+  const otherObstacles = obstacles.filter(
+    (n) =>
+      !ignoredObstacleIds.has(n.id) &&
+      n.x + n.width >= cullMinX &&
+      n.x <= cullMaxX &&
+      n.y + n.height >= cullMinY &&
+      n.y <= cullMaxY
   );
   const allObstacles: { x: number; y: number; width: number; height: number; id?: string }[] = [
     ...otherObstacles,
   ];
   if (srcNode) allObstacles.push(srcNode);
   if (dstNode) allObstacles.push(dstNode);
+  if (srcDeposit && !allObstacles.some((o) => o.id === srcDeposit.id)) allObstacles.push(srcDeposit);
+  if (dstDeposit && !allObstacles.some((o) => o.id === dstDeposit.id)) allObstacles.push(dstDeposit);
 
   const isInternalBlocked = (pA: { x: number; y: number }, pB: { x: number; y: number }) => {
     if (otherObstacles.some((obs) => doesSegmentIntersectBox(pA, pB, obs, CLEARANCE))) {
@@ -275,6 +378,12 @@ export function computeOrthogonalConveyorPath(
       return true;
     }
     if (dstNode && doesSegmentIntersectBox(pA, pB, dstNode, 1)) {
+      return true;
+    }
+    if (srcDeposit && doesSegmentIntersectBox(pA, pB, srcDeposit, 1)) {
+      return true;
+    }
+    if (dstDeposit && doesSegmentIntersectBox(pA, pB, dstDeposit, 1)) {
       return true;
     }
     return false;
@@ -333,6 +442,20 @@ export function computeOrthogonalConveyorPath(
   const enterXs: number[] = [pEnter.x];
   if (srcNode && srcNode.x - STUB < pEnter.x) {
     enterXs.push(srcNode.x - STUB);
+  }
+
+  // Include candidate exit and enter X positions around nearby obstacles that overlap the stub lines
+  const minStubX = Math.min(x1, x2) - 60;
+  const maxStubX = Math.max(x1, x2) + 60;
+  for (const obs of otherObstacles) {
+    if (obs.x + obs.width >= minStubX && obs.x <= maxStubX) {
+      const leftX = obs.x - CLEARANCE - 6;
+      const rightX = obs.x + obs.width + CLEARANCE + 6;
+      if (leftX > x1 + 2) exitXs.push(leftX);
+      if (rightX > x1 + 2) exitXs.push(rightX);
+      if (rightX < x2 - 2) enterXs.push(rightX);
+      if (leftX < x2 - 2) enterXs.push(leftX);
+    }
   }
 
   const candidateMidYs: number[] = [(y1 + y2) * 0.5];
@@ -476,12 +599,665 @@ export function computeNodesGeometrySignature(nodes: MachineNode[]): string {
   return sig;
 }
 
+/**
+ * Clears all cached conveyor routes and geometry signatures.
+ */
+export function invalidateAllConveyorCaches(): void {
+  cachedGeometrySignature = '';
+  cachedRoutesByEndpoints.clear();
+}
+
+export function simplifyPolylinePreservingWaypoints(
+  pts: { x: number; y: number }[],
+  protectedPoints: { x: number; y: number }[] = []
+): { x: number; y: number }[] {
+  if (pts.length <= 2) return pts;
+  const isProtected = (pt: { x: number; y: number }) =>
+    protectedPoints.some(
+      (p) => Math.abs(p.x - pt.x) < 0.5 && Math.abs(p.y - pt.y) < 0.5
+    );
+
+  // Pass 1: Remove duplicate points and merge same-direction collinear segments (preserving protected corner points unless they form a 180-degree spike)
+  const result: { x: number; y: number }[] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const curr = pts[i];
+    const prev = result[result.length - 1];
+    if (Math.abs(curr.x - prev.x) < 0.1 && Math.abs(curr.y - prev.y) < 0.1) {
+      continue;
+    }
+    if (result.length >= 2) {
+      const pPrev = result[result.length - 2];
+      const isColinearH =
+        Math.abs(pPrev.y - prev.y) < 0.1 && Math.abs(prev.y - curr.y) < 0.1;
+      const isColinearV =
+        Math.abs(pPrev.x - prev.x) < 0.1 && Math.abs(prev.x - curr.x) < 0.1;
+
+      if (isColinearH || isColinearV) {
+        const isReversalH =
+          isColinearH && (prev.x - pPrev.x) * (curr.x - prev.x) < -1e-3;
+        const isReversalV =
+          isColinearV && (prev.y - pPrev.y) * (curr.y - prev.y) < -1e-3;
+        // Always collapse 180-degree spikes or non-protected collinear points
+        if (isReversalH || isReversalV || !isProtected(prev)) {
+          result[result.length - 1] = curr;
+          if (
+            result.length >= 2 &&
+            Math.abs(result[result.length - 1].x - result[result.length - 2].x) < 0.1 &&
+            Math.abs(result[result.length - 1].y - result[result.length - 2].y) < 0.1
+          ) {
+            result.pop();
+          }
+          continue;
+        }
+      }
+    }
+    result.push(curr);
+  }
+  return result;
+}
+
+/**
+ * Returns the effective visual & physical bounding box of a node, accounting for
+ * planetary resource deposit rock rims (+12px) and bottom survey pedestal tabs (+22px).
+ */
+export function getEffectiveObstacleBox(obs: MachineNode): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  id: string;
+} {
+  if (obs.buildingId === 'resource_deposit') {
+    const rimPad = 10;
+    const bottomTabPad = 22;
+    return {
+      id: obs.id,
+      x: obs.x - rimPad,
+      y: obs.y - rimPad,
+      width: obs.width + rimPad * 2,
+      height: obs.height + rimPad + bottomTabPad,
+    };
+  }
+  return {
+    id: obs.id,
+    x: obs.x,
+    y: obs.y,
+    width: obs.width,
+    height: obs.height,
+  };
+}
+
+/**
+ * Checks whether a world coordinate point (x, y) lies inside any obstacle node (with clearance padding).
+ */
+export function isPointInsideObstacle(
+  x: number,
+  y: number,
+  obstacles: MachineNode[],
+  pad = 12,
+  ignoreNodeIds?: Set<string>
+): boolean {
+  for (const obs of obstacles) {
+    if (ignoreNodeIds && ignoreNodeIds.has(obs.id)) continue;
+    const box = getEffectiveObstacleBox(obs);
+    if (
+      x >= box.x - pad &&
+      x <= box.x + box.width + pad &&
+      y >= box.y - pad &&
+      y <= box.y + box.height + pad
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Computes an orthogonal conveyor path that routes sequentially through user-defined waypoints.
+ * Every waypoint is guaranteed to be a 90-degree corner (perpendicular incoming and outgoing segments),
+ * with zero 180-degree spikes, and every segment routes cleanly around buildings and resource deposits.
+ */
+export function computeConveyorPathWithWaypoints(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  obstaclesOrWaypoints: MachineNode[] | { x: number; y: number }[] = [],
+  fromNode?: MachineNode,
+  toNode?: MachineNode,
+  explicitWaypoints: { x: number; y: number }[] = []
+): { x: number; y: number }[] {
+  let obstacles: MachineNode[] = [];
+  let waypoints: { x: number; y: number }[] = [];
+
+  if (Array.isArray(obstaclesOrWaypoints)) {
+    if (
+      obstaclesOrWaypoints.length > 0 &&
+      'x' in obstaclesOrWaypoints[0] &&
+      !('buildingId' in obstaclesOrWaypoints[0])
+    ) {
+      waypoints = obstaclesOrWaypoints as { x: number; y: number }[];
+    } else {
+      obstacles = obstaclesOrWaypoints as MachineNode[];
+    }
+  }
+  if (explicitWaypoints && explicitWaypoints.length > 0) {
+    waypoints = explicitWaypoints;
+  }
+
+  if (!waypoints || waypoints.length === 0) {
+    return computeOrthogonalConveyorPath(x1, y1, x2, y2, obstacles, fromNode, toNode);
+  }
+
+  const CLEARANCE = 12;
+
+  const srcNode =
+    fromNode ??
+    obstacles.find(
+      (n) =>
+        n.buildingId !== 'resource_deposit' &&
+        Math.abs(x1 - (n.x + n.width)) <= 8 &&
+        y1 >= n.y - 10 &&
+        y1 <= n.y + n.height + 10
+    ) ??
+    obstacles.find(
+      (n) =>
+        Math.abs(x1 - (n.x + n.width)) <= 8 &&
+        y1 >= n.y - 10 &&
+        y1 <= n.y + n.height + 10
+    );
+
+  const dstNode =
+    toNode ??
+    obstacles.find(
+      (n) =>
+        n.buildingId !== 'resource_deposit' &&
+        Math.abs(x2 - n.x) <= 8 &&
+        y2 >= n.y - 10 &&
+        y2 <= n.y + n.height + 10
+    ) ??
+    obstacles.find(
+      (n) =>
+        Math.abs(x2 - n.x) <= 8 &&
+        y2 >= n.y - 10 &&
+        y2 <= n.y + n.height + 10
+    );
+
+  const srcDeposit =
+    srcNode?.buildingId === 'miner_mk1'
+      ? obstacles.find(
+          (n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(srcNode, n, 8)
+        )
+      : srcNode?.buildingId === 'resource_deposit'
+      ? srcNode
+      : undefined;
+
+  const dstDeposit =
+    dstNode?.buildingId === 'miner_mk1'
+      ? obstacles.find(
+          (n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(dstNode, n, 8)
+        )
+      : dstNode?.buildingId === 'resource_deposit'
+      ? dstNode
+      : undefined;
+
+  const ignoredObstacleIds = new Set<string>();
+  if (srcNode) ignoredObstacleIds.add(srcNode.id);
+  if (dstNode) ignoredObstacleIds.add(dstNode.id);
+  if (srcDeposit) ignoredObstacleIds.add(srcDeposit.id);
+  if (dstDeposit) ignoredObstacleIds.add(dstDeposit.id);
+
+  let routeMinX = Math.min(x1, x2);
+  let routeMaxX = Math.max(x1, x2);
+  let routeMinY = Math.min(y1, y2);
+  let routeMaxY = Math.max(y1, y2);
+  for (const wp of waypoints) {
+    if (wp.x < routeMinX) routeMinX = wp.x;
+    if (wp.x > routeMaxX) routeMaxX = wp.x;
+    if (wp.y < routeMinY) routeMinY = wp.y;
+    if (wp.y > routeMaxY) routeMaxY = wp.y;
+  }
+  routeMinX -= 480;
+  routeMaxX += 480;
+  routeMinY -= 480;
+  routeMaxY += 480;
+
+  const otherObstacles = obstacles.filter(
+    (n) =>
+      !ignoredObstacleIds.has(n.id) &&
+      n.x + n.width >= routeMinX &&
+      n.x <= routeMaxX &&
+      n.y + n.height >= routeMinY &&
+      n.y <= routeMaxY
+  );
+  const rawAllObstacles: MachineNode[] = [...otherObstacles];
+  if (srcNode) rawAllObstacles.push(srcNode);
+  if (dstNode) rawAllObstacles.push(dstNode);
+  if (srcDeposit && !rawAllObstacles.some((o) => o.id === srcDeposit.id)) {
+    rawAllObstacles.push(srcDeposit);
+  }
+  if (dstDeposit && !rawAllObstacles.some((o) => o.id === dstDeposit.id)) {
+    rawAllObstacles.push(dstDeposit);
+  }
+
+  const allObstacleBoxes = rawAllObstacles.map((obs) => ({
+    ...getEffectiveObstacleBox(obs),
+    isEndpoint: ignoredObstacleIds.has(obs.id),
+  }));
+
+  // Compute startStubX and endStubX so they clear the source/destination buildings AND any mounted deposit rim
+  const srcRightEdge = Math.max(
+    x1,
+    srcNode ? srcNode.x + srcNode.width : x1,
+    srcDeposit ? getEffectiveObstacleBox(srcDeposit).x + getEffectiveObstacleBox(srcDeposit).width : x1
+  );
+  const dstLeftEdge = Math.min(
+    x2,
+    dstNode ? dstNode.x : x2,
+    dstDeposit ? getEffectiveObstacleBox(dstDeposit).x : x2
+  );
+
+  const startStubX = Math.max(x1 + 22, srcRightEdge + 14);
+  const endStubX = Math.min(x2 - 22, dstLeftEdge - 14);
+
+  // Every segment between startStub and endStub must stay completely outside ALL buildings and deposits!
+  const isSegBlocked = (pA: { x: number; y: number }, pB: { x: number; y: number }) => {
+    for (const box of allObstacleBoxes) {
+      const pad = box.isEndpoint ? 10 : CLEARANCE;
+      if (doesSegmentIntersectBox(pA, pB, box, pad)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isChainClear = (chain: { x: number; y: number }[]) => {
+    for (let i = 1; i < chain.length; i++) {
+      if (isSegBlocked(chain[i - 1], chain[i])) return false;
+    }
+    return true;
+  };
+
+  // Push any waypoint that falls inside an obstacle box out to the nearest clear boundary
+  const safeWaypoints = waypoints.map((rawWp) => {
+    let wx = rawWp.x;
+    let wy = rawWp.y;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const box of allObstacleBoxes) {
+        const pad = box.isEndpoint ? 14 : CLEARANCE + 4;
+        const bL = box.x - pad;
+        const bR = box.x + box.width + pad;
+        const bT = box.y - pad;
+        const bB = box.y + box.height + pad;
+        if (wx > bL && wx < bR && wy > bT && wy < bB) {
+          const dL = Math.abs(wx - bL);
+          const dR = Math.abs(bR - wx);
+          const dT = Math.abs(wy - bT);
+          const dB = Math.abs(bB - wy);
+          const minD = Math.min(dL, dR, dT, dB);
+          if (minD === dT) wy = bT;
+          else if (minD === dB) wy = bB;
+          else if (minD === dL) wx = bL;
+          else wx = bR;
+        }
+      }
+    }
+    return { x: wx, y: wy };
+  });
+
+  // Precompute global candidate X and Y routing corridors around all obstacles and gap midpoints
+  const baseMargin = CLEARANCE + 8;
+  const globalCandidateXs: number[] = [startStubX, endStubX];
+  const globalCandidateYs: number[] = [y1, y2];
+
+  for (const box of allObstacleBoxes) {
+    const m = box.isEndpoint ? 16 : baseMargin;
+    globalCandidateXs.push(box.x - m, box.x + box.width + m);
+    globalCandidateYs.push(box.y - m, box.y + box.height + m);
+  }
+
+  // Include pairwise gap midpoints between nearby obstacles so belts can thread cleanly between Miner & Smelter
+  for (let i = 0; i < allObstacleBoxes.length; i++) {
+    for (let j = i + 1; j < allObstacleBoxes.length; j++) {
+      const a = allObstacleBoxes[i];
+      const b = allObstacleBoxes[j];
+      if (a.y + a.height < b.y && b.y - (a.y + a.height) >= 22) {
+        globalCandidateYs.push((a.y + a.height + b.y) * 0.5);
+      } else if (b.y + b.height < a.y && a.y - (b.y + b.height) >= 22) {
+        globalCandidateYs.push((b.y + b.height + a.y) * 0.5);
+      }
+      if (a.x + a.width < b.x && b.x - (a.x + a.width) >= 22) {
+        globalCandidateXs.push((a.x + a.width + b.x) * 0.5);
+      } else if (b.x + b.width < a.x && a.x - (b.x + b.width) >= 22) {
+        globalCandidateXs.push((b.x + b.width + a.x) * 0.5);
+      }
+    }
+  }
+
+  interface BridgeResult {
+    pts: { x: number; y: number }[];
+    startDir: 'H' | 'V';
+    endDir: 'H' | 'V';
+    len: number;
+    blocked: boolean;
+  }
+
+  const evaluateCandidateLeg = (
+    rawPts: { x: number; y: number }[],
+    reqStartDir?: 'H' | 'V',
+    reqEndDir?: 'H' | 'V',
+    forbidStartLeft?: boolean,
+    forbidEndRight?: boolean
+  ): BridgeResult | null => {
+    // 1. Strip zero-length steps and merge same-direction collinear segments, rejecting any 180° reversals
+    const cleaned: { x: number; y: number }[] = [rawPts[0]];
+    for (let i = 1; i < rawPts.length; i++) {
+      const curr = rawPts[i];
+      const prev = cleaned[cleaned.length - 1];
+      if (Math.abs(curr.x - prev.x) < 0.5 && Math.abs(curr.y - prev.y) < 0.5) {
+        continue;
+      }
+      if (cleaned.length >= 2) {
+        const pPrev = cleaned[cleaned.length - 2];
+        const isH1 = Math.abs(prev.y - pPrev.y) < 0.5;
+        const isH2 = Math.abs(curr.y - prev.y) < 0.5;
+        const isV1 = Math.abs(prev.x - pPrev.x) < 0.5;
+        const isV2 = Math.abs(curr.x - prev.x) < 0.5;
+        if (isH1 && isH2) {
+          const dx1 = prev.x - pPrev.x;
+          const dx2 = curr.x - prev.x;
+          if (dx1 * dx2 < 0) return null; // Reject 180-degree horizontal reversal spike!
+          cleaned[cleaned.length - 1] = curr;
+          continue;
+        }
+        if (isV1 && isV2) {
+          const dy1 = prev.y - pPrev.y;
+          const dy2 = curr.y - prev.y;
+          if (dy1 * dy2 < 0) return null; // Reject 180-degree vertical reversal spike!
+          cleaned[cleaned.length - 1] = curr;
+          continue;
+        }
+      }
+      cleaned.push(curr);
+    }
+
+    if (cleaned.length < 2) return null;
+
+    const firstDx = cleaned[1].x - cleaned[0].x;
+    const firstDy = cleaned[1].y - cleaned[0].y;
+    const firstLen = Math.hypot(firstDx, firstDy);
+    const startDir: 'H' | 'V' = Math.abs(firstDx) >= Math.abs(firstDy) ? 'H' : 'V';
+
+    const n = cleaned.length;
+    const lastDx = cleaned[n - 1].x - cleaned[n - 2].x;
+    const lastDy = cleaned[n - 1].y - cleaned[n - 2].y;
+    const lastLen = Math.hypot(lastDx, lastDy);
+    const endDir: 'H' | 'V' = Math.abs(lastDx) >= Math.abs(lastDy) ? 'H' : 'V';
+
+    if (reqStartDir && startDir !== reqStartDir) return null;
+    if (reqEndDir && endDir !== reqEndDir) return null;
+
+    // Prevent tiny invisible kinks at corners
+    if (reqStartDir && firstLen < 12) return null;
+    if (reqEndDir && lastLen < 12) return null;
+
+    // Never reverse 180° back into the start port exit stub or end port entry stub
+    if (forbidStartLeft && startDir === 'H' && firstDx < -0.5) return null;
+    if (forbidEndRight && endDir === 'H' && lastDx < -0.5) return null;
+
+    const blocked = !isChainClear(cleaned);
+    const len = computePolylineLength(cleaned) + cleaned.length * 4;
+    return { pts: cleaned, startDir, endDir, len, blocked };
+  };
+
+  // Finds the shortest obstacle-free orthogonal bridge from (ax, ay) to (bx, by) matching reqStartDir and reqEndDir
+  const findCleanOrthogonalBridge = (
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    reqStartDir?: 'H' | 'V',
+    reqEndDir?: 'H' | 'V',
+    forbidStartLeft?: boolean,
+    forbidEndRight?: boolean
+  ): BridgeResult | null => {
+    const pA = { x: ax, y: ay };
+    const pB = { x: bx, y: by };
+
+    const candidateXs = Array.from(
+      new Set([
+        (ax + bx) * 0.5,
+        ax,
+        bx,
+        ax - 32,
+        ax + 32,
+        bx - 32,
+        bx + 32,
+        ...globalCandidateXs,
+      ])
+    );
+    const candidateYs = Array.from(
+      new Set([
+        (ay + by) * 0.5,
+        ay,
+        by,
+        ay - 32,
+        ay + 32,
+        by - 32,
+        by + 32,
+        ...globalCandidateYs,
+      ])
+    );
+
+    let bestClear: BridgeResult | null = null;
+    let bestFallback: BridgeResult | null = null;
+
+    const consider = (rawPts: { x: number; y: number }[]) => {
+      const res = evaluateCandidateLeg(
+        rawPts,
+        reqStartDir,
+        reqEndDir,
+        forbidStartLeft,
+        forbidEndRight
+      );
+      if (!res) return;
+      if (!res.blocked) {
+        if (!bestClear || res.len < bestClear.len) {
+          bestClear = res;
+        }
+      } else {
+        if (!bestFallback || res.len < bestFallback.len) {
+          bestFallback = res;
+        }
+      }
+    };
+
+    // 1. Direct straight line (if aligned) and 2-segment L-bends
+    if (Math.abs(ax - bx) < 0.5 || Math.abs(ay - by) < 0.5) {
+      consider([pA, pB]);
+    }
+    consider([pA, { x: bx, y: ay }, pB]);
+    consider([pA, { x: ax, y: by }, pB]);
+
+    if (bestClear) return bestClear;
+
+    // 2. 3-segment Z/U-bends (H-V-H and V-H-V)
+    for (const midX of candidateXs) {
+      consider([pA, { x: midX, y: ay }, { x: midX, y: by }, pB]);
+    }
+    for (const midY of candidateYs) {
+      consider([pA, { x: ax, y: midY }, { x: bx, y: midY }, pB]);
+    }
+
+    if (bestClear) return bestClear;
+
+    // 3. 4-segment obstacle bypasses (H-V-H-V and V-H-V-H)
+    for (const midX of candidateXs) {
+      for (const midY of candidateYs) {
+        consider([pA, { x: midX, y: ay }, { x: midX, y: midY }, { x: bx, y: midY }, pB]);
+        consider([pA, { x: ax, y: midY }, { x: midX, y: midY }, { x: midX, y: by }, pB]);
+      }
+    }
+
+    if (bestClear) return bestClear;
+
+    // 4. 5-segment obstacle-wrap bypasses (V-H-V-H-V and H-V-H-V-H) when both endpoints require same axis across an obstacle
+    const stepYs = [ay - 28, ay + 28, ...globalCandidateYs];
+    const endYs = [by - 28, by + 28, ...globalCandidateYs];
+    for (const yA of stepYs) {
+      for (const midX of candidateXs) {
+        for (const yB of endYs) {
+          consider([
+            pA,
+            { x: ax, y: yA },
+            { x: midX, y: yA },
+            { x: midX, y: yB },
+            { x: bx, y: yB },
+            pB,
+          ]);
+        }
+      }
+    }
+
+    const stepXs = [ax - 28, ax + 28, ...globalCandidateXs];
+    const endXs = [bx - 28, bx + 28, ...globalCandidateXs];
+    for (const xA of stepXs) {
+      for (const midY of candidateYs) {
+        for (const xB of endXs) {
+          consider([
+            pA,
+            { x: xA, y: ay },
+            { x: xA, y: midY },
+            { x: xB, y: midY },
+            { x: xB, y: by },
+            pB,
+          ]);
+        }
+      }
+    }
+
+    return bestClear ?? bestFallback;
+  };
+
+  // Use 2-state Dynamic Programming over all waypoints so each waypoint chooses the optimal 90° corner orientation:
+  // - State 'H': arrives at wp[i] horizontally (endDir = 'H') and leaves wp[i] vertically (nextStartDir = 'V')
+  // - State 'V': arrives at wp[i] vertically (endDir = 'V') and leaves wp[i] horizontally (nextStartDir = 'H')
+  interface DPState {
+    pts: { x: number; y: number }[];
+    cost: number;
+  }
+
+  let dpStates: Record<'H' | 'V', DPState | null> = { H: null, V: null };
+
+  const wp0 = safeWaypoints[0];
+  for (const endDir of ['H', 'V'] as const) {
+    const leg = findCleanOrthogonalBridge(
+      startStubX,
+      y1,
+      wp0.x,
+      wp0.y,
+      undefined,
+      endDir,
+      true,
+      false
+    );
+    if (leg) {
+      const initialPts: { x: number; y: number }[] = [{ x: x1, y: y1 }];
+      for (let k = 0; k < leg.pts.length; k++) {
+        initialPts.push(leg.pts[k]);
+      }
+      dpStates[endDir] = {
+        pts: initialPts,
+        cost: leg.len + (leg.blocked ? 100000 : 0),
+      };
+    }
+  }
+
+  for (let i = 1; i < safeWaypoints.length; i++) {
+    const prevWp = safeWaypoints[i - 1];
+    const currWp = safeWaypoints[i];
+    const nextDp: Record<'H' | 'V', DPState | null> = { H: null, V: null };
+
+    for (const prevEndDir of ['H', 'V'] as const) {
+      const prevState = dpStates[prevEndDir];
+      if (!prevState) continue;
+      // Perpendicular 90° corner rule at prevWp!
+      const reqStartDir: 'H' | 'V' = prevEndDir === 'H' ? 'V' : 'H';
+
+      for (const currEndDir of ['H', 'V'] as const) {
+        const leg = findCleanOrthogonalBridge(
+          prevWp.x,
+          prevWp.y,
+          currWp.x,
+          currWp.y,
+          reqStartDir,
+          currEndDir,
+          false,
+          false
+        );
+        if (!leg) continue;
+        const totalCost = prevState.cost + leg.len + (leg.blocked ? 100000 : 0);
+        const existing = nextDp[currEndDir];
+        if (!existing || totalCost < existing.cost) {
+          const combined = [...prevState.pts];
+          for (let k = 1; k < leg.pts.length; k++) {
+            combined.push(leg.pts[k]);
+          }
+          nextDp[currEndDir] = { pts: combined, cost: totalCost };
+        }
+      }
+    }
+    dpStates = nextDp;
+  }
+
+  // Connect the last waypoint to (endStubX, y2) -> (x2, y2)
+  const lastWp = safeWaypoints[safeWaypoints.length - 1];
+  let bestFinalPts: { x: number; y: number }[] | null = null;
+  let bestFinalCost = Infinity;
+
+  for (const lastEndDir of ['H', 'V'] as const) {
+    const prevState = dpStates[lastEndDir];
+    if (!prevState) continue;
+    const reqStartDir: 'H' | 'V' = lastEndDir === 'H' ? 'V' : 'H';
+
+    const finalLeg = findCleanOrthogonalBridge(
+      lastWp.x,
+      lastWp.y,
+      endStubX,
+      y2,
+      reqStartDir,
+      undefined,
+      false,
+      true
+    );
+    if (!finalLeg) continue;
+
+    const totalCost = prevState.cost + finalLeg.len + (finalLeg.blocked ? 100000 : 0);
+    if (totalCost < bestFinalCost) {
+      bestFinalCost = totalCost;
+      const combined = [...prevState.pts];
+      for (let k = 1; k < finalLeg.pts.length; k++) {
+        combined.push(finalLeg.pts[k]);
+      }
+      combined.push({ x: x2, y: y2 });
+      bestFinalPts = combined;
+    }
+  }
+
+  if (!bestFinalPts) {
+    return computeOrthogonalConveyorPath(x1, y1, x2, y2, obstacles, fromNode, toNode);
+  }
+
+  return simplifyPolylinePreservingWaypoints(bestFinalPts, safeWaypoints);
+}
+
 export function getCachedConveyorRoute(
   fromNode: MachineNode,
   outIdx: number,
   toNode: MachineNode,
   inIdx: number,
-  obstacles: MachineNode[] = []
+  obstacles: MachineNode[] = [],
+  waypoints?: { x: number; y: number }[]
 ): CachedConveyorRoute {
   const safeOutIdx = Math.max(0, outIdx);
   const safeInIdx = Math.max(0, inIdx);
@@ -491,7 +1267,10 @@ export function getCachedConveyorRoute(
     cachedRoutesByEndpoints.clear();
   }
 
-  const endpointKey = `${fromNode.id}:${safeOutIdx}:${fromNode.x},${fromNode.y}->${toNode.id}:${safeInIdx}:${toNode.x},${toNode.y}`;
+  const wpKey = (waypoints ?? [])
+    .map((w) => `${Math.round(w.x)},${Math.round(w.y)}`)
+    .join(';');
+  const endpointKey = `${fromNode.id}:${safeOutIdx}:${fromNode.x},${fromNode.y}->${toNode.id}:${safeInIdx}:${toNode.x},${toNode.y}[${wpKey}]`;
   const existing = cachedRoutesByEndpoints.get(endpointKey);
   if (existing) {
     return existing;
@@ -499,7 +1278,16 @@ export function getCachedConveyorRoute(
 
   const p1 = getPortWorldPosition(fromNode, 'output', safeOutIdx, fromNode.outputs.length);
   const p2 = getPortWorldPosition(toNode, 'input', safeInIdx, toNode.inputs.length);
-  const pts = computeOrthogonalConveyorPath(p1.x, p1.y, p2.x, p2.y, obstacles, fromNode, toNode);
+  const pts = computeConveyorPathWithWaypoints(
+    p1.x,
+    p1.y,
+    p2.x,
+    p2.y,
+    obstacles,
+    fromNode,
+    toNode,
+    waypoints
+  );
   const polyLen = Math.max(36, computePolylineLength(pts));
   const lengthPx = Math.max(36, Math.round(polyLen));
 
@@ -534,9 +1322,10 @@ export function computeConveyorLengthPx(
   outIdx: number,
   toNode: MachineNode,
   inIdx: number,
-  obstacles: MachineNode[] = []
+  obstacles: MachineNode[] = [],
+  waypoints?: { x: number; y: number }[]
 ): number {
-  return getCachedConveyorRoute(fromNode, outIdx, toNode, inIdx, obstacles).lengthPx;
+  return getCachedConveyorRoute(fromNode, outIdx, toNode, inIdx, obstacles, waypoints).lengthPx;
 }
 
 /**

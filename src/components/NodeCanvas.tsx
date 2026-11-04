@@ -9,27 +9,45 @@ import {
   computeNodeSnapAlignment,
   createConveyorConnection,
   createMachineNode,
+  distanceFromPointToPolyline,
   doesPathIntersectNode,
   getBeltTierDef,
   getCachedConveyorRoute,
   getPortWorldPosition,
+  invalidateAllConveyorCaches,
   isMacroIconZoom,
   isNodePositionValid,
   MAX_ZOOM,
   MIN_ZOOM,
+  sampleOrthogonalPath,
   SnapGuideline,
   stepSimulation,
   upgradeConveyorBeltTier,
   isMinerDirectlyOnDeposit,
+  isPointInsideObstacle,
 } from '../game/rules';
+import { factoryHistory } from '../game/history';
 import {
+  ActiveCanvasTool,
   CameraState,
   ConveyorBeltTier,
   ConveyorConnection,
   MachineNode,
   SettingsConfig,
 } from '../game/types';
-import { PortHit, renderFactoryScene } from './canvasRenderer';
+import { BeltInspectorPanel } from './BeltInspectorPanel';
+import {
+  doesCandidateNodeOverlapBeltsOrDots,
+  findBeltAtWorld,
+  findNodeAtWorld,
+  findPortAtWorld,
+  findWaypointAtWorld,
+  getClosestPointOnBelt,
+  hasBeltSnapshotChanged,
+  hasInspectorSnapshotChanged,
+  PortHit,
+} from './canvasHitTesting';
+import { renderFactoryScene } from './canvasRenderer';
 import { NodeInspectorPanel } from './NodeInspectorPanel';
 
 interface NodeCanvasProps {
@@ -39,65 +57,13 @@ interface NodeCanvasProps {
   cameraRef: React.MutableRefObject<CameraState>;
   settings: SettingsConfig;
   activeBeltTier: ConveyorBeltTier;
+  activeTool?: ActiveCanvasTool;
+  onSelectTool?: (tool: ActiveCanvasTool) => void;
   pendingBuildId: string | null;
   onClearPendingBuild: () => void;
   onGraphMutated: () => void;
-}
-
-/**
- * Checks if any visible property in the Node Inspector panel has changed since the last snapshot,
- * preventing 35 FPS React DOM re-renders when integer counts, rates, and status are unchanged.
- */
-function hasInspectorSnapshotChanged(
-  prev: MachineNode | null,
-  next: MachineNode
-): boolean {
-  if (!prev) return true;
-  if (
-    prev.id !== next.id ||
-    prev.buildingId !== next.buildingId ||
-    prev.recipeId !== next.recipeId ||
-    prev.status !== next.status ||
-    prev.efficiency !== next.efficiency ||
-    prev.maxStoredCount !== next.maxStoredCount ||
-    Math.floor(prev.storedCount ?? 0) !== Math.floor(next.storedCount ?? 0) ||
-    prev.inputs.length !== next.inputs.length ||
-    prev.outputs.length !== next.outputs.length
-  ) {
-    return true;
-  }
-
-  for (let i = 0; i < next.inputs.length; i++) {
-    const pA = prev.inputs[i];
-    const pB = next.inputs[i];
-    if (
-      pA.actualRatePerMin !== pB.actualRatePerMin ||
-      pA.targetRatePerMin !== pB.targetRatePerMin ||
-      pA.itemName !== pB.itemName ||
-      pA.label !== pB.label ||
-      pA.maxBuffer !== pB.maxBuffer ||
-      Math.floor(pA.bufferedCount ?? 0) !== Math.floor(pB.bufferedCount ?? 0)
-    ) {
-      return true;
-    }
-  }
-
-  for (let i = 0; i < next.outputs.length; i++) {
-    const pA = prev.outputs[i];
-    const pB = next.outputs[i];
-    if (
-      pA.actualRatePerMin !== pB.actualRatePerMin ||
-      pA.targetRatePerMin !== pB.targetRatePerMin ||
-      pA.itemName !== pB.itemName ||
-      pA.label !== pB.label ||
-      pA.maxBuffer !== pB.maxBuffer ||
-      Math.floor(pA.bufferedCount ?? 0) !== Math.floor(pB.bufferedCount ?? 0)
-    ) {
-      return true;
-    }
-  }
-
-  return false;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export const NodeCanvas: React.FC<NodeCanvasProps> = ({
@@ -107,9 +73,13 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   cameraRef,
   settings,
   activeBeltTier,
+  activeTool = 'edit',
+  onSelectTool,
   pendingBuildId,
   onClearPendingBuild,
   onGraphMutated,
+  onUndo,
+  onRedo,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -122,6 +92,14 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   const activeBeltTierRef = useRef<ConveyorBeltTier>(activeBeltTier);
   activeBeltTierRef.current = activeBeltTier;
 
+  const activeToolRef = useRef<ActiveCanvasTool>(activeTool);
+  activeToolRef.current = activeTool;
+
+  const preDragGraphRef = useRef<{
+    nodes: MachineNode[];
+    connections: ConveyorConnection[];
+  } | null>(null);
+
   const pendingBuildRef = useRef<string | null>(pendingBuildId);
   pendingBuildRef.current = pendingBuildId;
 
@@ -129,9 +107,32 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   const selectedNodeIdRef = useRef<string | null>(null);
   selectedNodeIdRef.current = selectedNodeId;
 
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const selectedNodeIdsRef = useRef<string[]>([]);
+  selectedNodeIdsRef.current = selectedNodeIds;
+
   const [selectedNodeSnapshot, setSelectedNodeSnapshot] = useState<MachineNode | null>(null);
   const selectedNodeSnapshotRef = useRef<MachineNode | null>(null);
   selectedNodeSnapshotRef.current = selectedNodeSnapshot;
+
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const selectedConnectionIdRef = useRef<string | null>(null);
+  selectedConnectionIdRef.current = selectedConnectionId;
+
+  const [selectedConnectionSnapshot, setSelectedConnectionSnapshot] =
+    useState<ConveyorConnection | null>(null);
+  const selectedConnectionSnapshotRef = useRef<ConveyorConnection | null>(null);
+  selectedConnectionSnapshotRef.current = selectedConnectionSnapshot;
+
+  const [selectedWaypoint, setSelectedWaypoint] = useState<{
+    connId: string;
+    index: number;
+  } | null>(null);
+  const selectedWaypointRef = useRef<{
+    connId: string;
+    index: number;
+  } | null>(null);
+  selectedWaypointRef.current = selectedWaypoint;
 
   const [tapSourcePort, setTapSourcePort] = useState<{
     nodeId: string;
@@ -181,6 +182,22 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     smoothZoomAnchorX: number;
     smoothZoomAnchorY: number;
     activeGuidelines: SnapGuideline[];
+    hoveredConnectionId: string | null;
+    draggingWaypoint: {
+      connId: string;
+      index: number;
+      startX: number;
+      startY: number;
+      isNew?: boolean;
+    } | null;
+    hoveredWaypoint: { connId: string; index: number } | null;
+    previewWaypoint: { connId: string; x: number; y: number } | null;
+    isMarqueeSelecting: boolean;
+    marqueeStartX: number;
+    marqueeStartY: number;
+    marqueeCurrentX: number;
+    marqueeCurrentY: number;
+    draggingGroupPositions: Map<string, { startX: number; startY: number }> | null;
   }>({
     isPanning: false,
     draggingNodeId: null,
@@ -214,6 +231,16 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     smoothZoomAnchorX: 0,
     smoothZoomAnchorY: 0,
     activeGuidelines: [],
+    hoveredConnectionId: null,
+    draggingWaypoint: null,
+    hoveredWaypoint: null,
+    previewWaypoint: null,
+    isMarqueeSelecting: false,
+    marqueeStartX: 0,
+    marqueeStartY: 0,
+    marqueeCurrentX: 0,
+    marqueeCurrentY: 0,
+    draggingGroupPositions: null,
   });
 
   const showToast = (msg: string) => {
@@ -235,6 +262,78 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
     drawNowRef.current?.();
   }, [selectedNodeId, nodesRef]);
+
+  useEffect(() => {
+    if (!selectedConnectionId) {
+      setSelectedConnectionSnapshot(null);
+    } else {
+      const found =
+        connectionsRef.current.find((c) => c.id === selectedConnectionId) ?? null;
+      setSelectedConnectionSnapshot(
+        found
+          ? {
+              ...found,
+              inFlightItems: found.inFlightItems?.map((p) => ({ ...p })),
+            }
+          : null
+      );
+    }
+    drawNowRef.current?.();
+  }, [selectedConnectionId, connectionsRef]);
+
+  // Reconcile selected node, belt, multi-select, and corner dot states when Undo/Redo or Save Load mutates the graph
+  useEffect(() => {
+    return factoryHistory.subscribe(() => {
+      const curNodes = nodesRef.current;
+      const curConns = connectionsRef.current;
+
+      if (selectedNodeIdRef.current) {
+        const liveNode = curNodes.find((n) => n.id === selectedNodeIdRef.current);
+        if (!liveNode) {
+          setSelectedNodeId(null);
+          setSelectedNodeSnapshot(null);
+        } else {
+          setSelectedNodeSnapshot({
+            ...liveNode,
+            inputs: liveNode.inputs.map((p) => ({ ...p })),
+            outputs: liveNode.outputs.map((p) => ({ ...p })),
+          });
+        }
+      }
+
+      if (selectedNodeIdsRef.current.length > 0) {
+        const validIds = selectedNodeIdsRef.current.filter((id) =>
+          curNodes.some((n) => n.id === id)
+        );
+        if (validIds.length !== selectedNodeIdsRef.current.length) {
+          setSelectedNodeIds(validIds);
+        }
+      }
+
+      if (selectedConnectionIdRef.current) {
+        const liveConn = curConns.find((c) => c.id === selectedConnectionIdRef.current);
+        if (!liveConn) {
+          setSelectedConnectionId(null);
+          setSelectedConnectionSnapshot(null);
+        } else {
+          setSelectedConnectionSnapshot({
+            ...liveConn,
+            inFlightItems: liveConn.inFlightItems?.map((p) => ({ ...p })),
+          });
+        }
+      }
+
+      if (selectedWaypointRef.current) {
+        const { connId, index } = selectedWaypointRef.current;
+        const liveConn = curConns.find((c) => c.id === connId);
+        if (!liveConn || !liveConn.waypoints || !liveConn.waypoints[index]) {
+          setSelectedWaypoint(null);
+        }
+      }
+
+      drawNowRef.current?.();
+    });
+  }, [nodesRef, connectionsRef]);
 
   const resizeCanvasRef = useRef<(() => void) | null>(null);
 
@@ -293,6 +392,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         nodes: nodesRef.current,
         connections: connectionsRef.current,
         selectedNodeId: selectedNodeIdRef.current,
+        selectedConnectionId: selectedConnectionIdRef.current,
+        hoveredConnectionId: interactionRef.current.hoveredConnectionId,
         tapSourcePort: tapSourcePortRef.current,
         activeBeltTier: activeBeltTierRef.current,
         pendingBuildId: pendingBuildRef.current,
@@ -303,6 +404,31 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         pointerWorldY: interactionRef.current.pointerWorldY,
         elapsedTime: interactionRef.current.elapsedTime,
         activeGuidelines: interactionRef.current.activeGuidelines,
+        activeTool: activeToolRef.current,
+        hoveredWaypoint: interactionRef.current.hoveredWaypoint,
+        selectedWaypoint: selectedWaypointRef.current,
+        previewWaypoint: interactionRef.current.previewWaypoint,
+        selectedNodeIds: selectedNodeIdsRef.current,
+        marqueeRect: interactionRef.current.isMarqueeSelecting
+          ? {
+              x: Math.min(
+                interactionRef.current.marqueeStartX,
+                interactionRef.current.marqueeCurrentX
+              ),
+              y: Math.min(
+                interactionRef.current.marqueeStartY,
+                interactionRef.current.marqueeCurrentY
+              ),
+              width: Math.abs(
+                interactionRef.current.marqueeCurrentX -
+                  interactionRef.current.marqueeStartX
+              ),
+              height: Math.abs(
+                interactionRef.current.marqueeCurrentY -
+                  interactionRef.current.marqueeStartY
+              ),
+            }
+          : null,
       });
     };
 
@@ -381,6 +507,21 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
       }
 
+      if (ranSimStep && selectedConnectionIdRef.current) {
+        const liveConn = connectionsRef.current.find(
+          (c) => c.id === selectedConnectionIdRef.current
+        );
+        if (
+          liveConn &&
+          hasBeltSnapshotChanged(selectedConnectionSnapshotRef.current, liveConn)
+        ) {
+          setSelectedConnectionSnapshot({
+            ...liveConn,
+            inFlightItems: liveConn.inFlightItems?.map((p) => ({ ...p })),
+          });
+        }
+      }
+
       interactionRef.current.elapsedTime += frameDt;
 
       const dpr = getEffectiveDpr();
@@ -441,54 +582,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     };
   };
 
-  const findPortAtWorld = (wx: number, wy: number): PortHit | null => {
-    const hitRadius = isMacroIconZoom(cameraRef.current.zoom) ? 24 : 18;
-    for (let nIdx = nodesRef.current.length - 1; nIdx >= 0; nIdx--) {
-      const node = nodesRef.current[nIdx];
-      for (let i = 0; i < node.outputs.length; i++) {
-        const pt = getPortWorldPosition(node, 'output', i, node.outputs.length);
-        if (Math.hypot(wx - pt.x, wy - pt.y) <= hitRadius) {
-          return { nodeId: node.id, port: node.outputs[i], x: pt.x, y: pt.y };
-        }
-      }
-      for (let i = 0; i < node.inputs.length; i++) {
-        const pt = getPortWorldPosition(node, 'input', i, node.inputs.length);
-        if (Math.hypot(wx - pt.x, wy - pt.y) <= hitRadius) {
-          return { nodeId: node.id, port: node.inputs[i], x: pt.x, y: pt.y };
-        }
-      }
-    }
-    return null;
-  };
-
-  const findNodeAtWorld = (wx: number, wy: number): MachineNode | null => {
-    const macro = isMacroIconZoom(cameraRef.current.zoom);
-    // Pass 1: Check non-deposit factory buildings first (so a Miner Mk.1 mounted on a deposit is always hit first!)
-    for (let i = nodesRef.current.length - 1; i >= 0; i--) {
-      const n = nodesRef.current[i];
-      if (n.buildingId === 'resource_deposit') continue;
-      if (wx >= n.x && wx <= n.x + n.width && wy >= n.y && wy <= n.y + n.height) {
-        return n;
-      }
-    }
-    // Pass 2: Check natural ground resource deposits
-    for (let i = nodesRef.current.length - 1; i >= 0; i--) {
-      const n = nodesRef.current[i];
-      if (n.buildingId !== 'resource_deposit') continue;
-      if (macro) {
-        const cx = n.x + n.width * 0.5;
-        const cy = n.y + n.height * 0.5;
-        if (Math.hypot(wx - cx, wy - cy) <= 125) {
-          return n;
-        }
-      }
-      if (wx >= n.x && wx <= n.x + n.width && wy >= n.y && wy <= n.y + n.height) {
-        return n;
-      }
-    }
-    return null;
-  };
-
   const tryCreateConnection = (
     fromNodeId: string,
     fromPortId: string,
@@ -510,6 +603,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
 
     const tierDef = getBeltTierDef(activeBeltTierRef.current);
+    factoryHistory.pushSnapshot(
+      nodesRef.current,
+      connectionsRef.current,
+      `Connect ${tierDef.name}`
+    );
     const newConn = createConveyorConnection(
       fromNodeId,
       fromPortId,
@@ -556,6 +654,133 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.pointerWorldX = world.x;
     interactionRef.current.pointerWorldY = world.y;
     interactionRef.current.pointerMoved = false;
+
+    // A. Move Tool Safe-Pan: Only pan the camera without accidentally changing buildings or belts
+    if (activeToolRef.current === 'move') {
+      interactionRef.current.isPanning = true;
+      interactionRef.current.panStartX = e.clientX;
+      interactionRef.current.panStartY = e.clientY;
+      interactionRef.current.camStartX = cameraRef.current.x;
+      interactionRef.current.camStartY = cameraRef.current.y;
+      return;
+    }
+
+    // B. Multi-Select Marquee Tool: Drag box to select multiple buildings
+    if (activeToolRef.current === 'select') {
+      interactionRef.current.isMarqueeSelecting = true;
+      interactionRef.current.marqueeStartX = world.x;
+      interactionRef.current.marqueeStartY = world.y;
+      interactionRef.current.marqueeCurrentX = world.x;
+      interactionRef.current.marqueeCurrentY = world.y;
+      return;
+    }
+
+    // C. Conveyor Corner Dot Interaction: Movable in BOTH Edit Tool ('edit') and Waypoint Tool ('waypoint')
+    const hitWp = findWaypointAtWorld(
+      world.x,
+      world.y,
+      connectionsRef.current,
+      cameraRef.current.zoom
+    );
+    if (hitWp) {
+      preDragGraphRef.current = {
+        nodes: nodesRef.current.map((n) => ({ ...n })),
+        connections: connectionsRef.current.map((c) => ({
+          ...c,
+          waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+        })),
+      };
+      interactionRef.current.draggingWaypoint = {
+        connId: hitWp.conn.id,
+        index: hitWp.index,
+        startX: hitWp.point.x,
+        startY: hitWp.point.y,
+        isNew: false,
+      };
+      setSelectedNodeId(null);
+      setSelectedNodeIds([]);
+      setSelectedConnectionId(hitWp.conn.id);
+      setSelectedWaypoint({ connId: hitWp.conn.id, index: hitWp.index });
+      playSynthSfx('click', settingsRef.current);
+      drawNowRef.current?.();
+      return;
+    }
+
+    // D. Conveyor Waypoint Tool: Tap conveyor line to add a new 90° corner point
+    if (activeToolRef.current === 'waypoint') {
+      const hitBelt = findBeltAtWorld(
+        world.x,
+        world.y,
+        nodesRef.current,
+        connectionsRef.current,
+        cameraRef.current.zoom,
+        settingsRef.current.showPortRates
+      );
+      if (hitBelt) {
+        const closest = getClosestPointOnBelt(
+          world.x,
+          world.y,
+          hitBelt,
+          nodesRef.current
+        );
+        if (closest) {
+          const snappedX = Math.round(closest.x / 24) * 24;
+          const snappedY = Math.round(closest.y / 24) * 24;
+          if (isPointInsideObstacle(snappedX, snappedY, nodesRef.current, 14)) {
+            playSynthSfx('error', settingsRef.current);
+            showToast('Cannot place corner dot inside a building or deposit!');
+            return;
+          }
+          factoryHistory.pushSnapshot(
+            nodesRef.current,
+            connectionsRef.current,
+            'Add Conveyor Corner'
+          );
+          const existingWps = hitBelt.waypoints ? [...hitBelt.waypoints] : [];
+          const newIndex = Math.min(
+            existingWps.length,
+            Math.max(0, closest.insertIndex ?? existingWps.length)
+          );
+          existingWps.splice(newIndex, 0, { x: snappedX, y: snappedY });
+
+          connectionsRef.current = connectionsRef.current.map((c) => {
+            if (c.id !== hitBelt.id) return c;
+            return { ...c, waypoints: existingWps };
+          });
+          invalidateAllConveyorCaches();
+          playSynthSfx('connect', settingsRef.current);
+          onGraphMutated();
+          showToast('Added conveyor 90° corner · Tap dot again to dismantle');
+
+          preDragGraphRef.current = {
+            nodes: nodesRef.current.map((n) => ({ ...n })),
+            connections: connectionsRef.current.map((c) => ({
+              ...c,
+              waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+            })),
+          };
+          interactionRef.current.draggingWaypoint = {
+            connId: hitBelt.id,
+            index: newIndex,
+            startX: snappedX,
+            startY: snappedY,
+            isNew: true,
+          };
+          setSelectedWaypoint({ connId: hitBelt.id, index: newIndex });
+          drawNowRef.current?.();
+          return;
+        }
+      }
+
+      // If clicked empty space in waypoint mode, clear selected waypoint and pan the camera
+      setSelectedWaypoint(null);
+      interactionRef.current.isPanning = true;
+      interactionRef.current.panStartX = e.clientX;
+      interactionRef.current.panStartY = e.clientY;
+      interactionRef.current.camStartX = cameraRef.current.x;
+      interactionRef.current.camStartY = cameraRef.current.y;
+      return;
+    }
 
     // 1. Place Pending Building from Build Menu
     if (pendingBuildRef.current) {
@@ -614,27 +839,29 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           return;
         }
 
-        // Belt overlap rule: machine cannot be placed directly across active conveyor paths
-        const currentNodes = nodesRef.current;
-        const blocksBelts = connectionsRef.current.some((c) => {
-          const fn = currentNodes.find((n) => n.id === c.fromNodeId);
-          const tn = currentNodes.find((n) => n.id === c.toNodeId);
-          if (!fn || !tn) return false;
-          const outIdx = fn.outputs.findIndex((p) => p.id === c.fromPortId);
-          const inIdx = tn.inputs.findIndex((p) => p.id === c.toPortId);
-          if (outIdx < 0 || inIdx < 0) return false;
-          const route = getCachedConveyorRoute(fn, outIdx, tn, inIdx, currentNodes);
-          return doesPathIntersectNode(route.pts, candidateNode as any, 16);
-        });
+        // Belt & corner-dot overlap rule: machine cannot be placed across active conveyor paths or corner dots
+        const blocksBelts = doesCandidateNodeOverlapBeltsOrDots(
+          candidateNode as MachineNode,
+          nodesRef.current,
+          connectionsRef.current
+        );
 
         if (blocksBelts) {
           playSynthSfx('error', settingsRef.current);
-          showToast('Cannot place: Conveyor line cuts through this position!');
+          showToast('Cannot place: Conveyor line or corner dot occupies this position!');
           return;
         }
 
+        factoryHistory.pushSnapshot(
+          nodesRef.current,
+          connectionsRef.current,
+          `Build ${bDef.name}`
+        );
         const newNode = createMachineNode(bId, clamped.x, clamped.y);
-        nodesRef.current = [...nodesRef.current, newNode];
+        const nextNodes = [...nodesRef.current, newNode];
+        const simRes = stepSimulation(nextNodes, connectionsRef.current, 0);
+        nodesRef.current = simRes.nodes;
+        connectionsRef.current = simRes.connections;
         playSynthSfx('place', settingsRef.current);
         onClearPendingBuild();
         onGraphMutated();
@@ -646,7 +873,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
 
     // 2. Port Dot Interaction
-    const portHit = findPortAtWorld(world.x, world.y);
+    const portHit = findPortAtWorld(
+      world.x,
+      world.y,
+      nodesRef.current,
+      cameraRef.current.zoom
+    );
     if (portHit) {
       const wMode = settingsRef.current.wiringMode;
 
@@ -666,9 +898,15 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           (c) => c.toNodeId === portHit.nodeId && c.toPortId === portHit.port.id
         );
         if (existingConn) {
+          factoryHistory.pushSnapshot(
+            nodesRef.current,
+            connectionsRef.current,
+            'Disconnect Conveyor'
+          );
           connectionsRef.current = connectionsRef.current.filter(
             (c) => c.id !== existingConn.id
           );
+          invalidateAllConveyorCaches();
           playSynthSfx('disconnect', settingsRef.current);
           onGraphMutated();
           showToast('Conveyor line disconnected');
@@ -694,8 +932,17 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
 
     // 3. Node Card Body Drag / Select (World Resource Deposits are fixed on the map!)
-    const hitNode = findNodeAtWorld(world.x, world.y);
+    const hitNode = findNodeAtWorld(
+      world.x,
+      world.y,
+      nodesRef.current,
+      cameraRef.current.zoom
+    );
     if (hitNode) {
+      setSelectedWaypoint(null);
+      if (selectedConnectionIdRef.current !== null) {
+        setSelectedConnectionId(null);
+      }
       if (selectedNodeIdRef.current !== hitNode.id) {
         setSelectedNodeId(hitNode.id);
       }
@@ -710,12 +957,70 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         return;
       }
 
+      preDragGraphRef.current = {
+        nodes: nodesRef.current.map((n) => ({ ...n })),
+        connections: connectionsRef.current.map((c) => ({
+          ...c,
+          waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+        })),
+      };
       interactionRef.current.draggingNodeId = hitNode.id;
       interactionRef.current.dragOffsetX = world.x - hitNode.x;
       interactionRef.current.dragOffsetY = world.y - hitNode.y;
       interactionRef.current.dragStartNodeX = hitNode.x;
       interactionRef.current.dragStartNodeY = hitNode.y;
       interactionRef.current.dragHasCollision = false;
+
+      if (
+        selectedNodeIdsRef.current.length > 1 &&
+        selectedNodeIdsRef.current.includes(hitNode.id)
+      ) {
+        const groupPos = new Map<string, { startX: number; startY: number }>();
+        for (const sId of selectedNodeIdsRef.current) {
+          const sNode = nodesRef.current.find((n) => n.id === sId);
+          if (sNode && sNode.buildingId !== 'resource_deposit' && !sNode.isWorldDeposit) {
+            groupPos.set(sId, { startX: sNode.x, startY: sNode.y });
+          }
+        }
+        interactionRef.current.draggingGroupPositions = groupPos;
+      } else {
+        interactionRef.current.draggingGroupPositions = null;
+        if (!selectedNodeIdsRef.current.includes(hitNode.id)) {
+          setSelectedNodeIds([hitNode.id]);
+        }
+      }
+      return;
+    }
+
+    // 3.5 Direct In-World Conveyor Belt Selection & Inspection
+    const hitBelt = findBeltAtWorld(
+      world.x,
+      world.y,
+      nodesRef.current,
+      connectionsRef.current,
+      cameraRef.current.zoom,
+      settingsRef.current.showPortRates
+    );
+    if (hitBelt) {
+      setSelectedWaypoint(null);
+      if (selectedNodeIdRef.current !== null) {
+        setSelectedNodeId(null);
+      }
+      setSelectedNodeIds([]);
+      if (selectedConnectionIdRef.current !== hitBelt.id) {
+        setSelectedConnectionId(hitBelt.id);
+      }
+      setSelectedConnectionSnapshot({
+        ...hitBelt,
+        inFlightItems: hitBelt.inFlightItems?.map((p) => ({ ...p })),
+      });
+      playSynthSfx('click', settingsRef.current);
+      interactionRef.current.isPanning = true;
+      interactionRef.current.panStartX = e.clientX;
+      interactionRef.current.panStartY = e.clientY;
+      interactionRef.current.camStartX = cameraRef.current.x;
+      interactionRef.current.camStartY = cameraRef.current.y;
+      drawNowRef.current?.();
       return;
     }
 
@@ -742,8 +1047,17 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.lastTapY = sy;
 
     // 5. Standard Pan
+    if (selectedWaypointRef.current !== null) {
+      setSelectedWaypoint(null);
+    }
     if (selectedNodeIdRef.current !== null) {
       setSelectedNodeId(null);
+    }
+    if (selectedNodeIdsRef.current.length > 0) {
+      setSelectedNodeIds([]);
+    }
+    if (selectedConnectionIdRef.current !== null) {
+      setSelectedConnectionId(null);
     }
     if (tapSourcePortRef.current !== null) {
       setTapSourcePort(null);
@@ -820,8 +1134,148 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.pointerWorldX = world.x;
     interactionRef.current.pointerWorldY = world.y;
 
+    if (interactionRef.current.isMarqueeSelecting) {
+      interactionRef.current.pointerMoved = true;
+      interactionRef.current.marqueeCurrentX = world.x;
+      interactionRef.current.marqueeCurrentY = world.y;
+      drawNowRef.current?.();
+      return;
+    }
+
     if (interactionRef.current.wiringFrom) {
       interactionRef.current.pointerMoved = true;
+      drawNowRef.current?.();
+      return;
+    }
+
+    if (interactionRef.current.draggingWaypoint) {
+      const dw = interactionRef.current.draggingWaypoint;
+      if (Math.hypot(world.x - dw.startX, world.y - dw.startY) > 6) {
+        interactionRef.current.pointerMoved = true;
+      }
+      if (!interactionRef.current.pointerMoved) {
+        return;
+      }
+      const snappedX = Math.round(world.x / 24) * 24;
+      const snappedY = Math.round(world.y / 24) * 24;
+
+      // Prevent dragging a corner dot inside any building or resource deposit
+      if (isPointInsideObstacle(snappedX, snappedY, nodesRef.current, 14)) {
+        return;
+      }
+
+      // Also verify that the belt path with this candidate waypoint does not cut through any building or deposit
+      const targetConn = connectionsRef.current.find((c) => c.id === dw.connId);
+      if (targetConn) {
+        const fn = nodesRef.current.find((n) => n.id === targetConn.fromNodeId);
+        const tn = nodesRef.current.find((n) => n.id === targetConn.toNodeId);
+        if (fn && tn) {
+          const outIdx = fn.outputs.findIndex((p) => p.id === targetConn.fromPortId);
+          const inIdx = tn.inputs.findIndex((p) => p.id === targetConn.toPortId);
+          const candidateWps = targetConn.waypoints ? [...targetConn.waypoints] : [];
+          if (candidateWps[dw.index]) {
+            candidateWps[dw.index] = { x: snappedX, y: snappedY };
+          }
+          if (outIdx >= 0 && inIdx >= 0) {
+            const candidateRoute = getCachedConveyorRoute(
+              fn,
+              outIdx,
+              tn,
+              inIdx,
+              nodesRef.current,
+              candidateWps
+            );
+            const srcDeposit =
+              fn.buildingId === 'miner_mk1'
+                ? nodesRef.current.find(
+                    (n) =>
+                      n.buildingId === 'resource_deposit' &&
+                      isMinerDirectlyOnDeposit(fn, n, 8)
+                  )
+                : undefined;
+            const dstDeposit =
+              tn.buildingId === 'miner_mk1'
+                ? nodesRef.current.find(
+                    (n) =>
+                      n.buildingId === 'resource_deposit' &&
+                      isMinerDirectlyOnDeposit(tn, n, 8)
+                  )
+                : undefined;
+            const interiorPts =
+              candidateRoute.pts.length >= 4
+                ? candidateRoute.pts.slice(1, candidateRoute.pts.length - 1)
+                : candidateRoute.pts;
+            const hitsAnyNode = nodesRef.current.some((obs) => {
+              const isEndpointNode =
+                obs.id === fn.id ||
+                obs.id === tn.id ||
+                obs.id === srcDeposit?.id ||
+                obs.id === dstDeposit?.id;
+              if (isEndpointNode) {
+                return doesPathIntersectNode(interiorPts, obs, 6);
+              }
+              return doesPathIntersectNode(candidateRoute.pts, obs, 8);
+            });
+            if (hitsAnyNode) {
+              return;
+            }
+          }
+        }
+      }
+
+      connectionsRef.current = connectionsRef.current.map((c) => {
+        if (c.id !== dw.connId) return c;
+        const nextWps = c.waypoints ? [...c.waypoints] : [];
+        if (nextWps[dw.index]) {
+          nextWps[dw.index] = { x: snappedX, y: snappedY };
+        }
+        return { ...c, waypoints: nextWps };
+      });
+      invalidateAllConveyorCaches();
+      drawNowRef.current?.();
+      return;
+    }
+
+    if (interactionRef.current.draggingGroupPositions && interactionRef.current.draggingNodeId) {
+      interactionRef.current.pointerMoved = true;
+      const leaderId = interactionRef.current.draggingNodeId;
+      const leaderStartPos = interactionRef.current.draggingGroupPositions.get(leaderId);
+      if (leaderStartPos) {
+        const rawLeaderX = world.x - interactionRef.current.dragOffsetX;
+        const rawLeaderY = world.y - interactionRef.current.dragOffsetY;
+        const snappedLeaderX = Math.round(rawLeaderX / 24) * 24;
+        const snappedLeaderY = Math.round(rawLeaderY / 24) * 24;
+        const dx = snappedLeaderX - leaderStartPos.startX;
+        const dy = snappedLeaderY - leaderStartPos.startY;
+
+        const nextNodes = nodesRef.current.map((n) => {
+          const sp = interactionRef.current.draggingGroupPositions?.get(n.id);
+          if (!sp) return n;
+          const clamped = clampNodeToWorld(sp.startX + dx, sp.startY + dy, n.width, n.height);
+          return { ...n, x: clamped.x, y: clamped.y };
+        });
+        nodesRef.current = nextNodes;
+        invalidateAllConveyorCaches();
+
+        let groupCollision = false;
+        for (const [gId] of interactionRef.current.draggingGroupPositions.entries()) {
+          const gNode = nextNodes.find((n) => n.id === gId);
+          if (!gNode) continue;
+          const check = isNodePositionValid(nextNodes, gNode, 4);
+          if (
+            !check.valid ||
+            doesCandidateNodeOverlapBeltsOrDots(
+              gNode,
+              nextNodes,
+              connectionsRef.current
+            )
+          ) {
+            groupCollision = true;
+            break;
+          }
+        }
+        interactionRef.current.dragHasCollision = groupCollision;
+      }
       drawNowRef.current?.();
       return;
     }
@@ -856,19 +1310,21 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           targetNode.height
         );
         const moved = clamped.x !== targetNode.x || clamped.y !== targetNode.y;
-        const check = isNodePositionValid(
-          nodesRef.current,
-          { ...targetNode, x: clamped.x, y: clamped.y },
-          4
+        const candidateNode: MachineNode = { ...targetNode, x: clamped.x, y: clamped.y };
+        const nextNodes = nodesRef.current.map((n) =>
+          n.id === nodeId ? candidateNode : n
         );
-        interactionRef.current.dragHasCollision = !check.valid;
-
         if (moved) {
-          nodesRef.current = nodesRef.current.map((n) => {
-            if (n.id !== nodeId) return n;
-            return { ...n, x: clamped.x, y: clamped.y };
-          });
+          nodesRef.current = nextNodes;
+          invalidateAllConveyorCaches();
         }
+        const check = isNodePositionValid(nextNodes, candidateNode, 4);
+        const hitsBeltOrDot = doesCandidateNodeOverlapBeltsOrDots(
+          candidateNode,
+          nextNodes,
+          connectionsRef.current
+        );
+        interactionRef.current.dragHasCollision = !check.valid || hitsBeltOrDot;
       }
       drawNowRef.current?.();
       return;
@@ -889,6 +1345,87 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         rect.width,
         rect.height
       );
+      drawNowRef.current?.();
+      return;
+    }
+
+    // Hover feedback for conveyor belts and waypoint pins when moving pointer across canvas
+    const hitWpHover = findWaypointAtWorld(
+      world.x,
+      world.y,
+      connectionsRef.current,
+      cameraRef.current.zoom
+    );
+    interactionRef.current.hoveredWaypoint = hitWpHover
+      ? { connId: hitWpHover.conn.id, index: hitWpHover.index }
+      : null;
+
+    if (activeToolRef.current === 'waypoint' && !hitWpHover) {
+      const hitB = findBeltAtWorld(
+        world.x,
+        world.y,
+        nodesRef.current,
+        connectionsRef.current,
+        cameraRef.current.zoom,
+        settingsRef.current.showPortRates
+      );
+      if (hitB) {
+        const closest = getClosestPointOnBelt(
+          world.x,
+          world.y,
+          hitB,
+          nodesRef.current
+        );
+        if (closest && closest.dist <= 30) {
+          const sx = Math.round(closest.x / 24) * 24;
+          const sy = Math.round(closest.y / 24) * 24;
+          if (!isPointInsideObstacle(sx, sy, nodesRef.current, 14)) {
+            interactionRef.current.previewWaypoint = {
+              connId: hitB.id,
+              x: sx,
+              y: sy,
+            };
+          } else {
+            interactionRef.current.previewWaypoint = null;
+          }
+        } else {
+          interactionRef.current.previewWaypoint = null;
+        }
+      } else {
+        interactionRef.current.previewWaypoint = null;
+      }
+    } else {
+      interactionRef.current.previewWaypoint = null;
+    }
+
+    const overPort = findPortAtWorld(
+      world.x,
+      world.y,
+      nodesRef.current,
+      cameraRef.current.zoom
+    );
+    const overNode = overPort
+      ? null
+      : findNodeAtWorld(
+          world.x,
+          world.y,
+          nodesRef.current,
+          cameraRef.current.zoom
+        );
+    const overBelt =
+      !overPort && !overNode
+        ? findBeltAtWorld(
+            world.x,
+            world.y,
+            nodesRef.current,
+            connectionsRef.current,
+            cameraRef.current.zoom,
+            settingsRef.current.showPortRates
+          )
+        : null;
+    const nextHoverBeltId = overBelt?.id ?? null;
+    if (interactionRef.current.hoveredConnectionId !== nextHoverBeltId) {
+      interactionRef.current.hoveredConnectionId = nextHoverBeltId;
       drawNowRef.current?.();
     }
   };
@@ -917,14 +1454,159 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
     const world = screenToWorld(e.clientX, e.clientY);
 
+    if (interactionRef.current.isMarqueeSelecting) {
+      const minX = Math.min(
+        interactionRef.current.marqueeStartX,
+        interactionRef.current.marqueeCurrentX
+      );
+      const maxX = Math.max(
+        interactionRef.current.marqueeStartX,
+        interactionRef.current.marqueeCurrentX
+      );
+      const minY = Math.min(
+        interactionRef.current.marqueeStartY,
+        interactionRef.current.marqueeCurrentY
+      );
+      const maxY = Math.max(
+        interactionRef.current.marqueeStartY,
+        interactionRef.current.marqueeCurrentY
+      );
+      const marqueeW = maxX - minX;
+      const marqueeH = maxY - minY;
+
+      if (marqueeW < 12 && marqueeH < 12) {
+        const hitNode = findNodeAtWorld(
+          world.x,
+          world.y,
+          nodesRef.current,
+          cameraRef.current.zoom
+        );
+        if (hitNode && hitNode.buildingId !== 'resource_deposit' && !hitNode.isWorldDeposit) {
+          setSelectedNodeIds((prev) =>
+            prev.includes(hitNode.id)
+              ? prev.filter((id) => id !== hitNode.id)
+              : [...prev, hitNode.id]
+          );
+          setSelectedNodeId(hitNode.id);
+          playSynthSfx('click', settingsRef.current);
+        } else {
+          setSelectedNodeIds([]);
+          setSelectedNodeId(null);
+        }
+      } else {
+        const selected = nodesRef.current.filter((n) => {
+          if (n.buildingId === 'resource_deposit' || n.isWorldDeposit) return false;
+          return (
+            n.x < maxX &&
+            n.x + n.width > minX &&
+            n.y < maxY &&
+            n.y + n.height > minY
+          );
+        });
+        const ids = selected.map((n) => n.id);
+        setSelectedNodeIds(ids);
+        if (ids.length > 0) {
+          setSelectedNodeId(ids[0]);
+          playSynthSfx('click', settingsRef.current);
+          showToast(`Selected ${ids.length} building${ids.length > 1 ? 's' : ''}`);
+        } else {
+          setSelectedNodeId(null);
+        }
+      }
+
+      interactionRef.current.isMarqueeSelecting = false;
+      drawNowRef.current?.();
+      return;
+    }
+
+    if (interactionRef.current.draggingGroupPositions) {
+      if (interactionRef.current.pointerMoved) {
+        if (interactionRef.current.dragHasCollision) {
+          const groupMap = interactionRef.current.draggingGroupPositions;
+          nodesRef.current = nodesRef.current.map((n) => {
+            const sp = groupMap.get(n.id);
+            if (!sp) return n;
+            return { ...n, x: sp.startX, y: sp.startY };
+          });
+          invalidateAllConveyorCaches();
+          playSynthSfx('error', settingsRef.current);
+          showToast('Buildings cannot overlap nodes, belts, or corner dots! Returned to start.');
+        } else if (preDragGraphRef.current) {
+          factoryHistory.pushSnapshot(
+            preDragGraphRef.current.nodes,
+            preDragGraphRef.current.connections,
+            `Move ${interactionRef.current.draggingGroupPositions.size} Buildings`
+          );
+          const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
+          nodesRef.current = simResult.nodes;
+          connectionsRef.current = simResult.connections;
+          onGraphMutated();
+        }
+      }
+      interactionRef.current.draggingGroupPositions = null;
+      interactionRef.current.draggingNodeId = null;
+      interactionRef.current.dragHasCollision = false;
+      interactionRef.current.activeGuidelines = [];
+      preDragGraphRef.current = null;
+      drawNowRef.current?.();
+      return;
+    }
+
     if (interactionRef.current.wiringFrom) {
       const wf = interactionRef.current.wiringFrom;
-      const targetPort = findPortAtWorld(world.x, world.y);
+      const targetPort = findPortAtWorld(
+        world.x,
+        world.y,
+        nodesRef.current,
+        cameraRef.current.zoom
+      );
       if (targetPort && targetPort.port.side === 'input') {
         tryCreateConnection(wf.nodeId, wf.port.id, targetPort.nodeId, targetPort.port.id);
         setTapSourcePort(null);
       }
       interactionRef.current.wiringFrom = null;
+      drawNowRef.current?.();
+    }
+
+    if (interactionRef.current.draggingWaypoint) {
+      const dw = interactionRef.current.draggingWaypoint;
+      if (interactionRef.current.pointerMoved && preDragGraphRef.current) {
+        if (!dw.isNew) {
+          factoryHistory.pushSnapshot(
+            preDragGraphRef.current.nodes,
+            preDragGraphRef.current.connections,
+            'Move Conveyor Corner'
+          );
+        }
+        const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
+        nodesRef.current = simResult.nodes;
+        connectionsRef.current = simResult.connections;
+        onGraphMutated();
+      } else if (!interactionRef.current.pointerMoved && !dw.isNew) {
+        // In the Corner Dot tool ('waypoint'), tapping an existing dot without dragging dismantles it!
+        if (activeToolRef.current === 'waypoint') {
+          factoryHistory.pushSnapshot(
+            nodesRef.current,
+            connectionsRef.current,
+            'Dismantle Conveyor Corner'
+          );
+          connectionsRef.current = connectionsRef.current.map((c) => {
+            if (c.id !== dw.connId) return c;
+            const nextWps = (c.waypoints ?? []).filter((_, idx) => idx !== dw.index);
+            return { ...c, waypoints: nextWps.length > 0 ? nextWps : undefined };
+          });
+          invalidateAllConveyorCaches();
+          const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
+          nodesRef.current = simResult.nodes;
+          connectionsRef.current = simResult.connections;
+          setSelectedWaypoint(null);
+          playSynthSfx('disconnect', settingsRef.current);
+          onGraphMutated();
+          showToast('Dismantled conveyor corner dot');
+        }
+      }
+      interactionRef.current.draggingWaypoint = null;
+      preDragGraphRef.current = null;
       drawNowRef.current?.();
     }
 
@@ -940,13 +1622,26 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             y: interactionRef.current.dragStartNodeY,
           };
         });
+        invalidateAllConveyorCaches();
         playSynthSfx('error', settingsRef.current);
         if (draggedNode?.buildingId === 'miner_mk1') {
           showToast('Miner Mk.1 must be positioned directly on top of an unoccupied Resource Deposit! (1 miner per deposit)');
         } else {
-          showToast('Buildings cannot overlap! Returned to original position.');
+          showToast('Buildings cannot overlap nodes, belts, or corner dots! Returned to original position.');
         }
       } else {
+        if (preDragGraphRef.current) {
+          const draggedNode = nodesRef.current.find((n) => n.id === draggedId);
+          const initialX = interactionRef.current.dragStartNodeX;
+          const initialY = interactionRef.current.dragStartNodeY;
+          if (draggedNode && (draggedNode.x !== initialX || draggedNode.y !== initialY)) {
+            factoryHistory.pushSnapshot(
+              preDragGraphRef.current.nodes,
+              preDragGraphRef.current.connections,
+              `Move ${BUILDINGS[draggedNode.buildingId]?.name ?? 'Machine'}`
+            );
+          }
+        }
         const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
         nodesRef.current = simResult.nodes;
         connectionsRef.current = simResult.connections;
@@ -958,6 +1653,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.dragHasCollision = false;
     interactionRef.current.draggingNodeId = null;
     interactionRef.current.isPanning = false;
+    preDragGraphRef.current = null;
     drawNowRef.current?.();
   };
 
@@ -979,6 +1675,60 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     interactionRef.current.smoothZoomAnchorY = my;
   };
 
+  const dismantleSelectedWaypoint = () => {
+    if (!selectedWaypoint) return;
+    const { connId, index } = selectedWaypoint;
+    factoryHistory.pushSnapshot(
+      nodesRef.current,
+      connectionsRef.current,
+      'Dismantle Conveyor Corner'
+    );
+    connectionsRef.current = connectionsRef.current.map((c) => {
+      if (c.id !== connId) return c;
+      const nextWps = (c.waypoints ?? []).filter((_, idx) => idx !== index);
+      return { ...c, waypoints: nextWps.length > 0 ? nextWps : undefined };
+    });
+    invalidateAllConveyorCaches();
+    const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
+    nodesRef.current = simResult.nodes;
+    connectionsRef.current = simResult.connections;
+    setSelectedWaypoint(null);
+    playSynthSfx('disconnect', settings);
+    onGraphMutated();
+    showToast('Dismantled conveyor corner dot');
+    drawNowRef.current?.();
+  };
+
+  const dismantleSelectedGroup = () => {
+    if (selectedNodeIds.length === 0) return;
+    const idsToRemove = new Set(
+      selectedNodeIds.filter((id) => {
+        const node = nodesRef.current.find((n) => n.id === id);
+        return node && node.buildingId !== 'resource_deposit' && !node.isWorldDeposit;
+      })
+    );
+    if (idsToRemove.size === 0) {
+      showToast('Natural resource deposits cannot be dismantled');
+      return;
+    }
+    factoryHistory.pushSnapshot(
+      nodesRef.current,
+      connectionsRef.current,
+      `Dismantle ${idsToRemove.size} Buildings`
+    );
+    nodesRef.current = nodesRef.current.filter((n) => !idsToRemove.has(n.id));
+    connectionsRef.current = connectionsRef.current.filter(
+      (c) => !idsToRemove.has(c.fromNodeId) && !idsToRemove.has(c.toNodeId)
+    );
+    setSelectedNodeIds([]);
+    setSelectedNodeId(null);
+    setSelectedNodeSnapshot(null);
+    playSynthSfx('disconnect', settings);
+    onGraphMutated();
+    showToast(`Dismantled ${idsToRemove.size} building${idsToRemove.size > 1 ? 's' : ''}`);
+    drawNowRef.current?.();
+  };
+
   return (
     <div className="relative w-full h-full overflow-hidden">
       <canvas
@@ -990,9 +1740,80 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         onPointerCancel={handlePointerUpOrCancel}
         onWheel={handleWheel}
         className={`w-full h-full block touch-none ${
-          pendingBuildId ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
+          pendingBuildId
+            ? 'cursor-crosshair'
+            : activeTool === 'move'
+            ? 'cursor-grab active:cursor-grabbing'
+            : activeTool === 'select'
+            ? 'cursor-crosshair'
+            : activeTool === 'waypoint'
+            ? 'cursor-crosshair'
+            : 'cursor-default'
         }`}
       />
+
+      {/* Selected Corner Dot Floating Action Bar (Mobile-first Touch Bar) */}
+      {mode === 'interactive' && selectedWaypoint && selectedNodeIds.length <= 1 && (
+        <div
+          style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0E1524]/95 border border-amber-500/80 shadow-2xl backdrop-blur-md"
+        >
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>CORNER #{selectedWaypoint.index + 1}</span>
+          </div>
+          <button
+            type="button"
+            onClick={dismantleSelectedWaypoint}
+            className="min-h-[38px] px-3 py-1.5 text-xs font-bold text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 rounded-lg active:scale-95 transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Dismantle Dot
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedWaypoint(null)}
+            className="min-h-[38px] px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg active:scale-95 transition-all"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
+      {/* Multi-Selection Floating Action Bar (Mobile-first Touch Bar) */}
+      {mode === 'interactive' && selectedNodeIds.length > 1 && (
+        <div
+          style={{ transform: `scale(${settings.uiScale})`, transformOrigin: 'top center' }}
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0E1524]/95 border border-amber-500/80 shadow-2xl backdrop-blur-md"
+        >
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-mono text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>{selectedNodeIds.length} SELECTED</span>
+          </div>
+          <button
+            type="button"
+            onClick={dismantleSelectedGroup}
+            className="min-h-[38px] px-3 py-1.5 text-xs font-bold text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 rounded-lg active:scale-95 transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Dismantle All
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedNodeIds([]);
+              setSelectedNodeId(null);
+            }}
+            className="min-h-[38px] px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg active:scale-95 transition-all"
+          >
+            Deselect
+          </button>
+        </div>
+      )}
 
       {/* Placement Mode Banner */}
       {mode === 'interactive' && pendingBuildId && BUILDINGS[pendingBuildId] && (
@@ -1044,6 +1865,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           settings={settings}
           onClose={() => setSelectedNodeId(null)}
           onSelectRecipe={(rId) => {
+            factoryHistory.pushSnapshot(
+              nodesRef.current,
+              connectionsRef.current,
+              'Change Recipe'
+            );
             nodesRef.current = nodesRef.current.map((n) =>
               n.id === selectedNodeSnapshot.id ? changeNodeRecipe(n, rId) : n
             );
@@ -1055,6 +1881,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             drawNowRef.current?.();
           }}
           onFlushBuffer={() => {
+            factoryHistory.pushSnapshot(
+              nodesRef.current,
+              connectionsRef.current,
+              'Flush Machine Storage'
+            );
             nodesRef.current = nodesRef.current.map((n) => {
               if (n.id !== selectedNodeSnapshot.id) return n;
               return {
@@ -1129,6 +1960,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             drawNowRef.current?.();
           }}
           onUpgradeConnectedBelts={(tier, shortLabel, capacityPerMin) => {
+            factoryHistory.pushSnapshot(
+              nodesRef.current,
+              connectionsRef.current,
+              `Upgrade Belts to ${shortLabel}`
+            );
             let count = 0;
             connectionsRef.current = connectionsRef.current.map((c) => {
               if (
@@ -1151,6 +1987,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             drawNowRef.current?.();
           }}
           onUnwireBelts={() => {
+            factoryHistory.pushSnapshot(
+              nodesRef.current,
+              connectionsRef.current,
+              'Disconnect Machine Belts'
+            );
             connectionsRef.current = connectionsRef.current.filter(
               (c) =>
                 c.fromNodeId !== selectedNodeSnapshot.id &&
@@ -1164,6 +2005,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           }}
           onDismantleNode={() => {
             const targetId = selectedNodeSnapshot.id;
+            factoryHistory.pushSnapshot(
+              nodesRef.current,
+              connectionsRef.current,
+              `Dismantle ${BUILDINGS[selectedNodeSnapshot.buildingId]?.name ?? 'Machine'}`
+            );
             nodesRef.current = nodesRef.current.filter((n) => n.id !== targetId);
             connectionsRef.current = connectionsRef.current.filter(
               (c) => c.fromNodeId !== targetId && c.toNodeId !== targetId
@@ -1176,6 +2022,109 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           }}
         />
       )}
+
+      {/* Selected Conveyor Belt Inspector Popover */}
+      {mode === 'interactive' &&
+        selectedConnectionSnapshot &&
+        !selectedNodeSnapshot && (
+          <BeltInspectorPanel
+            connection={selectedConnectionSnapshot}
+            nodes={nodesRef.current}
+            settings={settings}
+            onClose={() => setSelectedConnectionId(null)}
+            onUpgradeBeltTier={(tier, shortLabel, capacityPerMin) => {
+              factoryHistory.pushSnapshot(
+                nodesRef.current,
+                connectionsRef.current,
+                `Upgrade Belt to ${shortLabel}`
+              );
+              connectionsRef.current = connectionsRef.current.map((c) =>
+                c.id === selectedConnectionSnapshot.id
+                  ? upgradeConveyorBeltTier(c, tier)
+                  : c
+              );
+              const updated =
+                connectionsRef.current.find(
+                  (c) => c.id === selectedConnectionSnapshot.id
+                ) ?? null;
+              setSelectedConnectionSnapshot(
+                updated
+                  ? {
+                      ...updated,
+                      inFlightItems: updated.inFlightItems?.map((p) => ({
+                        ...p,
+                      })),
+                    }
+                  : null
+              );
+              playSynthSfx('place', settings);
+              onGraphMutated();
+              showToast(
+                `Upgraded belt to ${shortLabel} (${capacityPerMin}/m)`
+              );
+              drawNowRef.current?.();
+            }}
+            onClearBeltItems={() => {
+              factoryHistory.pushSnapshot(
+                nodesRef.current,
+                connectionsRef.current,
+                'Clear Belt Items'
+              );
+              connectionsRef.current = connectionsRef.current.map((c) =>
+                c.id === selectedConnectionSnapshot.id
+                  ? { ...c, inFlightItems: [], isBackedUp: false }
+                  : c
+              );
+              const updated =
+                connectionsRef.current.find(
+                  (c) => c.id === selectedConnectionSnapshot.id
+                ) ?? null;
+              setSelectedConnectionSnapshot(updated ? { ...updated } : null);
+              playSynthSfx('click', settings);
+              onGraphMutated();
+              showToast('Cleared in-transit items from conveyor belt');
+              drawNowRef.current?.();
+            }}
+            onResetWaypoints={() => {
+              factoryHistory.pushSnapshot(
+                nodesRef.current,
+                connectionsRef.current,
+                'Reset Conveyor Route'
+              );
+              connectionsRef.current = connectionsRef.current.map((c) =>
+                c.id === selectedConnectionSnapshot.id
+                  ? { ...c, waypoints: undefined }
+                  : c
+              );
+              invalidateAllConveyorCaches();
+              const updated =
+                connectionsRef.current.find(
+                  (c) => c.id === selectedConnectionSnapshot.id
+                ) ?? null;
+              setSelectedConnectionSnapshot(updated ? { ...updated } : null);
+              playSynthSfx('click', settings);
+              onGraphMutated();
+              showToast('Reset belt route to default orthogonal path');
+              drawNowRef.current?.();
+            }}
+            onDismantleBelt={() => {
+              const targetId = selectedConnectionSnapshot.id;
+              factoryHistory.pushSnapshot(
+                nodesRef.current,
+                connectionsRef.current,
+                'Dismantle Conveyor Belt'
+              );
+              connectionsRef.current = connectionsRef.current.filter(
+                (c) => c.id !== targetId
+              );
+              setSelectedConnectionId(null);
+              playSynthSfx('disconnect', settings);
+              onGraphMutated();
+              showToast('Conveyor belt dismantled');
+              drawNowRef.current?.();
+            }}
+          />
+        )}
 
       {statusToast && (
         <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-lg bg-[#131B2E] border border-[#26334D] text-xs text-slate-200 shadow-lg pointer-events-none whitespace-nowrap">

@@ -7,12 +7,15 @@ import {
   changeNodeRecipe,
   clampCameraToWorld,
   clampNodeToWorld,
+  computeConveyorPathWithWaypoints,
   computeFilletedConveyorPath,
   computeNodeSnapAlignment,
   computeOrthogonalConveyorPath,
   createConveyorConnection,
   createMachineNode,
   createStarterFactory,
+  distanceFromPointToPolyline,
+  distanceFromPointToSegment,
   doesPathIntersectNode,
   doNodesOverlap,
   ensureWorldDepositsPresent,
@@ -253,9 +256,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.16 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.16');
-  assert.equal(APP_BUILD_TAG, '0.0.16 dev build');
+test('version tracking matches 0.0.17 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.17');
+  assert.equal(APP_BUILD_TAG, '0.0.17 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -938,3 +941,364 @@ test('Miner Mk.1 strictly stops mining when moved away from Resource Deposit (0/
   assert.equal(migratedMiner.y, starterDep.y, 'Migrated Miner Mk.1 must snap concentrically to deposit Y');
 });
 
+test('distanceFromPointToSegment and distanceFromPointToPolyline accurately hit-test conveyor belt lines for direct in-world selection and upgrading', () => {
+  // Horizontal belt segment from (100, 200) to (300, 200)
+  assert.equal(distanceFromPointToSegment(200, 200, 100, 200, 300, 200), 0);
+  assert.equal(distanceFromPointToSegment(200, 208, 100, 200, 300, 200), 8);
+  assert.equal(distanceFromPointToSegment(50, 200, 100, 200, 300, 200), 50);
+
+  // Orthogonal multi-segment conveyor polyline
+  const beltPts = [
+    { x: 100, y: 200 },
+    { x: 250, y: 200 },
+    { x: 250, y: 350 },
+    { x: 400, y: 350 },
+  ];
+  assert.equal(distanceFromPointToPolyline(250, 275, beltPts), 0);
+  assert.equal(distanceFromPointToPolyline(256, 275, beltPts), 6);
+  assert.ok(distanceFromPointToPolyline(100, 350, beltPts) > 100);
+
+  // Upgrading a single selected belt in place preserves items in transit and updates capacity
+  const conn = createConveyorConnection('m1', 'm1_out_0', 's1', 's1_in_0', 1, 'belt_1');
+  conn.inFlightItems = [{ id: 'pkt_1', itemName: 'Iron Ore', distancePx: 36, stalled: false }];
+  const upgraded = upgradeConveyorBeltTier(conn, 3);
+  assert.equal(upgraded.beltTier, 3);
+  assert.equal(upgraded.maxCapacityPerMin, 270);
+  assert.equal(upgraded.inFlightItems?.length, 1);
+  assert.equal(upgraded.inFlightItems?.[0].distancePx, 36);
+});
+
+test('conveyor belts treat resource deposits as physical obstacles and route cleanly around them', () => {
+  // Scenario 1: A conveyor belt between a smelter and constructor with an intervening natural resource deposit
+  // Smelter right edge is at x = 100 + 268 = 368, y = 1000 + 96 = 1096
+  // Constructor input is at x = 900, y = 1000 + 96 = 1096
+  // Intervening resource deposit is at x = 450, y = 1000 (width: 268, height: 144)
+  const smelter = createMachineNode('smelter', 100, 1000, 'test_smelter');
+  const constructor = createMachineNode('constructor', 900, 1000, 'test_constructor');
+  const obstacleDeposit = createMachineNode('resource_deposit', 450, 1000, 'obs_deposit');
+
+  const p1 = getPortWorldPosition(smelter, 'output', 0, 1);
+  const p2 = getPortWorldPosition(constructor, 'input', 0, 1);
+
+  const beltPath = computeOrthogonalConveyorPath(
+    p1.x,
+    p1.y,
+    p2.x,
+    p2.y,
+    [smelter, obstacleDeposit, constructor],
+    smelter,
+    constructor
+  );
+
+  // The belt must NOT intersect the intervening resource deposit (with standard 12px clearance)
+  assert.equal(
+    doesPathIntersectNode(beltPath, obstacleDeposit, 12),
+    false,
+    'Belt must cleanly route around intervening resource deposit'
+  );
+  // Must be 90-degree orthogonal polyline
+  for (let i = 1; i < beltPath.length; i++) {
+    const isH = Math.abs(beltPath[i].y - beltPath[i - 1].y) < 1e-4;
+    const isV = Math.abs(beltPath[i].x - beltPath[i - 1].x) < 1e-4;
+    assert.ok(isH || isV, 'Each segment must be strictly orthogonal');
+  }
+
+  // Scenario 2: A Miner Mk.1 mounted directly on its own Resource Deposit
+  // The miner's exit belt can route outward without being blocked by its own base deposit
+  const minerDeposit = createMachineNode('resource_deposit', 2000, 1000, 'miner_dep');
+  const mountedMiner = createMachineNode('miner_mk1', 2000, 1000, 'miner_mk1');
+  const targetSmelter = createMachineNode('smelter', 2600, 1000, 'target_smelter');
+
+  const minerOut = getPortWorldPosition(mountedMiner, 'output', 0, 1);
+  const targetIn = getPortWorldPosition(targetSmelter, 'input', 0, 1);
+
+  const minerBelt = computeOrthogonalConveyorPath(
+    minerOut.x,
+    minerOut.y,
+    targetIn.x,
+    targetIn.y,
+    [minerDeposit, mountedMiner, targetSmelter],
+    mountedMiner,
+    targetSmelter
+  );
+
+  assert.ok(minerBelt.length >= 2, 'Miner belt must generate a valid path');
+  assert.equal(minerBelt[0].x, minerOut.x);
+  assert.equal(minerBelt[0].y, minerOut.y);
+  assert.equal(minerBelt[minerBelt.length - 1].x, targetIn.x);
+  assert.equal(minerBelt[minerBelt.length - 1].y, targetIn.y);
+
+  // Scenario 3: If an unrelated third-party deposit sits in front of the mounted miner,
+  // the belt routes around that third deposit while leaving the miner base cleanly
+  const thirdDeposit = createMachineNode('resource_deposit', 2350, 1000, 'third_dep');
+  const targetSmelterFar = createMachineNode('smelter', 2900, 1000, 'target_smelter_far');
+  const targetFarIn = getPortWorldPosition(targetSmelterFar, 'input', 0, 1);
+
+  const routedAroundThird = computeOrthogonalConveyorPath(
+    minerOut.x,
+    minerOut.y,
+    targetFarIn.x,
+    targetFarIn.y,
+    [minerDeposit, mountedMiner, thirdDeposit, targetSmelterFar],
+    mountedMiner,
+    targetSmelterFar
+  );
+
+  assert.equal(
+    doesPathIntersectNode(routedAroundThird, thirdDeposit, 12),
+    false,
+    'Belt from miner must route around the intervening third-party deposit'
+  );
+});
+
+test('Conveyor waypoints tool: computeConveyorPathWithWaypoints routes through user-placed points', () => {
+  const startX = 100;
+  const startY = 100;
+  const endX = 800;
+  const endY = 600;
+  const waypoints = [
+    { x: 300, y: 100 },
+    { x: 300, y: 400 },
+    { x: 600, y: 400 },
+  ];
+
+  const fullPath = computeConveyorPathWithWaypoints(
+    startX,
+    startY,
+    endX,
+    endY,
+    [],
+    undefined,
+    undefined,
+    waypoints
+  );
+
+  assert.ok(fullPath.length >= 4, 'Waypoints path must have multiple segments');
+  assert.equal(fullPath[0].x, startX);
+  assert.equal(fullPath[0].y, startY);
+  assert.equal(fullPath[fullPath.length - 1].x, endX);
+  assert.equal(fullPath[fullPath.length - 1].y, endY);
+
+  // Check each waypoint is visited along the orthogonal polyline route
+  for (const wp of waypoints) {
+    const dist = distanceFromPointToPolyline(wp.x, wp.y, fullPath);
+    assert.ok(dist <= 1e-3, `Conveyor belt must pass through waypoint (${wp.x}, ${wp.y}), dist was ${dist}`);
+  }
+});
+
+test('FactoryHistoryManager: handles undo, redo, subscriptions, and snapshots', async () => {
+  const { FactoryHistoryManager } = await import('./history');
+  const history = new FactoryHistoryManager(20);
+
+  let notifyCount = 0;
+  const unsub = history.subscribe(() => {
+    notifyCount++;
+  });
+
+  const nodeA = createMachineNode('constructor', 100, 100, 'node_a');
+  const nodeB = createMachineNode('smelter', 500, 100, 'node_b');
+  const conn1 = createConveyorConnection('node_a', nodeA.outputs[0].id, 'node_b', nodeB.inputs[0].id, 1);
+
+  assert.equal(history.canUndo(), false);
+  assert.equal(history.canRedo(), false);
+
+  // Push snapshot before adding smelter
+  history.pushSnapshot([nodeA], [], 'Place Smelter');
+  assert.equal(history.canUndo(), true);
+  assert.equal(history.getUndoDescription(), 'Place Smelter');
+  assert.equal(notifyCount, 1);
+
+  // Push snapshot before connecting belt
+  history.pushSnapshot([nodeA, nodeB], [], 'Connect Conveyor Mk.1');
+  assert.equal(history.getUndoDescription(), 'Connect Conveyor Mk.1');
+
+  // State after connecting belt has [nodeA, nodeB] and [conn1]
+  // Perform Undo: reverts to state before connecting belt (0 connections)
+  const undoRes1 = history.undo([nodeA, nodeB], [conn1]);
+  assert.ok(undoRes1);
+  assert.equal(undoRes1.connections.length, 0);
+  assert.equal(undoRes1.description, 'Connect Conveyor Mk.1');
+  assert.equal(history.canRedo(), true);
+  assert.equal(history.getRedoDescription(), 'Connect Conveyor Mk.1');
+
+  // Perform Redo: restores state with 1 connection
+  const redoRes1 = history.redo(undoRes1.nodes, undoRes1.connections);
+  assert.ok(redoRes1);
+  assert.equal(redoRes1.connections.length, 1);
+  assert.equal(history.canRedo(), false);
+
+  unsub();
+});
+
+test('25. computeConveyorPathWithWaypoints strictly enforces 90-degree corners at every waypoint dot', () => {
+  const startX = 100;
+  const startY = 200;
+  const endX = 500;
+  const endY = 200;
+  // Waypoint dot offset in Y (e.g. at (300, 350))
+  const waypoints = [{ x: 300, y: 350 }];
+  const path = computeConveyorPathWithWaypoints(startX, startY, endX, endY, waypoints);
+
+  assert.ok(path.length >= 4, `Expected at least 4 points in path, got ${path.length}`);
+  // The waypoint dot must be in the path
+  const containsWp = path.some((pt) => Math.abs(pt.x - 300) < 1e-4 && Math.abs(pt.y - 350) < 1e-4);
+  assert.ok(containsWp, 'Waypoint (300, 350) must be preserved in path');
+
+  // Verify all segments are orthogonal (strictly horizontal or vertical)
+  for (let i = 0; i < path.length - 1; i++) {
+    const dx = Math.abs(path[i + 1].x - path[i].x);
+    const dy = Math.abs(path[i + 1].y - path[i].y);
+    assert.ok(
+      dx < 1e-4 || dy < 1e-4,
+      `Segment ${i} -> ${i + 1} must be orthogonal: dx=${dx}, dy=${dy}`
+    );
+  }
+
+  // Verify the corner at the waypoint is exactly 90 degrees
+  const wpIndex = path.findIndex((pt) => Math.abs(pt.x - 300) < 1e-4 && Math.abs(pt.y - 350) < 1e-4);
+  assert.ok(wpIndex > 0 && wpIndex < path.length - 1, 'Waypoint must have incoming and outgoing segments');
+  const prev = path[wpIndex - 1];
+  const curr = path[wpIndex];
+  const next = path[wpIndex + 1];
+
+  const inIsHorizontal = Math.abs(curr.y - prev.y) < 1e-4;
+  const inIsVertical = Math.abs(curr.x - prev.x) < 1e-4;
+  const outIsHorizontal = Math.abs(next.y - curr.y) < 1e-4;
+  const outIsVertical = Math.abs(next.x - curr.x) < 1e-4;
+
+  assert.ok(
+    (inIsHorizontal && outIsVertical) || (inIsVertical && outIsHorizontal),
+    'Corner at waypoint must form a 90-degree perpendicular turn'
+  );
+});
+
+test('26. Multi-selection group dismantle correctly preserves natural resource deposits while dismantling machines', () => {
+  const starter = createStarterFactory();
+  const deposit = starter.nodes.find((n) => n.buildingId === 'resource_deposit')!;
+  const miner = createMachineNode('miner_mk1', deposit.x + 24, deposit.y + 40, 'miner_1');
+  const smelter = createMachineNode('smelter', 500, 100, 'smelter_1');
+  const conn = createConveyorConnection('miner_1', miner.outputs[0].id, 'smelter_1', smelter.inputs[0].id, 1);
+
+  const initialNodes = [deposit, miner, smelter];
+  const initialConns = [conn];
+
+  // User selects all 3 items (deposit, miner, smelter) and triggers dismantle
+  const selectedIds = [deposit.id, miner.id, smelter.id];
+  const idsToRemove = new Set(
+    selectedIds.filter((id) => {
+      const node = initialNodes.find((n) => n.id === id);
+      return node && node.buildingId !== 'resource_deposit' && !node.isWorldDeposit;
+    })
+  );
+
+  // Natural deposit must NOT be in idsToRemove
+  assert.ok(!idsToRemove.has(deposit.id), 'Deposit must not be dismantled');
+  assert.ok(idsToRemove.has(miner.id), 'Miner must be dismantled');
+  assert.ok(idsToRemove.has(smelter.id), 'Smelter must be dismantled');
+
+  const remainingNodes = initialNodes.filter((n) => !idsToRemove.has(n.id));
+  const remainingConns = initialConns.filter(
+    (c) => !idsToRemove.has(c.fromNodeId) && !idsToRemove.has(c.toNodeId)
+  );
+
+  assert.equal(remainingNodes.length, 1);
+  assert.equal(remainingNodes[0].id, deposit.id);
+  assert.equal(remainingConns.length, 0);
+});
+
+test('27. Belts with corner dots strictly avoid overlapping buildings and resource deposits', () => {
+  const fromSmelter = createMachineNode('smelter', 100, 200, 'smelter_src');
+  const toConstructor = createMachineNode('constructor', 900, 200, 'ctor_dst');
+  // Place an obstacle building directly in the corridor between the waypoint and destination
+  const blocker = createMachineNode('storage_container', 520, 300, 'blocker_box');
+
+  const p1 = getPortWorldPosition(fromSmelter, 'output', 0, fromSmelter.outputs.length);
+  const p2 = getPortWorldPosition(toConstructor, 'input', 0, toConstructor.inputs.length);
+
+  // Waypoint at (400, 360) — horizontal line to endStubX would pass straight through blocker (y: 300..440)
+  const waypoints = [{ x: 400, y: 360 }];
+  const path = computeConveyorPathWithWaypoints(
+    p1.x,
+    p1.y,
+    p2.x,
+    p2.y,
+    [fromSmelter, toConstructor, blocker],
+    fromSmelter,
+    toConstructor,
+    waypoints
+  );
+
+  // Verify the belt with corner dot routes cleanly around the blocker and never overlaps it
+  const intersectsBlocker = doesPathIntersectNode(path, blocker, 8);
+  assert.equal(
+    intersectsBlocker,
+    false,
+    'Expected belt with corner dot to route around obstacle building without overlapping it'
+  );
+});
+
+test('28. Miner on Resource Deposit connected to Smelter below with 2 corner dots (below and above Miner) routes with 0 overlaps and 0 180-degree extra belt spikes', () => {
+  const starter = createStarterFactory();
+  const deposit = starter.nodes.find((n) => n.buildingId === 'resource_deposit')!;
+  const miner = createMachineNode('miner_mk1', deposit.x, deposit.y, 'miner_src', 'mine_iron');
+  // Place Smelter below Miner Mk.1 just like the mobile screenshot
+  const smelter = createMachineNode(
+    'smelter',
+    deposit.x + 72,
+    deposit.y + 336,
+    'smelter_below',
+    'smelt_iron'
+  );
+
+  const p1 = getPortWorldPosition(miner, 'output', 0, miner.outputs.length);
+  const p2 = getPortWorldPosition(smelter, 'input', 0, smelter.inputs.length);
+
+  // Corner 1 below Miner Mk.1, Corner 2 above Miner Mk.1
+  const waypoints = [
+    { x: deposit.x + 144, y: deposit.y + 264 },
+    { x: deposit.x + 72, y: deposit.y - 24 },
+  ];
+
+  const path = computeConveyorPathWithWaypoints(
+    p1.x,
+    p1.y,
+    p2.x,
+    p2.y,
+    [deposit, miner, smelter],
+    miner,
+    smelter,
+    waypoints
+  );
+
+  const interiorPts = path.slice(1, path.length - 1);
+  assert.equal(
+    doesPathIntersectNode(interiorPts, miner, 6),
+    false,
+    'Interior belt path must never cut through Miner Mk.1'
+  );
+  assert.equal(
+    doesPathIntersectNode(interiorPts, deposit, 6),
+    false,
+    'Interior belt path must never cut through Iron Ore Deposit'
+  );
+  assert.equal(
+    doesPathIntersectNode(interiorPts, smelter, 6),
+    false,
+    'Interior belt path must never cut through Smelter'
+  );
+
+  // Verify zero 180-degree spikes / collinear reversals anywhere in the polyline
+  for (let i = 1; i < path.length - 1; i++) {
+    const prev = path[i - 1];
+    const curr = path[i];
+    const next = path[i + 1];
+    const inH = Math.abs(curr.y - prev.y) < 1e-3;
+    const inV = Math.abs(curr.x - prev.x) < 1e-3;
+    const outH = Math.abs(next.y - curr.y) < 1e-3;
+    const outV = Math.abs(next.x - curr.x) < 1e-3;
+    assert.ok(
+      (inH && outV) || (inV && outH),
+      `Vertex ${i} at (${curr.x},${curr.y}) must be a strict 90° turn, not a 180° spike`
+    );
+  }
+});

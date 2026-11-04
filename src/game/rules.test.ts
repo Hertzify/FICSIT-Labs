@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUILDING_LIST, CONVEYOR_BELT_TIERS } from './catalog';
+import { BUILDING_LIST, CONVEYOR_BELT_TIERS, PURITY_CONFIG } from './catalog';
 import { BUILDING_ICON_PATHS, ITEM_ICON_PATHS, getItemIconUrl } from './icons';
 import {
   canConnectPorts,
@@ -15,6 +15,7 @@ import {
   createStarterFactory,
   doesPathIntersectNode,
   doNodesOverlap,
+  ensureWorldDepositsPresent,
   findConveyorCrossings,
   getCachedConveyorRoute,
   getPortWorldPosition,
@@ -92,9 +93,14 @@ test('32 natural world resource deposits are scattered in clusters with Impure (
   const normalDep = deposits.find((d) => d.purity === 'normal')!;
   const pureDep = deposits.find((d) => d.purity === 'pure')!;
 
-  assert.equal(impureDep.outputs[0].actualRatePerMin, 30);
-  assert.equal(normalDep.outputs[0].actualRatePerMin, 60);
-  assert.equal(pureDep.outputs[0].actualRatePerMin, 120);
+  assert.equal(PURITY_CONFIG[impureDep.purity!].ratePerMin, 30);
+  assert.equal(PURITY_CONFIG[normalDep.purity!].ratePerMin, 60);
+  assert.equal(PURITY_CONFIG[pureDep.purity!].ratePerMin, 120);
+
+  // In Satisfactory, natural resource deposits have 0 conveyor ports (players build miners on top of them)
+  assert.equal(impureDep.outputs.length, 0);
+  assert.equal(normalDep.outputs.length, 0);
+  assert.equal(pureDep.outputs.length, 0);
 });
 
 test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/s) enforce tight 1.2m (18px) item spacing and travel pace', () => {
@@ -130,15 +136,17 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/
   const pureCopper = starter.nodes.find(
     (d) => d.buildingId === 'resource_deposit' && d.purity === 'pure' && d.recipeId === 'deposit_copper'
   )!;
-  // Place a Miner 450px away from the Pure Copper deposit (belt length ~ 197px = ~13.1m)
-  const miner = createMachineNode('miner_mk1', pureCopper.x + 450, pureCopper.y, 'distant_miner');
+  // In Satisfactory, place a Miner directly on top of the Pure Copper deposit!
+  const miner = createMachineNode('miner_mk1', pureCopper.x, pureCopper.y, 'pure_miner', 'mine_copper');
+  // Place a Smelter 450px away
+  const smelter = createMachineNode('smelter', pureCopper.x + 450, pureCopper.y, 'distant_smelter', 'smelt_copper');
 
   // Connect using a Mk.1 belt (60/min capacity, 1.2 m/s = 18 px/s speed)
   const mk1Conn = createConveyorConnection(
-    pureCopper.id,
-    pureCopper.outputs[0].id,
     miner.id,
-    miner.inputs[0].id,
+    miner.outputs[0].id,
+    smelter.id,
+    smelter.inputs[0].id,
     1,
     'conn_mk1_distant'
   );
@@ -147,7 +155,7 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/
   assert.equal(mk1Conn.firstItemArrived, false);
 
   // Step 3 seconds (54px traveled at 18px/s): 3 tightly squeezed items on belt, not arrived yet!
-  let simNodes = [pureCopper, miner];
+  let simNodes = [pureCopper, miner, smelter];
   let simConns = [mk1Conn];
   for (let i = 0; i < 3; i++) {
     const next = stepSimulation(simNodes, simConns, 1.0);
@@ -155,13 +163,13 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/
     simConns = next.connections;
   }
   const connEarly = simConns[0];
-  const minerEarly = simNodes.find((n) => n.id === miner.id)!;
+  const smelterEarly = simNodes.find((n) => n.id === smelter.id)!;
   assert.equal(connEarly.firstItemArrived, false);
   assert.equal(connEarly.ratePerMin, 0);
   assert.equal(connEarly.sourceRatePerMin, 60); // Capped by Mk.1 belt at 60/m even though deposit is Pure 120/m
   assert.ok((connEarly.inFlightItems?.length ?? 0) >= 3);
-  assert.equal(minerEarly.status, 'waiting');
-  assert.equal(minerEarly.outputs[0].actualRatePerMin, 0);
+  assert.equal(smelterEarly.status, 'waiting');
+  assert.equal(smelterEarly.inputs[0].bufferedCount, 0);
 
   // Step enough seconds for the leading packet to travel the full belt length at 18 px/s (1.2 m/s)
   for (let i = 0; i < 12; i++) {
@@ -171,10 +179,10 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/
   }
 
   const connArrived = simConns[0];
-  const minerArrived = simNodes.find((n) => n.id === miner.id)!;
+  const smelterArrived = simNodes.find((n) => n.id === smelter.id)!;
   assert.equal(connArrived.firstItemArrived, true);
   assert.equal(connArrived.ratePerMin, 60); // Mk.1 bottlenecked to 60/min
-  assert.equal(minerArrived.outputs[0].actualRatePerMin, 60);
+  assert.ok((smelterArrived.inputs[0].bufferedCount ?? 0) >= 1);
 
   // Upgrade the belt to Mk.2 (120/min capacity, 2.4 m/s = 36 px/s speed)
   const upgradedConn = upgradeConveyorBeltTier(connArrived, 2);
@@ -202,8 +210,9 @@ test('canConnectPorts and changeNodeRecipe work as expected', () => {
   const smelter = createMachineNode('smelter', 300, 0, 's1', 'smelt_iron');
   const nodes = [miner, smelter];
 
+  assert.equal(miner.inputs.length, 0);
   assert.equal(
-    canConnectPorts(nodes, [], miner.id, miner.outputs[0].id, miner.id, miner.inputs[0].id)
+    canConnectPorts(nodes, [], smelter.id, smelter.outputs[0].id, smelter.id, smelter.inputs[0].id)
       .valid,
     false
   );
@@ -268,6 +277,19 @@ test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule betw
     height: 140,
   });
   assert.equal(checkFree.valid, true);
+
+  // In Satisfactory, a Miner Mk.1 CAN be built directly on top of a Resource Deposit:
+  const deposit = createMachineNode('resource_deposit', 1000, 1000, 'deposit_ground');
+  const minerOnDeposit = createMachineNode('miner_mk1', 1000, 1000, 'miner_mounted');
+  const miner2OnDeposit = createMachineNode('miner_mk1', 1000, 1000, 'miner_second');
+  const smelterOnDeposit = createMachineNode('smelter', 1000, 1000, 'smelter_mounted');
+
+  // Miner on deposit is permitted!
+  assert.equal(isNodePositionValid([deposit], minerOnDeposit).valid, true);
+  // Smelter on deposit is blocked!
+  assert.equal(isNodePositionValid([deposit], smelterOnDeposit).valid, false);
+  // A second miner on an already occupied deposit is blocked!
+  assert.equal(isNodePositionValid([deposit, minerOnDeposit], miner2OnDeposit).valid, false);
 });
 
 test('computeOrthogonalConveyorPath produces clean 90-degree orthogonal routing and avoids obstacle nodes with clearance', () => {
@@ -499,60 +521,60 @@ test('belt transit state stays consistent during incremental node drags and fron
   for (let i = 0; i < 20; i++) {
     nodes = nodes.map((n) => (n.id === smelterId ? { ...n, x: n.x + 3 } : n));
     ({ nodes, connections } = stepSimulation(nodes, connections, 0.028));
-    const conn2 = connections.find((c) => c.id === 'conn_starter_2')!;
+    const conn1 = connections.find((c) => c.id === 'conn_starter_1')!;
     assert.equal(
-      conn2.firstItemArrived,
+      conn1.firstItemArrived,
       false,
       `Expected belt to be in transit on incremental drag step ${i + 1}`
     );
-    assert.equal(conn2.ratePerMin, 0);
+    assert.equal(conn1.ratePerMin, 0);
   }
 
   // 3. After sufficient travel time (~4 seconds for 60px at 18px/s), items reach the destination and resume 60/m
   for (let i = 0; i < 45; i++) {
     ({ nodes, connections } = stepSimulation(nodes, connections, 0.1));
   }
-  const settledConn2 = connections.find((c) => c.id === 'conn_starter_2')!;
-  assert.equal(settledConn2.firstItemArrived, true);
-  assert.equal(settledConn2.ratePerMin, 60);
+  const settledConn1 = connections.find((c) => c.id === 'conn_starter_1')!;
+  assert.equal(settledConn1.firstItemArrived, true);
+  assert.equal(settledConn1.ratePerMin, 60);
 });
 
 test('standardized port heights produce 100% straight 2-point horizontal belts across aligned buildings and starter chain', () => {
   const y = 2400;
-  const deposit = createMachineNode('resource_deposit', 240, y, 'dep');
-  const miner = createMachineNode('miner_mk1', 600, y, 'min');
-  const smelter = createMachineNode('smelter', 960, y, 'smelt');
-  const constructorNode = createMachineNode('constructor', 1320, y, 'const');
-  const storage = createMachineNode('storage_container', 1680, y, 'stor');
+  const miner = createMachineNode('miner_mk1', 240, y, 'min');
+  const smelter = createMachineNode('smelter', 600, y, 'smelt');
+  const constructorNode = createMachineNode('constructor', 960, y, 'const');
+  const storage = createMachineNode('storage_container', 1320, y, 'stor');
 
-  const dOut = getPortWorldPosition(deposit, 'output', 0, deposit.outputs.length);
-  const mIn = getPortWorldPosition(miner, 'input', 0, miner.inputs.length);
   const mOut = getPortWorldPosition(miner, 'output', 0, miner.outputs.length);
   const sIn = getPortWorldPosition(smelter, 'input', 0, smelter.inputs.length);
+  const sOut = getPortWorldPosition(smelter, 'output', 0, smelter.outputs.length);
   const cIn = getPortWorldPosition(constructorNode, 'input', 0, constructorNode.inputs.length);
+  const cOut = getPortWorldPosition(constructorNode, 'output', 0, constructorNode.outputs.length);
   const stIn = getPortWorldPosition(storage, 'input', 0, storage.inputs.length);
 
-  assert.equal(dOut.y, y + 96);
-  assert.equal(mIn.y, y + 96);
   assert.equal(mOut.y, y + 96);
   assert.equal(sIn.y, y + 96);
+  assert.equal(sOut.y, y + 96);
   assert.equal(cIn.y, y + 96);
+  assert.equal(cOut.y, y + 96);
   assert.equal(stIn.y, y + 96);
 
   const beltPts = computeOrthogonalConveyorPath(
-    dOut.x,
-    dOut.y,
-    mIn.x,
-    mIn.y,
-    [deposit, miner],
-    deposit,
-    miner
+    mOut.x,
+    mOut.y,
+    sIn.x,
+    sIn.y,
+    [miner, smelter],
+    miner,
+    smelter
   );
   assert.equal(beltPts.length, 2, 'Expected perfectly straight 2-point horizontal belt');
   assert.equal(beltPts[0].y, beltPts[1].y);
 
-  // Verify all 4 starter factory belts are 100% straight 2-point horizontal lines
+  // Verify all 3 starter factory belts are 100% straight 2-point horizontal lines
   const starter = createStarterFactory();
+  assert.equal(starter.connections.length, 3);
   for (const conn of starter.connections) {
     const fn = starter.nodes.find((n) => n.id === conn.fromNodeId)!;
     const tn = starter.nodes.find((n) => n.id === conn.toNodeId)!;
@@ -637,22 +659,28 @@ test('nodes maintain both input and output storages and belt items visually get 
   const deposit = createMachineNode('resource_deposit', 240, 2000, 'dep_iron', 'deposit_iron', {
     purity: 'normal',
   });
-  const miner = createMachineNode('miner_mk1', 648, 2000, 'miner_1', 'mine_iron');
-  const smelter = createMachineNode('smelter', 1056, 2000, 'smelter_1', 'smelt_iron');
+  const miner = createMachineNode('miner_mk1', 240, 2000, 'miner_1', 'mine_iron');
+  const smelter = createMachineNode('smelter', 648, 2000, 'smelter_1', 'smelt_iron');
   const assembler = createMachineNode(
     'assembler',
-    1464,
+    1056,
     2000,
     'assembler_1',
     'assemble_reinforced_plate'
   );
 
-  // Verify both input and output storage capacities on nodes
-  assert.equal(miner.inputs[0].maxBuffer, 100);
+  // In Satisfactory Option A and C:
+  // Resource deposit is a ground feature with 0 conveyor ports
+  assert.equal(deposit.inputs.length, 0);
+  assert.equal(deposit.outputs.length, 0);
+
+  // Miner sits directly on top of deposit with 0 inputs and 1 output storage buffer
+  assert.equal(miner.inputs.length, 0);
+  assert.equal(miner.maxInputStoredCount, 0);
   assert.equal(miner.outputs[0].maxBuffer, 100);
-  assert.equal(miner.maxInputStoredCount, 100);
   assert.equal(miner.maxStoredCount, 100);
 
+  // Processors maintain dual input and output storages
   assert.equal(smelter.inputs[0].maxBuffer, 100);
   assert.equal(smelter.outputs[0].maxBuffer, 100);
   assert.equal(smelter.maxInputStoredCount, 100);
@@ -664,14 +692,6 @@ test('nodes maintain both input and output storages and belt items visually get 
   assert.equal(assembler.maxInputStoredCount, 700);
   assert.equal(assembler.maxStoredCount, 100);
 
-  const connDepToMiner = createConveyorConnection(
-    deposit.id,
-    deposit.outputs[0].id,
-    miner.id,
-    miner.inputs[0].id,
-    1,
-    'conn_dep_miner'
-  );
   const connMinerToSmelter = createConveyorConnection(
     miner.id,
     miner.outputs[0].id,
@@ -689,7 +709,6 @@ test('nodes maintain both input and output storages and belt items visually get 
 
   let simNodes: MachineNode[] = [deposit, miner, smelter];
   let simConns: ConveyorConnection[] = [
-    { ...connDepToMiner, firstItemArrived: true, inFlightItems: undefined },
     { ...connMinerToSmelter, firstItemArrived: true, inFlightItems: undefined },
   ];
 
@@ -809,6 +828,113 @@ test('nodes maintain both input and output storages and belt items visually get 
   );
 });
 
+test('Miner Mk.1 strictly stops mining when moved away from Resource Deposit (0/m extraction, starved status, no wireless mining)', () => {
+  const deposit = createMachineNode('resource_deposit', 1000, 1000, 'deposit_node');
+  deposit.purity = 'normal'; // 60/m
 
+  // 1. Miner placed directly on top of the deposit
+  const minerOn = createMachineNode('miner_mk1', 1000, 1000, 'miner_active');
+  const smelter = createMachineNode('smelter', 1400, 1000, 'smelter_target');
+  const belt = createConveyorConnection(
+    minerOn.id,
+    minerOn.outputs[0].id,
+    smelter.id,
+    smelter.inputs[0].id,
+    1,
+    'belt_active'
+  );
 
+  // Position is valid when sitting on the deposit
+  assert.equal(isNodePositionValid([deposit], minerOn).valid, true);
+
+  // Simulate on deposit: miner extracts at 60/m, optimal status
+  const simMounted = stepSimulation([deposit, minerOn, smelter], [belt], 1.0);
+  const mountedMiner = simMounted.nodes.find((n) => n.id === minerOn.id)!;
+  assert.equal(mountedMiner.outputs[0].targetRatePerMin, 60);
+  assert.equal(mountedMiner.outputs[0].actualRatePerMin, 60);
+  assert.equal(mountedMiner.status, 'optimal');
+  assert.equal(mountedMiner.efficiency, 100);
+
+  // 2. Miner moved away from the deposit onto bare ground
+  const minerOff = { ...minerOn, x: 2000, y: 2000, storedCount: 0 };
+  const beltOff = createConveyorConnection(
+    minerOff.id,
+    minerOff.outputs[0].id,
+    smelter.id,
+    smelter.inputs[0].id,
+    1,
+    'belt_unmounted'
+  );
+
+  // Moving miner off deposit is blocked when deposits exist in world
+  assert.equal(
+    isNodePositionValid([deposit], minerOff).valid,
+    false,
+    'Miner Mk.1 must not be valid on bare terrain when deposits exist'
+  );
+
+  // Simulate unmounted miner: rate drops to 0/m, status becomes starved, 0% efficiency
+  const simUnmounted = stepSimulation([deposit, minerOff, smelter], [beltOff], 1.0);
+  const unmountedMiner = simUnmounted.nodes.find((n) => n.id === minerOff.id)!;
+  assert.equal(
+    unmountedMiner.outputs[0].targetRatePerMin,
+    0,
+    'Target extraction rate must drop to 0 when miner is off deposit'
+  );
+  assert.equal(
+    unmountedMiner.outputs[0].actualRatePerMin,
+    0,
+    'Actual extraction rate must drop to 0 when buffer is empty and off deposit'
+  );
+  assert.equal(unmountedMiner.status, 'starved');
+  assert.equal(unmountedMiner.efficiency, 0);
+  assert.equal(unmountedMiner.progress, 0);
+
+  // 3. Miner placed slightly offset from deposit (e.g. shifted 80px off-center)
+  const minerOffset = { ...minerOn, x: 1000, y: 920, storedCount: 0 };
+  assert.equal(
+    isNodePositionValid([deposit], minerOffset).valid,
+    false,
+    'Miner Mk.1 must be directly and concentrically on top of deposit, not hovering offset'
+  );
+
+  const simOffset = stepSimulation([deposit, minerOffset, smelter], [belt], 1.0);
+  const offsetMiner = simOffset.nodes.find((n) => n.id === minerOffset.id)!;
+  assert.equal(offsetMiner.outputs[0].targetRatePerMin, 0);
+  assert.equal(offsetMiner.status, 'starved');
+  assert.equal(offsetMiner.efficiency, 0);
+
+  // 4. Exactly 1 miner per deposit constraint
+  const minerSecond = createMachineNode('miner_mk1', 1000, 1000, 'miner_second_attempt');
+  assert.equal(
+    isNodePositionValid([deposit, minerOn], minerSecond).valid,
+    false,
+    'Resource Deposit can only hold 1 miner'
+  );
+
+  // 5. Legacy save migration strips leftover Miner Mk.1 input ports and snaps offset miners concentrically onto deposit
+  const legacySavedMiner: MachineNode = {
+    ...minerOn,
+    id: 'starter_miner',
+    x: 2544,
+    y: 2636, // 148px above starter_deposit (2544, 2784)
+    inputs: [
+      {
+        id: 'legacy_in_0',
+        index: 0,
+        side: 'input',
+        label: 'Iron Ore',
+        itemName: 'Iron Ore',
+        targetRatePerMin: 60,
+        actualRatePerMin: 0,
+      },
+    ],
+  };
+  const migratedNodes = ensureWorldDepositsPresent([legacySavedMiner]);
+  const migratedMiner = migratedNodes.find((n) => n.id === 'starter_miner')!;
+  const starterDep = migratedNodes.find((n) => n.id === 'starter_deposit')!;
+  assert.equal(migratedMiner.inputs.length, 0, 'Migrated Miner Mk.1 must have 0 input ports');
+  assert.equal(migratedMiner.x, starterDep.x, 'Migrated Miner Mk.1 must snap concentrically to deposit X');
+  assert.equal(migratedMiner.y, starterDep.y, 'Migrated Miner Mk.1 must snap concentrically to deposit Y');
+});
 

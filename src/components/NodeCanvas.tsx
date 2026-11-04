@@ -20,6 +20,7 @@ import {
   SnapGuideline,
   stepSimulation,
   upgradeConveyorBeltTier,
+  isMinerDirectlyOnDeposit,
 } from '../game/rules';
 import {
   CameraState,
@@ -462,9 +463,19 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   const findNodeAtWorld = (wx: number, wy: number): MachineNode | null => {
     const macro = isMacroIconZoom(cameraRef.current.zoom);
+    // Pass 1: Check non-deposit factory buildings first (so a Miner Mk.1 mounted on a deposit is always hit first!)
     for (let i = nodesRef.current.length - 1; i >= 0; i--) {
       const n = nodesRef.current[i];
-      if (macro && n.buildingId === 'resource_deposit') {
+      if (n.buildingId === 'resource_deposit') continue;
+      if (wx >= n.x && wx <= n.x + n.width && wy >= n.y && wy <= n.y + n.height) {
+        return n;
+      }
+    }
+    // Pass 2: Check natural ground resource deposits
+    for (let i = nodesRef.current.length - 1; i >= 0; i--) {
+      const n = nodesRef.current[i];
+      if (n.buildingId !== 'resource_deposit') continue;
+      if (macro) {
         const cx = n.x + n.width * 0.5;
         const cy = n.y + n.height * 0.5;
         if (Math.hypot(wx - cx, wy - cy) <= 125) {
@@ -566,6 +577,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const clamped = clampNodeToWorld(snapRes.x, snapRes.y, bDef.width, bDef.height);
         const candidateNode = {
           id: 'candidate',
+          buildingId: bId,
           x: clamped.x,
           y: clamped.y,
           width: bDef.width,
@@ -575,7 +587,30 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         const nodeCheck = isNodePositionValid(nodesRef.current, candidateNode, 4);
         if (!nodeCheck.valid) {
           playSynthSfx('error', settingsRef.current);
-          showToast('Cannot place: Overlaps existing building!');
+          if (bId === 'miner_mk1') {
+            const anyDepositNear = nodesRef.current.find(
+              (n) =>
+                n.buildingId === 'resource_deposit' &&
+                Math.hypot(
+                  world.x - (n.x + n.width * 0.5),
+                  world.y - (n.y + n.height * 0.5)
+                ) <= 160
+            );
+            if (anyDepositNear) {
+              const alreadyHasMiner = nodesRef.current.some(
+                (m) =>
+                  m.buildingId === 'miner_mk1' &&
+                  isMinerDirectlyOnDeposit(m, anyDepositNear, 24)
+              );
+              if (alreadyHasMiner) {
+                showToast('This Resource Deposit already holds a Miner Mk.1! (Limit: 1 per deposit)');
+                return;
+              }
+            }
+            showToast('Miner Mk.1 must be built directly on top of an unoccupied Resource Deposit!');
+          } else {
+            showToast('Cannot place: Overlaps existing building!');
+          }
           return;
         }
 
@@ -896,6 +931,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     if (interactionRef.current.draggingNodeId && interactionRef.current.pointerMoved) {
       const draggedId = interactionRef.current.draggingNodeId;
       if (interactionRef.current.dragHasCollision) {
+        const draggedNode = nodesRef.current.find((n) => n.id === draggedId);
         nodesRef.current = nodesRef.current.map((n) => {
           if (n.id !== draggedId) return n;
           return {
@@ -905,7 +941,11 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           };
         });
         playSynthSfx('error', settingsRef.current);
-        showToast('Buildings cannot overlap! Returned to original position.');
+        if (draggedNode?.buildingId === 'miner_mk1') {
+          showToast('Miner Mk.1 must be positioned directly on top of an unoccupied Resource Deposit! (1 miner per deposit)');
+        } else {
+          showToast('Buildings cannot overlap! Returned to original position.');
+        }
       } else {
         const simResult = stepSimulation(nodesRef.current, connectionsRef.current, 0);
         nodesRef.current = simResult.nodes;
@@ -1000,6 +1040,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         <NodeInspectorPanel
           node={selectedNodeSnapshot}
           connections={connectionsRef.current}
+          nodes={nodesRef.current}
           settings={settings}
           onClose={() => setSelectedNodeId(null)}
           onSelectRecipe={(rId) => {

@@ -15,10 +15,12 @@ import {
   MachineNode,
   SettingsConfig,
 } from '../game/types';
+import { doNodesOverlap, isMinerDirectlyOnDeposit } from '../game/geometry';
 
 interface NodeInspectorPanelProps {
   node: MachineNode;
   connections: ConveyorConnection[];
+  nodes?: MachineNode[];
   settings: SettingsConfig;
   onClose: () => void;
   onSelectRecipe: (recipeId: string) => void;
@@ -34,6 +36,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
   ({
     node,
     connections,
+    nodes = [],
     settings,
     onClose,
     onSelectRecipe,
@@ -49,6 +52,10 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
 
     const isWorldDeposit =
       node.buildingId === 'resource_deposit' || Boolean(node.isWorldDeposit);
+    const underlyingDeposit =
+      node.buildingId === 'miner_mk1'
+        ? nodes.find((n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(node, n, 4))
+        : undefined;
     const iconUrl = getBuildingIconUrl(node.buildingId, node.recipeId);
     const attachedConns = connections.filter(
       (c) => c.fromNodeId === node.id || c.toNodeId === node.id
@@ -86,6 +93,48 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
             ✕
           </button>
         </div>
+
+        {node.buildingId === 'miner_mk1' && (
+          <div className="mt-2.5">
+            {underlyingDeposit ? (
+              (() => {
+                const purityKey = underlyingDeposit.purity ?? 'normal';
+                const pCfg = PURITY_CONFIG[purityKey];
+                return (
+                  <div className="p-2 rounded-xl bg-teal-950/40 border border-teal-500/40 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold text-teal-300 flex items-center gap-1.5 truncate">
+                        <span>●</span>
+                        <span className="truncate">Clamped to {underlyingDeposit.title}</span>
+                      </div>
+                      <div className="text-[10px] text-teal-400/80">
+                        Deposit Purity: {pCfg.label} ({pCfg.multiplier}×)
+                      </div>
+                    </div>
+                    <span
+                      className="px-2 py-0.5 rounded text-[10px] font-mono font-bold whitespace-nowrap shrink-0"
+                      style={{
+                        backgroundColor: `${pCfg.badgeColor}22`,
+                        color: pCfg.badgeColor,
+                        border: `1px solid ${pCfg.badgeColor}66`,
+                      }}
+                    >
+                      {pCfg.ratePerMin}/m
+                    </span>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="p-2 rounded-xl bg-rose-950/50 border border-rose-500/50 flex items-center gap-2 text-rose-300">
+                <span className="text-base shrink-0">⚠️</span>
+                <div className="min-w-0 text-[11px] leading-snug">
+                  <div className="font-bold text-rose-200">Unmounted: No Deposit</div>
+                  <div className="text-rose-400 text-[10px]">Must sit on a Resource Deposit to extract ore!</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {isWorldDeposit ? (
           <div className="mt-2.5 space-y-2">
@@ -130,12 +179,13 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
               );
             })()}
             <p className="text-[11px] text-slate-400 leading-snug">
-              Fixed planetary deposit. Connect its output port to a{' '}
-              <strong className="text-slate-200">Miner Mk.1</strong> to extract ore.
+              Natural planetary resource deposit. Build a{' '}
+              <strong className="text-slate-200">Miner Mk.1</strong> directly on top of this deposit to extract ore according to node purity.
             </p>
           </div>
         ) : (
-          buildingDef.availableRecipeIds.length > 0 && (
+          buildingDef.availableRecipeIds.length > 0 &&
+          node.buildingId !== 'miner_mk1' && (
             <div className="mt-2">
               <label className="block text-[11px] font-medium text-slate-300 mb-1">
                 Active Machine Recipe
@@ -184,7 +234,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
           <div className="mt-2 pt-2 border-t border-[#26334D] space-y-1.5">
             <div className="flex items-center justify-between gap-1">
               <span className="text-[11px] font-medium text-slate-300">
-                Input & Output Storage
+                {node.inputs.length === 0 ? 'Storage Buffer' : 'Input & Output Storage'}
               </span>
               <div className="flex items-center gap-1">
                 {onFillInputBuffer && node.inputs.length > 0 && (
@@ -202,9 +252,9 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                     type="button"
                     onClick={onFillOutputBuffer}
                     className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-teal-300 border border-teal-500/30"
-                    title="Fill output storage to 100%"
+                    title="Fill storage to 100%"
                   >
-                    Fill Out
+                    {node.inputs.length === 0 ? 'Fill Storage' : 'Fill Out'}
                   </button>
                 )}
                 {(node.storedCount > 0.5 ||
@@ -323,7 +373,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                         />
                       )}
                       <span className="truncate">
-                        Out Storage: {activeItemName}
+                        {node.inputs.length === 0 ? 'Storage' : 'Out Storage'}: {activeItemName}
                       </span>
                     </span>
                     <span

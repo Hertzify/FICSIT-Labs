@@ -95,19 +95,33 @@ export function loadSaveSlots(): SaveSlot[] {
         let finalCamera = slot.camera;
         if (legacyMiner) {
           const offsets: Record<string, { x: number; y: number }> = {
-            starter_miner: { x: 2544 + 336, y: 2784 },
-            starter_smelter: { x: 2544 + 696, y: 2784 },
-            starter_constructor: { x: 2544 + 1056, y: 2784 },
-            starter_hub: { x: 2544 + 1416, y: 2808 },
+            starter_miner: { x: 2544, y: 2784 },
+            starter_smelter: { x: 2544 + 408, y: 2784 },
+            starter_constructor: { x: 2544 + 816, y: 2784 },
+            starter_hub: { x: 2544 + 1224, y: 2808 },
           };
           finalNodes = syncedNodes.map((n) =>
             offsets[n.id] ? { ...n, x: offsets[n.id].x, y: offsets[n.id].y } : n
           );
           finalCamera = { x: -1820, y: -1920, zoom: 0.74 };
         }
+
+        const nodeById = new Map(finalNodes.map((n) => [n.id, n]));
+        const validConns = (slot.connections ?? []).filter((c) => {
+          const fromN = nodeById.get(c.fromNodeId);
+          const toN = nodeById.get(c.toNodeId);
+          if (!fromN || !toN) return false;
+          if (fromN.buildingId === 'resource_deposit' || toN.buildingId === 'miner_mk1') {
+            return false;
+          }
+          return true;
+        });
+
+        const sim = stepSimulation(finalNodes, validConns, 0.016);
         return {
           ...slot,
-          nodes: finalNodes,
+          nodes: sim.nodes,
+          connections: sim.connections,
           camera: finalCamera,
         };
       })

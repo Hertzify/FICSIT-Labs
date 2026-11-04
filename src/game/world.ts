@@ -214,18 +214,27 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
           width: syncedWidth,
           height: syncedHeight,
           isWorldDeposit: true,
+          inputs: [],
+          outputs: [],
+          inputStoredCount: 0,
+          maxInputStoredCount: 0,
         };
       }
     }
+
+    // In Satisfactory, Miner Mk.1 has 0 input ports and only 1 output storage buffer!
+    const sanitizedInputs =
+      n.buildingId === 'miner_mk1' || n.buildingId === 'resource_deposit' ? [] : n.inputs;
+
     // Migrate legacy starter_hub y=2772 to 2808 so its input port aligns straight with starter_constructor
     const migratedY = n.id === 'starter_hub' && n.y === 2772 ? 2808 : n.y;
     const maxStoredCount = getBuildingMaxStorage(
       n.buildingId,
       n.recipeId,
-      n.outputs[0]?.itemName ?? n.inputs[0]?.itemName ?? null
+      n.outputs[0]?.itemName ?? sanitizedInputs[0]?.itemName ?? null
     );
-    const maxInputStoredCount = n.inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0);
-    const inputStoredCount = n.inputs.reduce(
+    const maxInputStoredCount = sanitizedInputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0);
+    const inputStoredCount = sanitizedInputs.reduce(
       (acc, p) => acc + Math.min(p.maxBuffer ?? 100, Math.max(0, p.bufferedCount ?? 0)),
       0
     );
@@ -234,6 +243,7 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
       y: migratedY,
       width: syncedWidth,
       height: syncedHeight,
+      inputs: sanitizedInputs,
       inputStoredCount,
       maxInputStoredCount,
       maxStoredCount,
@@ -253,6 +263,59 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
       );
     }
   }
+
+  // Ensure every Miner Mk.1 is concentrically mounted on an unoccupied Resource Deposit (limit: 1 miner per deposit)
+  const deposits = result.filter((n) => n.buildingId === 'resource_deposit');
+  const claimedDepositIds = new Set<string>();
+
+  // Pass 1: Lock miners that are already concentrically mounted on a deposit
+  for (const node of result) {
+    if (node.buildingId !== 'miner_mk1') continue;
+    const directDep = deposits.find(
+      (d) =>
+        !claimedDepositIds.has(d.id) &&
+        Math.abs(node.x - d.x) <= 4 &&
+        Math.abs(node.y - d.y) <= 4
+    );
+    if (directDep) {
+      node.x = directDep.x;
+      node.y = directDep.y;
+      claimedDepositIds.add(directDep.id);
+    }
+  }
+
+  // Pass 2: Snap any offset/displaced miner onto the nearest unoccupied deposit within range
+  for (const node of result) {
+    if (node.buildingId !== 'miner_mk1') continue;
+    const isAlreadyMounted = deposits.some(
+      (d) => claimedDepositIds.has(d.id) && node.x === d.x && node.y === d.y
+    );
+    if (isAlreadyMounted) continue;
+
+    let bestDep: MachineNode | null = null;
+    let bestDist = Infinity;
+    for (const d of deposits) {
+      if (claimedDepositIds.has(d.id)) continue;
+      const dist = Math.hypot(node.x - d.x, node.y - d.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestDep = d;
+      }
+    }
+    if (bestDep && (bestDist <= 600 || node.id === 'starter_miner')) {
+      node.x = bestDep.x;
+      node.y = bestDep.y;
+      claimedDepositIds.add(bestDep.id);
+    }
+  }
+
+  // Always order ground resource deposits first so mounted miners render and hit-test cleanly on top
+  result.sort((a, b) => {
+    if (a.buildingId === 'resource_deposit' && b.buildingId !== 'resource_deposit') return -1;
+    if (a.buildingId !== 'resource_deposit' && b.buildingId === 'resource_deposit') return 1;
+    return 0;
+  });
+
   return result;
 }
 
@@ -328,40 +391,29 @@ export function createStarterFactory(): {
   const baseX = starterDeposit.x;
   const baseY = starterDeposit.y;
 
-  const miner = createMachineNode('miner_mk1', baseX + 408, baseY, 'starter_miner', 'mine_iron');
+  // In Satisfactory, Miner Mk.1 is built directly ON TOP of the planetary Resource Deposit!
+  const miner = createMachineNode('miner_mk1', baseX, baseY, 'starter_miner', 'mine_iron');
   const smelter = createMachineNode(
     'smelter',
-    baseX + 816,
+    baseX + 408,
     baseY,
     'starter_smelter',
     'smelt_iron'
   );
   const constructorNode = createMachineNode(
     'constructor',
-    baseX + 1224,
+    baseX + 816,
     baseY,
     'starter_constructor',
     'construct_iron_plate'
   );
   // Place starter_hub at baseY + 24 so its Input 1 (+72px) sits at baseY + 96px,
   // forming a 100% straight horizontal conveyor belt from starter_constructor!
-  const hub = createMachineNode('the_hub', baseX + 1632, baseY + 24, 'starter_hub', null);
+  const hub = createMachineNode('the_hub', baseX + 1224, baseY + 24, 'starter_hub', null);
 
   const rawConns: ConveyorConnection[] = [
     {
       id: 'conn_starter_1',
-      fromNodeId: starterDeposit.id,
-      fromPortId: starterDeposit.outputs[0].id,
-      toNodeId: miner.id,
-      toPortId: miner.inputs[0].id,
-      beltTier: 1,
-      itemName: 'Iron Ore',
-      ratePerMin: 60,
-      maxCapacityPerMin: 60,
-      firstItemArrived: true,
-    },
-    {
-      id: 'conn_starter_2',
       fromNodeId: miner.id,
       fromPortId: miner.outputs[0].id,
       toNodeId: smelter.id,
@@ -373,7 +425,7 @@ export function createStarterFactory(): {
       firstItemArrived: true,
     },
     {
-      id: 'conn_starter_3',
+      id: 'conn_starter_2',
       fromNodeId: smelter.id,
       fromPortId: smelter.outputs[0].id,
       toNodeId: constructorNode.id,
@@ -385,7 +437,7 @@ export function createStarterFactory(): {
       firstItemArrived: true,
     },
     {
-      id: 'conn_starter_4',
+      id: 'conn_starter_3',
       fromNodeId: constructorNode.id,
       fromPortId: constructorNode.outputs[0].id,
       toNodeId: hub.id,

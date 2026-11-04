@@ -55,16 +55,83 @@ export function doNodesOverlap(
 }
 
 /**
+ * In Satisfactory, a Miner Mk.1 mounts directly and concentrically on top of a Resource Deposit (1:1 footprint).
+ * It cannot slide off-center or hover partially on bare terrain.
+ */
+export function isMinerDirectlyOnDeposit(
+  miner: { x: number; y: number; width: number; height: number },
+  deposit: { x: number; y: number; width: number; height: number },
+  tolerancePx = 4
+): boolean {
+  const expectedX = deposit.x + Math.round((deposit.width - miner.width) * 0.5);
+  const expectedY = deposit.y + Math.round((deposit.height - miner.height) * 0.5);
+  return (
+    Math.abs(miner.x - expectedX) <= tolerancePx &&
+    Math.abs(miner.y - expectedY) <= tolerancePx
+  );
+}
+
+/**
  * Validates whether a candidate node position is free of overlap with any existing nodes.
  */
 export function isNodePositionValid(
   nodes: MachineNode[],
-  candidate: { x: number; y: number; width: number; height: number; id?: string },
+  candidate: { x: number; y: number; width: number; height: number; id?: string; buildingId?: string },
   padding = 0
-): { valid: boolean; collidingNode?: MachineNode } {
+): { valid: boolean; collidingNode?: MachineNode; reason?: string } {
+  const hasWorldDeposits = nodes.some((n) => n.buildingId === 'resource_deposit');
+
+  // Rule 1: In Satisfactory, a Miner Mk.1 MUST be positioned directly on top of an unoccupied Resource Deposit!
+  if (candidate.buildingId === 'miner_mk1' && hasWorldDeposits) {
+    const directDeposit = nodes.find(
+      (n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(candidate, n, 4)
+    );
+    if (!directDeposit) {
+      return { valid: false, reason: 'not_directly_on_deposit' };
+    }
+
+    // A deposit should only hold 1 miner!
+    const hasOtherMiner = nodes.some(
+      (other) =>
+        other.buildingId === 'miner_mk1' &&
+        other.id !== candidate.id &&
+        isMinerDirectlyOnDeposit(other, directDeposit, 16)
+    );
+    if (hasOtherMiner) {
+      return { valid: false, collidingNode: directDeposit, reason: 'deposit_already_occupied' };
+    }
+  }
+
   for (const node of nodes) {
     if (candidate.id && node.id === candidate.id) continue;
     if (doNodesOverlap(candidate, node, padding)) {
+      // In Satisfactory, Miners are built directly ON TOP of natural Resource Deposits!
+      const isMinerOnDeposit =
+        (candidate.buildingId === 'miner_mk1' && node.buildingId === 'resource_deposit') ||
+        (candidate.buildingId === 'resource_deposit' && node.buildingId === 'miner_mk1');
+
+      if (isMinerOnDeposit) {
+        const depositNode = candidate.buildingId === 'resource_deposit' ? candidate : node;
+        const minerNode = candidate.buildingId === 'miner_mk1' ? candidate : node;
+
+        // Verify the miner is directly on top of the deposit (not offset)
+        if (!isMinerDirectlyOnDeposit(minerNode, depositNode, 4)) {
+          return { valid: false, collidingNode: node, reason: 'miner_not_centered_on_deposit' };
+        }
+
+        // Verify that NO other miner is already placed on this deposit (only 1 miner per deposit)
+        const hasOtherMiner = nodes.some(
+          (n) =>
+            n.buildingId === 'miner_mk1' &&
+            n.id !== minerNode.id &&
+            isMinerDirectlyOnDeposit(n, depositNode, 16)
+        );
+        if (!hasOtherMiner) {
+          // Valid placement: exactly 1 miner mounts directly on the resource deposit!
+          continue;
+        }
+      }
+
       return { valid: false, collidingNode: node };
     }
   }
@@ -168,10 +235,13 @@ export function computeOrthogonalConveyorPath(
   const CLEARANCE = 12;
   const STUB = 22;
 
+  // Flat geological resource deposits sit in the ground bedrock and do not block overhead conveyor belts
+  const buildingObstacles = obstacles.filter((n) => n.buildingId !== 'resource_deposit');
+
   // Infer source and destination machines if not explicitly provided
   const srcNode =
     fromNode ??
-    obstacles.find(
+    buildingObstacles.find(
       (n) =>
         Math.abs(x1 - (n.x + n.width)) <= 8 &&
         y1 >= n.y - 10 &&
@@ -179,7 +249,7 @@ export function computeOrthogonalConveyorPath(
     );
   const dstNode =
     toNode ??
-    obstacles.find(
+    buildingObstacles.find(
       (n) =>
         Math.abs(x2 - n.x) <= 8 &&
         y2 >= n.y - 10 &&
@@ -188,7 +258,7 @@ export function computeOrthogonalConveyorPath(
 
   // Third-party obstacles (excluding srcNode and dstNode) require full 12px clearance,
   // while srcNode and dstNode use 1px clearance so belts can route cleanly through narrow gaps when nodes are very close.
-  const otherObstacles = obstacles.filter(
+  const otherObstacles = buildingObstacles.filter(
     (n) => n.id !== srcNode?.id && n.id !== dstNode?.id
   );
   const allObstacles: { x: number; y: number; width: number; height: number; id?: string }[] = [

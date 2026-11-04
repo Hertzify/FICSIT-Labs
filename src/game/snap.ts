@@ -1,5 +1,5 @@
 import { BUILDINGS } from './catalog';
-import { getPortOffsetY, getPortWorldPosition, snapToGrid } from './geometry';
+import { getPortOffsetY, getPortWorldPosition, isMinerDirectlyOnDeposit, snapToGrid } from './geometry';
 import { ConveyorConnection, MachineNode } from './types';
 
 export interface SnapGuideline {
@@ -66,6 +66,65 @@ export function computeNodeSnapAlignment(
 ): NodeSnapResult {
   const baseX = snapToGrid(candidate.x, options.gridSize, options.gridSnap);
   const baseY = snapToGrid(candidate.y, options.gridSize, options.gridSnap);
+
+  // Priority 0: In Satisfactory, a Miner Mk.1 ALWAYS snaps directly and concentrically onto an unoccupied Resource Deposit!
+  if (candidate.buildingId === 'miner_mk1') {
+    const hasWorldDeposits = nodes.some((n) => n.buildingId === 'resource_deposit');
+    let bestDeposit: MachineNode | null = null;
+    let bestDist = Infinity;
+
+    for (const n of nodes) {
+      if (n.buildingId !== 'resource_deposit') continue;
+      const isOccupied = nodes.some(
+        (other) =>
+          other.buildingId === 'miner_mk1' &&
+          other.id !== candidate.id &&
+          isMinerDirectlyOnDeposit(other, n, 16)
+      );
+      if (isOccupied) continue;
+      const dist = Math.hypot(
+        candidate.x + candidate.width * 0.5 - (n.x + n.width * 0.5),
+        candidate.y + candidate.height * 0.5 - (n.y + n.height * 0.5)
+      );
+      if (dist <= 220 && dist < bestDist) {
+        bestDist = dist;
+        bestDeposit = n;
+      }
+    }
+
+    if (bestDeposit) {
+      const snapX = bestDeposit.x + Math.round((bestDeposit.width - candidate.width) * 0.5);
+      const snapY = bestDeposit.y + Math.round((bestDeposit.height - candidate.height) * 0.5);
+      return {
+        x: snapX,
+        y: snapY,
+        snappedX: true,
+        snappedY: true,
+        guidelines: [
+          {
+            axis: 'horizontal',
+            kind: 'center',
+            x1: snapX - 30,
+            y1: snapY + candidate.height * 0.5,
+            x2: snapX + candidate.width + 30,
+            y2: snapY + candidate.height * 0.5,
+            color: '#10B981',
+            label: 'MINER MOUNT LOCK',
+          },
+        ],
+      };
+    }
+
+    if (hasWorldDeposits) {
+      return {
+        x: baseX,
+        y: baseY,
+        snappedX: false,
+        snappedY: false,
+        guidelines: [],
+      };
+    }
+  }
 
   if (options.snapMode === false) {
     return {

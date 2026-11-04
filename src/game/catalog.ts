@@ -231,13 +231,13 @@ export const RECIPES: Record<string, RecipeDef> = {
     outputs: [{ itemId: 'limestone', itemName: 'Limestone', ratePerMin: 60 }],
   },
 
-  // Miner Mk.1 Recipes
+  // Miner Mk.1 Recipes (Extracts directly from underlying deposit without input belt)
   mine_iron: {
     id: 'mine_iron',
     name: 'Extract Iron Ore',
     machineType: 'miner_mk1',
     cycleTimeSec: 1.0,
-    inputs: [{ itemId: 'iron_ore', itemName: 'Iron Ore', ratePerMin: 60 }],
+    inputs: [],
     outputs: [{ itemId: 'iron_ore', itemName: 'Iron Ore', ratePerMin: 60 }],
   },
   mine_copper: {
@@ -245,7 +245,7 @@ export const RECIPES: Record<string, RecipeDef> = {
     name: 'Extract Copper Ore',
     machineType: 'miner_mk1',
     cycleTimeSec: 1.0,
-    inputs: [{ itemId: 'copper_ore', itemName: 'Copper Ore', ratePerMin: 60 }],
+    inputs: [],
     outputs: [{ itemId: 'copper_ore', itemName: 'Copper Ore', ratePerMin: 60 }],
   },
   mine_limestone: {
@@ -253,7 +253,7 @@ export const RECIPES: Record<string, RecipeDef> = {
     name: 'Extract Limestone',
     machineType: 'miner_mk1',
     cycleTimeSec: 1.0,
-    inputs: [{ itemId: 'limestone', itemName: 'Limestone', ratePerMin: 60 }],
+    inputs: [],
     outputs: [{ itemId: 'limestone', itemName: 'Limestone', ratePerMin: 60 }],
   },
 
@@ -368,15 +368,15 @@ export const BUILDINGS: Record<string, BuildingDef> = {
   },
   resource_deposit: {
     id: 'resource_deposit',
-    name: 'Resource Node',
+    name: 'Resource Deposit',
     category: 'production',
     subcategory: 'Natural World Deposit',
-    description: 'Permanent planetary mineral vein generated on the sector map. Connect its output port to a Miner Mk.1 to extract raw ore based on node purity (Impure 30/m, Normal 60/m, Pure 120/m).',
+    description: 'Permanent planetary mineral vein outcrop generated on the sector terrain. Build a Miner Mk.1 directly on top of this deposit to extract raw ore based on node purity (Impure 30/m, Normal 60/m, Pure 120/m).',
     accentColor: '#10B981',
-    width: 248,
+    width: 268,
     height: 144,
     inputPortCount: 0,
-    outputPortCount: 1,
+    outputPortCount: 0,
     defaultRecipeId: 'deposit_iron',
     availableRecipeIds: [],
     powerMw: 0,
@@ -387,11 +387,11 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     name: 'Miner Mk.1',
     category: 'production',
     subcategory: 'Extractors',
-    description: 'Extracts solid ore from a connected Resource Deposit at a base rate of 60 items/min.',
+    description: 'Built directly on top of a Resource Deposit to extract solid ore into its output buffer at rates governed by deposit purity (30, 60, or 120/min).',
     accentColor: '#F59E0B',
     width: 268,
     height: 144,
-    inputPortCount: 1,
+    inputPortCount: 0,
     outputPortCount: 1,
     defaultRecipeId: 'mine_iron',
     availableRecipeIds: ['mine_iron', 'mine_copper', 'mine_limestone'],

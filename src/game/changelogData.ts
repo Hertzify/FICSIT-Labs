@@ -44,6 +44,26 @@ export const CHANGELOG_DATA: ChangelogRelease[] = [
           },
         ],
       },
+      {
+        category: '⛏️ Planetary Resource Deposits & Strict Miner Clamping',
+        items: [
+          {
+            title: 'Zero Wireless Mining & Strict Resource Deposit Requirement',
+            description:
+              'Miner Mk.1 extractors strictly require mounting directly on top of a planetary Resource Deposit. Moving a miner off a deposit or attempting to place it on bare terrain halts extraction immediately (0/m rate, 0% efficiency, Starved status, NO DEPOSIT warning), completely eliminating wireless ore extraction from empty air.',
+          },
+          {
+            title: 'Satisfactory-Accurate Natural Geological Bedrock Deposits',
+            description:
+              'Resource Deposits feature craggy geological basalt bedrock, 3D mineral crystal clusters (Iron hematite, Copper amber, Limestone calcite), survey beacons, and central drill mounting collars.',
+          },
+          {
+            title: 'Single Output Buffer for Miner Mk.1',
+            description:
+              'Miner Mk.1 features a single 100-item output storage buffer and 0 input ports, accurately matching Satisfactory building specifications.',
+          },
+        ],
+      },
     ],
   },
   {

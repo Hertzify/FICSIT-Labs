@@ -6,12 +6,18 @@ All notable changes for **FICSIT Labs** are documented below. Straight to the po
 
 ## [0.0.16] — 2026-11-03 (`0.0.16 dev build`)
 
-### 🎨 Conveyor Visual Overhaul & Radial Corner Arcs
-- **Thin Precision Roller Slats & Directional Chevrons**: Replaced bulky dashed strokes with precision 1.5px industrial roller slats and periodic 1.7px forward directional chevrons (`>`) that cleanly fit within the 12.5px conveyor bed.
-- **Continuous Multi-Angle Corner Arc Rotation**: Engineered circular fillet corner arc interpolation (`computeFilletedConveyorPath`, `sampleFilletedPath`) along 90-degree conveyor turns. Moving lines and chevrons smoothly fan and rotate across continuous radial angles (0° to 90°) instead of deforming into square artifacts or snapping at corners.
-- **Smooth Item Packet Corner Navigation**: Synchronized in-flight physical resource item packets to travel along rounded corner arcs, eliminating abrupt right-angle snapping.
-- **Dual Input/Output Storage Buffers & Backpressure**: Implemented dedicated input and output storage inventories for every machine. When a downstream input storage hits capacity (e.g. 100/100), incoming belts halt bumper-to-bumper, queue up at the intake port, and pause upstream production until inventory space is freed.
-- **Removed Artificial In-Transit HUD**: Eliminated the artificial floating "Transit %" badge, leader lines, and cyan overrides, restoring clean Satisfactory-accurate belt telemetry badges displaying tier and real throughput capacity (or `STALLED (FULL)` when backpressured).
+### 🏔️ Option A: Planetary Resource Deposits as Ground Features
+- **Natural Geological Rock Outcrops**: Replaced artificial machine card boxes for resource deposits with natural terrain mineral outcrops featuring craggy bedrock contours, fissures, and authentic 3D crystalline ore clusters (metallic hematite for Iron, amber/orange crystals for Copper, and blocky calcite mineral stone for Limestone).
+- **Central Miner Mk.1 Mounting Collar**: Embedded an industrial heavy steel mounting collar and anchor ring (`⚓ MINER MK.1 MOUNT`) at the center of each resource deposit with active lock detection (`● MINER MK.1 LOCKED`) when an extractor is mounted.
+- **Zero-Port Ground Feature Rule**: Resource deposits have 0 conveyor ports (`inputPortCount: 0, outputPortCount: 0`). Conveyor belts cannot be connected directly to bare terrain; players build a Miner Mk.1 on top of the deposit to extract ore.
+- **FICSIT Geological Survey Hologram Beacon**: Added sleek survey beacons projecting purity and extraction rate readouts (`[ PURE · 120/min ]`, `[ NORMAL · 60/min ]`, `[ IMPURE · 30/min ]`).
+
+### ⛏️ Option C: Miner Mk.1 Single Output Storage & Deposit Clamping
+- **Direct Deposit Clamping**: Updated collision and magnetic snap solver to permit Miner Mk.1 to be built directly on top of resource deposits, while strictly preventing non-miner buildings or duplicate miners on the same deposit.
+- **Single Output Capacity (No Input Buffer)**: Miner Mk.1 has 0 input ports (`inputPortCount: 0`) and 1 output port. Removed the redundant input buffer and `IN` bar from the machine card and inspector; miners now display a single 100-ore output storage bar (`STORAGE: Iron Ore 0 / 100`).
+- **Direct Geological Extraction**: The miner extracts solid ore directly into its single output inventory according to the underlying deposit's purity (30, 60, or 120 items/min).
+- **Refined Conveyor Belts**: Removed all lightning arrow overlays and chevrons from conveyor lines, rendering clean, uniform 1.4px roller slats that smoothly rotate across continuous radial corner arcs.
+- **Starter Factory Layout**: Positioned `starter_miner` directly clamped onto `starter_deposit`, feeding the Smelter → Constructor → HUB line with 3 straight, perfectly aligned belts.
 
 ---
 

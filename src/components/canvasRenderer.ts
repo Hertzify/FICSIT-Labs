@@ -17,11 +17,13 @@ import {
   computeOrthogonalConveyorPath,
   ConveyorCrossing,
   doesPathIntersectNode,
+  doNodesOverlap,
   findConveyorCrossings,
   getBeltTierDef,
   getCachedConveyorRoute,
   getPortWorldPosition,
   isMacroIconZoom,
+  isMinerDirectlyOnDeposit,
   isNodePositionValid,
   sampleFilletedPath,
   sampleOrthogonalPath,
@@ -201,6 +203,231 @@ export function drawMachineVectorIcon(
       break;
     }
   }
+
+  ctx.restore();
+}
+
+/**
+ * Renders an authentic Satisfactory Planetary Resource Deposit:
+ * Natural geological rock outcrop on the terrain with embedded mineral crystal clusters,
+ * central heavy-duty excavation mounting collar for Miner Mk.1, and FICSIT survey beacon.
+ */
+function drawNaturalResourceDeposit(
+  ctx: CanvasRenderingContext2D,
+  node: MachineNode,
+  isSelected: boolean,
+  isBatterySaver: boolean,
+  primaryItemImg: HTMLImageElement | null,
+  isMinerMounted: boolean
+) {
+  const purityKey = node.purity ?? 'normal';
+  const purityInfo = PURITY_CONFIG[purityKey];
+  const x = node.x;
+  const y = node.y;
+  const w = node.width;
+  const h = node.height;
+  const cx = x + w * 0.5;
+  const cy = y + h * 0.5;
+
+  const isCopper =
+    node.recipeId === 'deposit_copper' || node.title.toLowerCase().includes('copper');
+  const isLimestone =
+    node.recipeId === 'deposit_limestone' || node.title.toLowerCase().includes('limestone');
+  const oreName = isCopper ? 'Copper Ore' : isLimestone ? 'Limestone' : 'Iron Ore';
+
+  ctx.save();
+
+  // 1. Natural Planetary Terrain Ground Shadow
+  const pad = 12;
+  if (!isBatterySaver) {
+    ctx.beginPath();
+    ctx.ellipse(cx + 4, cy + 8, (w + pad * 2) * 0.52, (h + pad * 2) * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+    ctx.fill();
+  }
+
+  // 2. Geological Craggy Rock Slab (extends around mounted Miner Mk.1 so bedrock rim stays visible)
+  ctx.beginPath();
+  ctx.moveTo(x - pad + 26, y - pad + 4);
+  ctx.lineTo(x + w + pad - 30, y - pad + 2);
+  ctx.lineTo(x + w + pad - 2, y - pad + 26);
+  ctx.lineTo(x + w + pad, y + h + pad - 26);
+  ctx.lineTo(x + w + pad - 24, y + h + pad - 2);
+  ctx.lineTo(x - pad + 28, y + h + pad);
+  ctx.lineTo(x - pad + 2, y + h + pad - 24);
+  ctx.lineTo(x - pad + 4, y - pad + 26);
+  ctx.closePath();
+
+  ctx.fillStyle = '#0D1522'; // Dark basalt rock
+  ctx.fill();
+  ctx.strokeStyle = isSelected
+    ? '#FACC15'
+    : isMinerMounted
+    ? '#10B981'
+    : '#1E2D44';
+  ctx.lineWidth = isSelected ? 3.0 : isMinerMounted ? 2.4 : 1.5;
+  ctx.stroke();
+
+  // 3. Inner Geological Bedrock Strata Ring
+  ctx.beginPath();
+  ctx.moveTo(x + 28, y + 4);
+  ctx.lineTo(x + w - 32, y + 2);
+  ctx.lineTo(x + w - 4, y + 26);
+  ctx.lineTo(x + w - 2, y + h - 28);
+  ctx.lineTo(x + w - 26, y + h - 4);
+  ctx.lineTo(x + 30, y + h - 2);
+  ctx.lineTo(x + 4, y + h - 26);
+  ctx.lineTo(x + 6, y + 28);
+  ctx.closePath();
+  ctx.fillStyle = '#131E30';
+  ctx.fill();
+  ctx.strokeStyle = '#1B2A3E';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  if (isMinerMounted) {
+    // Protruding Bedrock Pedestal Tab below the mounted Miner Mk.1
+    const tabW = 224;
+    const tabH = 19;
+    const tabX = cx - tabW * 0.5;
+    const tabY = y + h + 3;
+    drawRoundedRect(ctx, tabX, tabY, tabW, tabH, 5);
+    ctx.fillStyle = '#08111D';
+    ctx.fill();
+    ctx.strokeStyle = '#10B981';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    ctx.font = '700 8.5px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#10B981';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      `● ${oreName.toUpperCase()} DEPOSIT (${purityInfo.label.toUpperCase()} · ${purityInfo.ratePerMin}/m)`,
+      cx,
+      tabY + tabH * 0.5 + 0.5
+    );
+  }
+
+  // 4. Natural Ore Rock Fractures & Fissures
+  ctx.beginPath();
+  ctx.moveTo(x + 24, y + 36);
+  ctx.lineTo(x + 68, y + 48);
+  ctx.lineTo(x + 84, y + 32);
+  ctx.moveTo(x + w - 26, y + h - 40);
+  ctx.lineTo(x + w - 65, y + h - 45);
+  ctx.lineTo(x + w - 85, y + h - 25);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // 5. Crystalline Ore Formations
+  const crystalBase = isCopper
+    ? '#D97706' // Copper amber
+    : isLimestone
+    ? '#94A3B8' // Limestone calcite
+    : '#475569'; // Iron hematite
+  const crystalHighlight = isCopper
+    ? '#FDE68A'
+    : isLimestone
+    ? '#F8FAFC'
+    : '#CBD5E1';
+
+  // Left Crystal Cluster
+  ctx.beginPath();
+  ctx.moveTo(x + 20, y + 72);
+  ctx.lineTo(x + 34, y + 42);
+  ctx.lineTo(x + 48, y + 54);
+  ctx.lineTo(x + 44, y + 84);
+  ctx.closePath();
+  ctx.fillStyle = crystalBase;
+  ctx.fill();
+  ctx.strokeStyle = crystalHighlight;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Right Crystal Cluster
+  ctx.beginPath();
+  ctx.moveTo(x + w - 20, y + 66);
+  ctx.lineTo(x + w - 36, y + 36);
+  ctx.lineTo(x + w - 50, y + 50);
+  ctx.lineTo(x + w - 46, y + 80);
+  ctx.closePath();
+  ctx.fillStyle = crystalBase;
+  ctx.fill();
+  ctx.strokeStyle = crystalHighlight;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // 6. Miner Excavation Mounting Collar / Anchor Pad
+  const collarR = 40;
+  ctx.beginPath();
+  ctx.arc(cx, cy, collarR, 0, Math.PI * 2);
+  ctx.fillStyle = '#080E18';
+  ctx.fill();
+  ctx.strokeStyle = isMinerMounted ? '#10B981' : '#334155';
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+
+  // Collar Crosshair & Hazard Notches
+  ctx.beginPath();
+  ctx.arc(cx, cy, collarR - 6, 0, Math.PI * 2);
+  ctx.strokeStyle = isMinerMounted ? 'rgba(16, 185, 129, 0.4)' : '#1E293B';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // Center Ore Icon
+  if (primaryItemImg) {
+    const iconDim = isMinerMounted ? 28 : 34;
+    ctx.drawImage(
+      primaryItemImg,
+      cx - iconDim * 0.5,
+      cy - (isMinerMounted ? 10 : 8),
+      iconDim,
+      iconDim
+    );
+  }
+
+  // Collar Status Readout
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (isMinerMounted) {
+    ctx.font = '700 8.5px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#10B981';
+    ctx.fillText('● MINER MK.1 LOCKED', cx, cy + 20);
+  } else {
+    ctx.font = '700 8.5px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#94A3B8';
+    ctx.fillText('⚓ MINER MK.1 MOUNT', cx, cy + 18);
+  }
+
+  // 7. FICSIT Survey Holographic Beacon (Top-Left Badge)
+  const beaconW = 146;
+  const beaconH = 22;
+  const beaconX = x + 16;
+  const beaconY = y + 10;
+  drawRoundedRect(ctx, beaconX, beaconY, beaconW, beaconH, 6);
+  ctx.fillStyle = '#080D15';
+  ctx.fill();
+  ctx.strokeStyle = purityInfo.badgeColor;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.font = '700 9px "JetBrains Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = purityInfo.badgeColor;
+  ctx.fillText(
+    `${purityInfo.label.toUpperCase()} · ${purityInfo.ratePerMin}/m`,
+    beaconX + 8,
+    beaconY + beaconH * 0.5 + 0.5
+  );
+
+  // Top-Right Ore Name Readout
+  ctx.font = '700 11px "Outfit", sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#F8FAFC';
+  ctx.fillText(oreName, x + w - 16, y + 21);
 
   ctx.restore();
 }
@@ -466,40 +693,19 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         const nx = -sinA;
         const ny = cosA;
 
-        const slatIdx = Math.round(dist / slatSpacing);
-        const isChevron = slatIdx % 4 === 0;
+        // Thin precision roller slat perpendicular to belt (rotates smoothly around corner arcs)
+        const x1 = x - nx * slatHalfWidth;
+        const y1 = y - ny * slatHalfWidth;
+        const x2 = x + nx * slatHalfWidth;
+        const y2 = y + ny * slatHalfWidth;
 
-        if (isChevron) {
-          // Sleek forward directional chevron: pointer tip forward by 1.8px
-          const tipX = x + cosA * 2.0;
-          const tipY = y + sinA * 2.0;
-          const leftX = x - nx * slatHalfWidth;
-          const leftY = y - ny * slatHalfWidth;
-          const rightX = x + nx * slatHalfWidth;
-          const rightY = y + ny * slatHalfWidth;
-
-          ctx.strokeStyle = tierDef.tier >= 2 ? tierDef.accentColor : '#94A3B8';
-          ctx.lineWidth = 1.7;
-          ctx.beginPath();
-          ctx.moveTo(leftX, leftY);
-          ctx.lineTo(tipX, tipY);
-          ctx.lineTo(rightX, rightY);
-          ctx.stroke();
-        } else {
-          // Thin precision roller slat perpendicular to belt
-          const x1 = x - nx * slatHalfWidth;
-          const y1 = y - ny * slatHalfWidth;
-          const x2 = x + nx * slatHalfWidth;
-          const y2 = y + ny * slatHalfWidth;
-
-          ctx.strokeStyle =
-            tierDef.tier >= 2 ? `${tierDef.accentColor}77` : '#334155';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
-        }
+        ctx.strokeStyle =
+          tierDef.tier >= 2 ? `${tierDef.accentColor}55` : '#334155';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
       }
       ctx.restore();
     }
@@ -606,7 +812,14 @@ export function renderFactoryScene(params: CanvasRenderParams) {
   }
 
   // 4. Render Machine Nodes & Natural World Resource Deposits (with Padded Viewport Culling)
-  for (const node of nodes) {
+  // Deposits render first as ground bedrock, and extractors (Miner Mk.1) mount cleanly on top!
+  const sortedNodes = [...nodes].sort((a, b) => {
+    if (a.buildingId === 'resource_deposit' && b.buildingId !== 'resource_deposit') return -1;
+    if (a.buildingId !== 'resource_deposit' && b.buildingId === 'resource_deposit') return 1;
+    return 0;
+  });
+
+  for (const node of sortedNodes) {
     const isDeposit = node.buildingId === 'resource_deposit';
     const cullPad = macroMode && isDeposit ? 160 : 60;
     if (
@@ -776,6 +989,23 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       continue;
     }
 
+    // In Satisfactory, Resource Deposits are natural geological planetary features,
+    // NOT machine card boxes! We render them as terrain features with embedded crystals & miner mounting collar.
+    if (isDeposit) {
+      const isMinerMounted = nodes.some(
+        (n) => n.buildingId === 'miner_mk1' && isMinerDirectlyOnDeposit(n, node, 4)
+      );
+      drawNaturalResourceDeposit(
+        ctx,
+        node,
+        isSelected,
+        isBatterySaver,
+        primaryItemImg,
+        isMinerMounted
+      );
+      continue;
+    }
+
     // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.25)
     if (!isBatterySaver) {
       drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
@@ -784,7 +1014,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     }
 
     drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
-    ctx.fillStyle = isDeposit ? '#0E1924' : '#131B2E';
+    ctx.fillStyle = '#131B2E';
     ctx.fill();
 
     const isDraggedColliding = draggingNodeId === node.id && dragHasCollision;
@@ -810,7 +1040,13 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       ctx.fillStyle = '#EF4444';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      ctx.fillText('BLOCKED: OVERLAP DETECTED', node.x + node.width / 2, node.y - 8);
+      const isMinerMissingDeposit =
+        node.buildingId === 'miner_mk1' &&
+        !nodes.some((n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(node, n, 4));
+      const blockedMsg = isMinerMissingDeposit
+        ? 'BLOCKED: MUST BE DIRECTLY ON DEPOSIT'
+        : 'BLOCKED: OVERLAP DETECTED';
+      ctx.fillText(blockedMsg, node.x + node.width / 2, node.y - 8);
       ctx.restore();
     }
 
@@ -844,6 +1080,10 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const displayTitle = isDeposit ? node.title.replace(/\s*\([^)]*\)/, '') : node.title;
     ctx.fillText(displayTitle, node.x + 34, node.y + 18);
 
+    const isMinerMissingDeposit =
+      node.buildingId === 'miner_mk1' &&
+      !nodes.some((n) => n.buildingId === 'resource_deposit' && isMinerDirectlyOnDeposit(node, n, 4));
+
     if (isDeposit) {
       const pText = `${purityInfo.label} · ${purityInfo.ratePerMin}/m`;
       ctx.font = '700 9.5px "JetBrains Mono", monospace';
@@ -852,7 +1092,10 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       ctx.fillText(pText, node.x + node.width - 10, node.y + 18);
     } else {
       let statusText = 'IDLE';
-      if (node.status === 'optimal') {
+      if (isMinerMissingDeposit) {
+        statusText = 'NO DEPOSIT';
+        statusColor = '#EF4444';
+      } else if (node.status === 'optimal') {
         statusText = `${node.efficiency}% OPTIMAL`;
       } else if (node.status === 'working') {
         statusText = `${node.efficiency}% ACTIVE`;
@@ -881,6 +1124,8 @@ export function renderFactoryScene(params: CanvasRenderParams) {
 
     const recipeTitle = isDeposit
       ? `${recipe?.outputs[0]?.itemName ?? 'Ore'} Vein (${purityInfo.multiplier}x Purity)`
+      : isMinerMissingDeposit
+      ? 'Unmounted · Place on Deposit'
       : recipe?.name ??
         (node.buildingId === 'the_hub'
           ? `24-Slot Depot · ${storedInt}/${maxCap}`
@@ -904,23 +1149,51 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const barX = node.x + 14;
     const barW = node.width - 28;
 
-    if (isDeposit) {
-      const barY = node.y + node.height - 20;
-      const barH = 7;
-      drawRoundedRect(ctx, barX, barY, barW, barH, 3.5);
+    // 1. STORAGE BARS: Miner Mk.1 has single full-width output buffer; Processors have dual IN & OUT bars
+    if (node.buildingId === 'miner_mk1') {
+      const storageBarY = node.y + node.height - 30;
+      const storageBarH = 11;
+      const outMax = Math.max(1, maxCap);
+      const outInt = storedInt;
+      const outRatio = Math.max(0, Math.min(1, (node.storedCount ?? 0) / outMax));
+      const isOutFull = outRatio >= 0.995;
+
+      drawRoundedRect(ctx, barX, storageBarY, barW, storageBarH, 4);
       ctx.fillStyle = '#0B0F17';
       ctx.fill();
-      ctx.strokeStyle = '#1E293B';
+      ctx.strokeStyle = isOutFull ? '#F59E0B' : '#1E293B';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      if (node.efficiency > 0) {
-        drawRoundedRect(ctx, barX, barY, barW, barH, 3.5);
-        ctx.fillStyle = accent;
+      if (outRatio > 0.005) {
+        drawRoundedRect(
+          ctx,
+          barX,
+          storageBarY,
+          Math.max(5, barW * outRatio),
+          storageBarH,
+          4
+        );
+        ctx.fillStyle = isOutFull ? '#D97706' : '#0D9488';
         ctx.fill();
       }
+
+      ctx.font = '700 8px "JetBrains Mono", monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isOutFull ? '#FDE68A' : '#5EEAD4';
+      const oreName = node.outputs[0]?.itemName ?? 'ORE';
+      ctx.fillText(`STORAGE · ${oreName.toUpperCase()}`, barX + 6, storageBarY + storageBarH * 0.5 + 0.5);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isOutFull ? '#FDE68A' : '#F8FAFC';
+      ctx.fillText(
+        `${outInt} / ${outMax}`,
+        barX + barW - 6,
+        storageBarY + storageBarH * 0.5 + 0.5
+      );
     } else {
-      // 1. DUAL INPUT & OUTPUT STORAGE BARS (IN on Left under Input Ports, OUT on Right under Output Ports)
+      // DUAL INPUT & OUTPUT STORAGE BARS (IN on Left under Input Ports, OUT on Right under Output Ports)
       const storageBarY = node.y + node.height - 30;
       const storageBarH = 11;
       const halfBarW = (barW - 6) * 0.5;
@@ -1013,47 +1286,48 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         outBarX + halfBarW - 4,
         storageBarY + storageBarH * 0.5 + 0.5
       );
-
-      // 2. CRAFTING / EXTRACTION CYCLE PROGRESS BAR (Below Storage Bars)
-      const cycleBarY = node.y + node.height - 14;
-      const cycleBarH = 6;
-      const isContainer =
-        node.buildingId === 'storage_container' || node.buildingId === 'the_hub';
-      const isLogistics =
-        node.buildingId === 'splitter' || node.buildingId === 'merger';
-
-      drawRoundedRect(ctx, barX, cycleBarY, barW, cycleBarH, 3);
-      ctx.fillStyle = '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = '#1E293B';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      const cycleFillRatio =
-        isLogistics || isContainer
-          ? node.efficiency > 0
-            ? 1
-            : 0
-          : Math.max(0, Math.min(1, node.progress));
-
-      if (cycleFillRatio > 0.01) {
-        drawRoundedRect(
-          ctx,
-          barX,
-          cycleBarY,
-          Math.max(6, barW * cycleFillRatio),
-          cycleBarH,
-          3
-        );
-        ctx.fillStyle = accent;
-        ctx.fill();
-      }
     }
 
-    // Input Port Dots, Official Resource Icons & Stacked Rate Readouts
-    for (let i = 0; i < node.inputs.length; i++) {
+    // 2. CRAFTING / EXTRACTION CYCLE PROGRESS BAR (Below Storage Bars)
+    const cycleBarY = node.y + node.height - 14;
+    const cycleBarH = 6;
+    const isContainer =
+      node.buildingId === 'storage_container' || node.buildingId === 'the_hub';
+    const isLogistics =
+      node.buildingId === 'splitter' || node.buildingId === 'merger';
+
+    drawRoundedRect(ctx, barX, cycleBarY, barW, cycleBarH, 3);
+    ctx.fillStyle = '#0B0F17';
+    ctx.fill();
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const cycleFillRatio =
+      isLogistics || isContainer
+        ? node.efficiency > 0
+          ? 1
+          : 0
+        : Math.max(0, Math.min(1, node.progress));
+
+    if (cycleFillRatio > 0.01) {
+      drawRoundedRect(
+        ctx,
+        barX,
+        cycleBarY,
+        Math.max(6, barW * cycleFillRatio),
+        cycleBarH,
+        3
+      );
+      ctx.fillStyle = accent;
+      ctx.fill();
+    }
+
+    // Input Port Dots, Official Resource Icons & Stacked Rate Readouts (Miners have 0 input ports)
+    const inputCount = node.buildingId === 'miner_mk1' ? 0 : node.inputs.length;
+    for (let i = 0; i < inputCount; i++) {
       const port = node.inputs[i];
-      const pt = getPortWorldPosition(node, 'input', i, node.inputs.length);
+      const pt = getPortWorldPosition(node, 'input', i, inputCount);
       const isConnected = connectedInputPortKeys.has(`${node.id}:${port.id}`);
       const isPortFull = (port.bufferedCount ?? 0) >= (port.maxBuffer ?? 100) - 0.5;
       const portImg = getCanvasItemImage(port.itemName ?? port.label);
@@ -1263,6 +1537,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       const clamped = clampNodeToWorld(snapRes.x, snapRes.y, bDef.width, bDef.height);
       const candidateNode = {
         id: 'ghost_preview',
+        buildingId: bDef.id,
         x: clamped.x,
         y: clamped.y,
         width: bDef.width,
@@ -1318,7 +1593,9 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const label = !nodeCheck.valid
-        ? 'NO OVERLAP: MACHINE COLLISION'
+        ? bDef.id === 'miner_mk1'
+          ? 'PLACE DIRECTLY ON UNOCCUPIED DEPOSIT (1 MAX)'
+          : 'NO OVERLAP: MACHINE COLLISION'
         : intersectsBelts
         ? 'NO OVERLAP: BELT COLLISION'
         : `TAP TO PLACE ${bDef.name.toUpperCase()}`;

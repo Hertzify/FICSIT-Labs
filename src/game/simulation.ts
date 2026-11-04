@@ -6,7 +6,7 @@ import {
   RECIPES,
   STORAGE_CONTAINER_SLOTS,
 } from './catalog';
-import { computeConveyorLengthPx } from './geometry';
+import { computeConveyorLengthPx, doNodesOverlap, isMinerDirectlyOnDeposit } from './geometry';
 import { BeltItemPacket, ConveyorConnection, MachineNode, PortSocket } from './types';
 import { getBeltTierDef } from './world';
 
@@ -344,103 +344,87 @@ export function stepSimulation(
           node.efficiency = 100;
           node.status = 'optimal';
         } else if (node.buildingId === 'miner_mk1') {
-          const inPort = node.inputs[0];
           const outPort = node.outputs[0];
-          const incomingConn = inPort
-            ? incomingConnByPortKey.get(`${node.id}:${inPort.id}`)
-            : undefined;
           const outgoingConn = outPort
             ? outgoingConnByPortKey.get(`${node.id}:${outPort.id}`)
             : undefined;
           const outMax = node.maxStoredCount ?? 100;
           const isOutputBufferFull = Math.round(node.storedCount ?? 0) >= outMax;
-          const hasBufferedOre = Math.round(inPort?.bufferedCount ?? 0) >= 1;
 
-          if (
-            inPort &&
-            outPort &&
-            ((incomingConn && inPort.actualRatePerMin > 0 && inPort.itemName) ||
-              hasBufferedOre)
-          ) {
-            const oreName =
-              inPort.itemName ?? recipe?.outputs[0]?.itemName ?? 'Iron Ore';
-            if (oreName.toLowerCase().includes('copper')) {
-              node.recipeId = 'mine_copper';
-            } else if (oreName.toLowerCase().includes('limestone')) {
-              node.recipeId = 'mine_limestone';
-            } else {
-              node.recipeId = 'mine_iron';
-            }
-            const suppliedRate =
-              inPort.actualRatePerMin > 0
-                ? inPort.actualRatePerMin
-                : incomingConn?.maxCapacityPerMin ?? 60;
-            inPort.label = oreName;
-            inPort.itemName = oreName;
-            inPort.targetRatePerMin = suppliedRate;
+          // Find the underlying Resource Deposit (Satisfactory extractor mechanic: 1 Miner sits directly on deposit)
+          const deposit = nextNodes.find(
+            (n) =>
+              n.buildingId === 'resource_deposit' &&
+              isMinerDirectlyOnDeposit(node, n, 4) &&
+              nextNodes.find(
+                (m) => m.buildingId === 'miner_mk1' && isMinerDirectlyOnDeposit(m, n, 4)
+              )?.id === node.id
+          );
 
+          if (!deposit) {
+            // Unmounted Miner Mk.1 is on bare terrain without a Resource Deposit: strictly 0 extraction!
+            node.efficiency = 0;
+            node.status = 'starved';
+            node.progress = 0;
             const outMaxBeltRate = getEffectiveOutgoingBeltCapacity(outgoingConn);
-            if (isOutputBufferFull && outMaxBeltRate === 0) {
-              outPort.itemName = oreName;
-              outPort.label = oreName;
-              outPort.targetRatePerMin = suppliedRate;
-              outPort.actualRatePerMin = 0;
-              node.efficiency = 0;
-              node.status = 'backed_up';
-            } else {
-              const activeRate = isOutputBufferFull
-                ? Math.min(suppliedRate, outMaxBeltRate)
-                : suppliedRate;
-              outPort.itemName = oreName;
-              outPort.label = oreName;
-              outPort.targetRatePerMin = suppliedRate;
+            const canDrain = Math.round(node.storedCount ?? 0) >= 1 && outMaxBeltRate > 0;
+            if (outPort) {
+              outPort.targetRatePerMin = 0;
+              // If there are residual items stored in the miner buffer, allow draining them to connected belt
+              outPort.actualRatePerMin = canDrain ? Math.min(60, outMaxBeltRate) : 0;
+            }
+            continue;
+          }
+
+          const purityKey = deposit.purity ?? 'normal';
+          const suppliedRate = PURITY_CONFIG[purityKey]?.ratePerMin ?? 60;
+
+          // Determine mined ore type from the underlying deposit or node's recipe
+          const oreName =
+            deposit.recipeId === 'deposit_copper' || deposit.title?.toLowerCase().includes('copper')
+              ? 'Copper Ore'
+              : deposit.recipeId === 'deposit_limestone' || deposit.title?.toLowerCase().includes('limestone')
+              ? 'Limestone'
+              : recipe?.outputs[0]?.itemName ?? 'Iron Ore';
+
+          if (oreName.toLowerCase().includes('copper')) {
+            node.recipeId = 'mine_copper';
+          } else if (oreName.toLowerCase().includes('limestone')) {
+            node.recipeId = 'mine_limestone';
+          } else {
+            node.recipeId = 'mine_iron';
+          }
+
+          if (outPort) {
+            outPort.label = oreName;
+            outPort.itemName = oreName;
+            outPort.targetRatePerMin = suppliedRate;
+          }
+
+          const outMaxBeltRate = getEffectiveOutgoingBeltCapacity(outgoingConn);
+
+          if (isOutputBufferFull && outMaxBeltRate === 0) {
+            if (outPort) outPort.actualRatePerMin = 0;
+            node.efficiency = 0;
+            node.status = 'backed_up';
+          } else {
+            const activeRate = isOutputBufferFull
+              ? Math.min(suppliedRate, outMaxBeltRate)
+              : suppliedRate;
+            if (outPort) {
               outPort.actualRatePerMin =
                 Math.round(node.storedCount ?? 0) >= 1 && outMaxBeltRate > activeRate
                   ? Math.min(suppliedRate, outMaxBeltRate)
                   : activeRate;
-              node.efficiency =
-                suppliedRate > 0 ? Math.round((activeRate / suppliedRate) * 100) : 0;
-              node.status =
-                node.efficiency === 0 && isOutputBufferFull
-                  ? 'backed_up'
-                  : node.efficiency >= 99
-                  ? 'optimal'
-                  : 'working';
             }
-          } else {
-            const fallbackOre = recipe?.outputs[0]?.itemName ?? 'Iron Ore';
-            if (inPort) {
-              inPort.label = fallbackOre;
-              inPort.targetRatePerMin = 60;
-            }
-            const outMaxBeltRate = getEffectiveOutgoingBeltCapacity(outgoingConn);
-            const canDrainStoredOut = Boolean(
-              outMaxBeltRate > 0 && Math.round(node.storedCount ?? 0) >= 1
-            );
-            if (outPort) {
-              outPort.label = fallbackOre;
-              outPort.itemName = fallbackOre;
-              outPort.targetRatePerMin = 60;
-              outPort.actualRatePerMin = canDrainStoredOut
-                ? Math.min(60, outMaxBeltRate)
-                : 0;
-            }
-            node.efficiency = 0;
-            const isInTransit = Boolean(
-              incomingConn &&
-                (incomingConn.sourceRatePerMin ?? 0) > 0 &&
-                !incomingConn.firstItemArrived
-            );
+            node.efficiency =
+              suppliedRate > 0 ? Math.round((activeRate / suppliedRate) * 100) : 0;
             node.status =
-              isOutputBufferFull &&
-              outMaxBeltRate === 0 &&
-              Math.round(node.storedCount ?? 0) > 0
+              node.efficiency === 0 && isOutputBufferFull
                 ? 'backed_up'
-                : isInTransit
-                ? 'waiting'
-                : incomingConn
-                ? 'starved'
-                : 'idle';
+                : node.efficiency >= 99
+                ? 'optimal'
+                : 'working';
           }
         } else if (node.buildingId === 'splitter') {
           const inPort = node.inputs[0];
@@ -982,39 +966,39 @@ export function stepSimulation(
             node.outputs[0].bufferedCount = node.storedCount;
           }
         } else if (node.buildingId === 'miner_mk1') {
-          const inPort = node.inputs[0];
           const outPort = node.outputs[0];
-          const incomingConn = inPort
-            ? incomingConnByPortKey.get(`${node.id}:${inPort.id}`)
-            : undefined;
-          const fromDeposit = incomingConn
-            ? nodeMap.get(incomingConn.fromNodeId)
-            : undefined;
-          const depositRate =
-            fromDeposit?.buildingId === 'resource_deposit'
-              ? PURITY_CONFIG[fromDeposit.purity ?? 'normal']?.ratePerMin ?? 60
-              : 60;
-          const extractRate = incomingConn
-            ? Math.min(incomingConn.maxCapacityPerMin, depositRate)
-            : 60;
           const outMax = node.maxStoredCount ?? 100;
+          const deposit = nextNodes.find(
+            (n) =>
+              n.buildingId === 'resource_deposit' &&
+              isMinerDirectlyOnDeposit(node, n, 4) &&
+              nextNodes.find(
+                (m) => m.buildingId === 'miner_mk1' && isMinerDirectlyOnDeposit(m, n, 4)
+              )?.id === node.id
+          );
 
-          if (
-            inPort &&
-            Math.round(inPort.bufferedCount ?? 0) >= 1 &&
-            Math.round(node.storedCount ?? 0) < outMax
-          ) {
+          if (!deposit) {
+            // Unmounted Miner: NO WIRELESS MINING! Strictly 0 ore production when off deposit!
+            node.progress = 0;
+            if (outPort) {
+              outPort.bufferedCount = node.storedCount;
+            }
+            continue;
+          }
+
+          const purityKey = deposit.purity ?? 'normal';
+          const extractRate = PURITY_CONFIG[purityKey]?.ratePerMin ?? 60;
+
+          if (Math.round(node.storedCount ?? 0) < outMax) {
             node.progress = (node.progress ?? 0) + subDt * (extractRate / 60);
             while (
               node.progress >= 1.0 - 1e-6 &&
-              Math.round(inPort.bufferedCount ?? 0) >= 1 &&
               Math.round(node.storedCount ?? 0) < outMax
             ) {
-              inPort.bufferedCount = Math.round(inPort.bufferedCount ?? 0) - 1;
               node.storedCount = Math.round(node.storedCount ?? 0) + 1;
               node.progress = Math.max(0, node.progress - 1.0);
             }
-          } else if (Math.round(node.storedCount ?? 0) >= outMax) {
+          } else {
             node.progress = 0;
           }
           if (outPort) {

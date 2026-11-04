@@ -37,9 +37,9 @@ if (fs.existsSync(stylesPath)) {
 
 // 3. Patch MainActivity.java for Immersive Sticky Fullscreen Game Mode
 const mainActivityPath =
-  'android/app/src/main/java/com/ficsit/nodelabs/MainActivity.java';
+  'android/app/src/main/java/com/ficsit/labs/MainActivity.java';
 if (fs.existsSync(mainActivityPath)) {
-  const javaSource = `package com.ficsit.nodelabs;
+  const javaSource = `package com.ficsit.labs;
 
 import android.os.Build;
 import android.os.Bundle;

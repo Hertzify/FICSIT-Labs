@@ -2,7 +2,7 @@
 
 **FICSIT Labs** is a 2D factory automation tycoon built from the ground up for **Mobile (Landscape)** and **Web**. It translates the deep production chains, discrete item physics, and logistical scale of ***Satisfactory*** into a high-performance 2D blueprint engine designed specifically for touchscreens and low-end mobile devices.
 
-![Version](https://img.shields.io/badge/version-0.0.16%20dev%20build-F59E0B?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.0.17%20dev%20build-F59E0B?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Mobile%20Web%20%7C%20Desktop-38BDF8?style=flat-square)
 ![Engine](https://img.shields.io/badge/engine-React%20%2B%20HTML5%20Canvas-22C55E?style=flat-square)
 ![Offline PWA](https://img.shields.io/badge/PWA-100%25%20Offline%20Ready-A855F7?style=flat-square)

@@ -1,6 +1,6 @@
 {
-  "appId": "com.ficsit.nodelabs",
-  "appName": "FICSIT Node Labs",
+  "appId": "com.ficsit.labs",
+  "appName": "FICSIT Labs",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

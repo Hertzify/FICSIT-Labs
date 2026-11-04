@@ -19,11 +19,11 @@ if (fs.existsSync(changelogPath)) {
 }
 
 if (!sectionBody) {
-  sectionBody = `### Highlights\n- Build updates for **FICSIT Node Labs (${version} dev build)**.`;
+  sectionBody = `### Highlights\n- Build updates for **FICSIT Labs (${version} dev build)**.`;
 }
 
 const releaseNotes = [
-  `# FICSIT Node Labs — \`${version} dev build\``,
+  `# FICSIT Labs — \`${version} dev build\``,
   '',
   sectionBody,
   '',

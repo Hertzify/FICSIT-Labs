@@ -36,6 +36,8 @@ import {
   isNodePositionValid,
   sampleFilletedPath,
   sampleOrthogonalPath,
+  MAX_ZOOM,
+  MIN_ZOOM,
   SnapGuideline,
   WORLD_HEIGHT,
   WORLD_WIDTH,
@@ -133,7 +135,9 @@ export function renderFactoryScene(params: CanvasRenderParams) {
   if (width <= 0 || height <= 0) return;
 
   const safeZoom =
-    Number.isFinite(cam.zoom) && cam.zoom >= 0.08 ? Math.min(3.5, cam.zoom) : 0.74;
+    Number.isFinite(cam.zoom)
+      ? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom))
+      : 0.74;
   const safeCamX = Number.isFinite(cam.x) ? cam.x : -1820;
   const safeCamY = Number.isFinite(cam.y) ? cam.y : -1920;
   cam.zoom = safeZoom;

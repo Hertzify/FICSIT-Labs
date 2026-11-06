@@ -71,6 +71,12 @@ test('clampCameraToWorld constrains zoom and isMacroIconZoom requires 0.25x zoom
   assert.equal(isMacroIconZoom(0.25), false);
   assert.equal(isMacroIconZoom(0.30), false);
   assert.equal(isMacroIconZoom(0.75), false);
+
+  // Zooming out completely to MIN_ZOOM does not clamp min/max to a single locked point
+  const atMinZoom = clampCameraToWorld({ x: 350, y: 210, zoom: 0.06 }, 1440, 900);
+  assert.equal(atMinZoom.zoom, 0.06);
+  assert.equal(atMinZoom.x, 350);
+  assert.equal(atMinZoom.y, 210);
 });
 
 test('getCachedConveyorRoute reuses cached belt paths when stationary and invalidates when any node moves', () => {
@@ -265,9 +271,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.21 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.21');
-  assert.equal(APP_BUILD_TAG, '0.0.21 dev build');
+test('version tracking matches 0.0.22 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.22');
+  assert.equal(APP_BUILD_TAG, '0.0.22 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {

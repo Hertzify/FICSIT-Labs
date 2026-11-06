@@ -4,6 +4,14 @@ Short, straight to the point.
 
 ---
 
+## [0.0.22] — 2026-11-06 (`0.0.22 dev build`)
+
+- **Zoom Out Clamping Fix**: Fixed camera snapping back to the top-left corner when zooming out past 0.08x; smooth continuous clamping and panning enabled down to minimum zoom (0.06x).
+- **Open Source License**: Added open-source MIT license and updated project documentation.
+- **Documentation Overhaul**: Streamlined `README.md` to be concise, direct, and scannable.
+
+---
+
 ## [0.0.21] — 2026-11-06 (`0.0.21 dev build`)
 
 - **Authentic Satisfactory Machine UI**: Replaced custom inspector plates with real Satisfactory UI plates (`miner_top_bay_clean.png`, `processor_top_bay_clean.png`, `machine_lower_bay_clean.png`) with live values.

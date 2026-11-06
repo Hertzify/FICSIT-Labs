@@ -54,9 +54,12 @@ export function applyZoomAboutScreenPoint(
   viewportH: number
 ): void {
   const cam = cameraRef.current;
+  const curZoom = Number.isFinite(cam.zoom) && cam.zoom > 0 ? cam.zoom : 0.74;
+  const curX = Number.isFinite(cam.x) ? cam.x : 0;
+  const curY = Number.isFinite(cam.y) ? cam.y : 0;
   const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoomRaw));
-  const worldX = (screenX - cam.x) / cam.zoom;
-  const worldY = (screenY - cam.y) / cam.zoom;
+  const worldX = (screenX - curX) / curZoom;
+  const worldY = (screenY - curY) / curZoom;
   const rawCam: CameraState = {
     x: screenX - worldX * nextZoom,
     y: screenY - worldY * nextZoom,
@@ -100,10 +103,13 @@ export function executeCanvasPointerMove(
 
     const scaleRatio = dist / prevDist;
     const cam = cameraRef.current;
-    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * scaleRatio));
+    const curZoom = Number.isFinite(cam.zoom) && cam.zoom > 0 ? cam.zoom : 0.74;
+    const curX = Number.isFinite(cam.x) ? cam.x : 0;
+    const curY = Number.isFinite(cam.y) ? cam.y : 0;
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, curZoom * scaleRatio));
 
-    const worldMidX = (prevMidX - cam.x) / cam.zoom;
-    const worldMidY = (prevMidY - cam.y) / cam.zoom;
+    const worldMidX = (prevMidX - curX) / curZoom;
+    const worldMidY = (prevMidY - curY) / curZoom;
 
     const rawCam: CameraState = {
       x: midX - worldMidX * nextZoom,

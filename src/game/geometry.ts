@@ -598,25 +598,15 @@ export function clampCameraToWorld(
   const scaledWorldW = worldWidth * zoom;
   const scaledWorldH = worldHeight * zoom;
 
-  let minX: number;
-  let maxX: number;
-  if (scaledWorldW + marginX * 2 <= viewportWidth) {
-    minX = (viewportWidth - scaledWorldW) / 2;
-    maxX = minX;
-  } else {
-    minX = viewportWidth - scaledWorldW - marginX;
-    maxX = marginX;
-  }
+  const bound1X = marginX;
+  const bound2X = viewportWidth - scaledWorldW - marginX;
+  const minX = Math.min(bound1X, bound2X);
+  const maxX = Math.max(bound1X, bound2X);
 
-  let minY: number;
-  let maxY: number;
-  if (scaledWorldH + marginY * 2 <= viewportHeight) {
-    minY = (viewportHeight - scaledWorldH) / 2;
-    maxY = minY;
-  } else {
-    minY = viewportHeight - scaledWorldH - marginY;
-    maxY = marginY;
-  }
+  const bound1Y = marginY;
+  const bound2Y = viewportHeight - scaledWorldH - marginY;
+  const minY = Math.min(bound1Y, bound2Y);
+  const maxY = Math.max(bound1Y, bound2Y);
 
   const safeX = Number.isFinite(cam.x) ? cam.x : minX;
   const safeY = Number.isFinite(cam.y) ? cam.y : minY;

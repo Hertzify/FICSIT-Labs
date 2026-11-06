@@ -1,11 +1,8 @@
-# FICSIT Labs — `0.0.21 dev build`
+# FICSIT Labs — `0.0.22 dev build`
 
-- **Authentic Satisfactory Machine UI**: Real Satisfactory UI plates with live values and unclipped responsive scaling.
-- **Miner Node Icon**: Replaced the top-left drum on the Miner Mk.1 canvas card with the themed Miner Mk.1 build menu icon.
-- **Manual Clock Speed & Rate Inputs**: Type exact clock speed `%` or target items/min; removed clock speed SFX.
-- **Manual Power Shards Only**: Increasing clock speed clamps to unlocked shard limits instead of auto-adding shards.
-- **Satisfactory Inventory Fixes**: Accurate slot boxes, mobile auto-dark protection, stepped Sort icon, and solid tapered Trash Can icon.
-- **Cleanup & Optimization**: Removed unused assets/code, preloaded icons, and optimized belt tick sorting.
+- **Zoom Out Clamping Fix**: Fixed camera snapping back to the top-left corner when zooming out past 0.08x; smooth continuous clamping and panning enabled down to minimum zoom (0.06x).
+- **Open Source License**: Added official MIT license.
+- **Streamlined README**: Concise, scannable documentation and controls reference.
 
 ---
 *Full changelog in [`CHANGELOG.md`](./CHANGELOG.md)*

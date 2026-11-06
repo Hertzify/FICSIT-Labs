@@ -23,7 +23,7 @@ if (!sectionBody) {
 }
 
 const releaseNotes = [
-  `# FICSIT Labs — \`${version} dev build\``,
+  `# FICSIT Labs — \`${version} Initial Release\``,
   '',
   sectionBody,
   '',

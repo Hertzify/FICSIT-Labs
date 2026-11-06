@@ -2,8 +2,8 @@
 
 A fast, touch-friendly 2D factory automation tycoon built with React and HTML5 Canvas, inspired by Satisfactory.
 
-![Version](https://img.shields.io/badge/version-0.0.22%20dev%20build-F59E0B?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.0.1%20Initial%20Release-F59E0B?style=flat-square)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Mobile%20%7C%20Desktop%20%7C%20PWA-38BDF8?style=flat-square)
 
 ---
@@ -60,6 +60,15 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for release history and patch notes.
 
 ---
 
-## License
+## Acknowledgements & Inspirations
 
-This project is open-source under the [MIT License](./LICENSE).
+- **Satisfactory**: Factory mechanics, machine tiers, recipe trees, and lore inspired by *Satisfactory* by Coffee Stain Studios.
+- **Upload Labs**: 2D canvas node interface style and dark schematic layout inspired by *Upload Labs*.
+
+---
+
+## License & Legal Disclaimer
+
+- **Source Code**: Licensed under the [GNU General Public License v3.0 (GPLv3)](./LICENSE).
+- **Fan Tribute**: FICSIT Labs is an unofficial, non-commercial fan project built for educational and community enjoyment.
+- **Trademarks & Assets**: "Satisfactory", "FICSIT", associated machine names, and official game icons are trademarks and copyrighted property of Coffee Stain Studios AB / Embracer Group. This project is not affiliated with or endorsed by Coffee Stain Studios or Upload Labs.

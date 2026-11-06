@@ -225,7 +225,6 @@ export const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
       {mode === 'interactive' && selectedNodeSnapshot && (
         <NodeInspectorPanel
           node={selectedNodeSnapshot}
-          connections={connectionsRef.current}
           nodes={nodesRef.current}
           settings={settings}
           onClose={() => setSelectedNodeId(null)}
@@ -389,31 +388,6 @@ export const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
             playSynthSfx('click', settings);
             syncTelemetryAndRedraw(selectedNodeSnapshot.id);
             showToast('Filled node output storage to 100%');
-          }}
-          onUpgradeConnectedBelts={(tier, shortLabel, capacityPerMin) => {
-            factoryHistory.pushSnapshot(
-              nodesRef.current,
-              connectionsRef.current,
-              `Upgrade Belts to ${shortLabel}`
-            );
-            let count = 0;
-            connectionsRef.current = connectionsRef.current.map((c) => {
-              if (
-                c.fromNodeId === selectedNodeSnapshot.id ||
-                c.toNodeId === selectedNodeSnapshot.id
-              ) {
-                count++;
-                return upgradeConveyorBeltTier(c, tier);
-              }
-              return c;
-            });
-            playSynthSfx('click', settings);
-            syncTelemetryAndRedraw(selectedNodeSnapshot.id);
-            showToast(
-              count > 0
-                ? `Upgraded ${count} belt(s) to ${shortLabel} (${capacityPerMin}/m)`
-                : `Connect a belt first to upgrade to ${shortLabel}`
-            );
           }}
           onUnwireBelts={() => {
             factoryHistory.pushSnapshot(

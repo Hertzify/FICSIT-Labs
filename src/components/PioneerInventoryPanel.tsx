@@ -2,9 +2,9 @@
  * ============================================================================
  * MODULE INDEX: Pioneer Player Inventory Sidebar (`src/components/PioneerInventoryPanel.tsx`)
  * ============================================================================
- * [Lines 018-060] ScrewHead & PowerShardCrystalIcon Shared Subcomponents
- * [Lines 062-090] InventorySlotItem & PioneerInventoryPanelProps
- * [Lines 092-315] PioneerInventoryPanel (Relevant Items + 9x5 All Items Grid + Sort + Trash)
+ * [Lines 018-065] ScrewHead & PowerShardCrystalIcon & SommersloopIcon Subcomponents
+ * [Lines 067-095] InventorySlotItem & PioneerInventoryPanelProps
+ * [Lines 097-335] PioneerInventoryPanel (Relevant Items + 9x5 All Items Grid + Sort + Trash)
  * ============================================================================
  */
 
@@ -16,34 +16,66 @@ import { MachineNode, RecipeDef } from '../game/types';
 export const ScrewHead: React.FC<{ className?: string }> = ({ className = '' }) => (
   <span
     aria-hidden="true"
-    className={`inline-flex items-center justify-center w-2.5 h-2.5 rounded-full bg-[#4A4D52] border border-[#222428] shadow-inner select-none pointer-events-none ${className}`}
+    className={`inline-flex items-center justify-center w-2.5 h-2.5 rounded-full bg-gradient-to-b from-[#686B70] to-[#3A3C40] border border-[#1E2024] shadow-inner select-none pointer-events-none ${className}`}
   >
-    <span className="w-1.5 h-[1px] bg-[#222428] rotate-45 block" />
+    <span className="w-1.5 h-[1px] bg-[#1E2024] rotate-45 block" />
   </span>
 );
 
-export const PowerShardCrystalIcon: React.FC<{ active: boolean }> = ({ active }) => (
-  <svg
-    viewBox="0 0 36 36"
-    className={`w-7 h-7 transition-transform ${
-      active ? 'drop-shadow-[0_2px_4px_rgba(56,189,248,0.45)]' : 'opacity-30 grayscale'
-    }`}
-  >
-    <rect x="11" y="3" width="14" height="4" rx="1.5" fill={active ? '#1E293B' : '#64748B'} />
-    <rect x="10" y="6" width="16" height="3" rx="1" fill={active ? '#F59E0B' : '#94A3B8'} />
-    <polygon
-      points="12,9 24,9 26,18 23,27 13,27 10,18"
-      fill={active ? '#38BDF8' : '#94A3B8'}
-      stroke={active ? '#E0F2FE' : '#64748B'}
-      strokeWidth="1.2"
+export const StemBadge: React.FC<{
+  label: string;
+  active?: boolean;
+  activeClassName?: string;
+  className?: string;
+}> = ({ label, active = false, activeClassName = '', className = '' }) => (
+  <div className={`flex flex-col items-center select-none ${className}`}>
+    <span className="w-[1.5px] h-1.5 bg-white/80 block" />
+    <span
+      className={`px-4 py-[1px] rounded-[3px] border text-[10px] font-sans font-bold uppercase tracking-wider leading-tight shadow-sm ${
+        active
+          ? activeClassName
+          : 'bg-[#DCDDE0] text-[#333538] border-[#9A9C9E]'
+      }`}
+    >
+      {label}
+    </span>
+  </div>
+);
+
+export const PowerShardCrystalIcon: React.FC<{ active: boolean }> = ({ active }) =>
+  active ? (
+    <svg
+      viewBox="0 0 36 36"
+      className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(56,189,248,0.45)]"
+    >
+      <rect x="11" y="3" width="14" height="4" rx="1.5" fill="#1E293B" />
+      <rect x="10" y="6" width="16" height="3" rx="1" fill="#F59E0B" />
+      <polygon
+        points="12,9 24,9 26,18 23,27 13,27 10,18"
+        fill="#38BDF8"
+        stroke="#E0F2FE"
+        strokeWidth="1.2"
+      />
+      <polygon points="18,9 24,9 22,27 18,27" fill="#0284C7" opacity="0.65" />
+      <rect x="10" y="27" width="16" height="3" rx="1" fill="#F59E0B" />
+      <rect x="11" y="30" width="14" height="3.5" rx="1.5" fill="#1E293B" />
+    </svg>
+  ) : (
+    /* Authentic Satisfactory empty Power Shard canister silhouette */
+    <svg viewBox="0 0 36 36" className="w-8 h-8">
+      <path
+        d="M11 4 h14 l2 5 l-2 11 l2 7 l-2 5 h-14 l-2 -5 l2 -7 l-2 -11 z"
+        fill="#BDBEC2"
+      />
+    </svg>
+  );
+
+export const MultiplierSlotSilhouetteIcon: React.FC = () => (
+  <svg viewBox="0 0 36 36" className="w-8 h-8">
+    <path
+      d="M18 4 C24 4, 28 9, 26 15 C24 19, 27 23, 25 29 C23 33, 13 33, 11 29 C9 23, 12 19, 10 15 C8 9, 12 4, 18 4 Z"
+      fill="#BDBEC2"
     />
-    <polygon
-      points="18,9 24,9 22,27 18,27"
-      fill={active ? '#0284C7' : '#64748B'}
-      opacity="0.65"
-    />
-    <rect x="10" y="27" width="16" height="3" rx="1" fill={active ? '#F59E0B' : '#94A3B8'} />
-    <rect x="11" y="30" width="14" height="3.5" rx="1.5" fill={active ? '#1E293B' : '#64748B'} />
   </svg>
 );
 
@@ -161,7 +193,7 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
             count: Math.max(1, 10 - powerShards),
             iconUrl: null,
             isPowerShard: true,
-            isRelevant: true,
+            isRelevant: false,
           });
           continue;
         }
@@ -191,60 +223,53 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
         expandedSlots.sort((a, b) => a.name.localeCompare(b.name));
       }
 
-      const relList = expandedSlots.filter((s) => s.isRelevant).slice(0, 6);
+      // Deduplicate relevant items by item name so it matches Satisfactory's single stack per relevant item
+      const seenRel = new Set<string>();
+      const relList: InventorySlotItem[] = [];
+      for (const s of expandedSlots) {
+        if (s.isRelevant && !seenRel.has(s.name)) {
+          seenRel.add(s.name);
+          relList.push(s);
+        }
+      }
+
       const grid45: (InventorySlotItem | null)[] = [];
       for (let i = 0; i < 45; i++) {
         grid45.push(expandedSlots[i] ?? null);
       }
 
-      return { relevantItems: relList, allGridSlots: grid45 };
+      return { relevantItems: relList.slice(0, 6), allGridSlots: grid45 };
     }, [nodes, node.inputs, node.outputs, activeRecipe, powerShards, sortMode]);
 
     return (
-      <div className="flex flex-col justify-between bg-[#1F2125] p-3 select-none">
-        <div className="space-y-3">
+      <div className="flex flex-col justify-between bg-[#18191C]/95 select-none h-full">
+        <div className="p-2.5 space-y-2">
           {/* Relevant Items Row */}
           <div>
-            <div className="text-xs font-medium text-slate-200 mb-1.5">
+            <div className="text-[11px] font-sans text-[#D4D5D8] mb-1">
               Relevant Items:
             </div>
-            <div className="flex flex-wrap gap-1.5 min-h-[46px]">
+            <div className="flex flex-wrap gap-1 min-h-[38px]">
               {relevantItems.map((slot) => (
                 <button
                   key={slot.id}
                   type="button"
                   onClick={() => {
-                    if (slot.isPowerShard && onUpdateOverclock) {
-                      const nextShards = Math.min(3, powerShards + 1);
-                      onUpdateOverclock(
-                        Math.max(clockSpeedPct, getMaxClockSpeedPct(nextShards)),
-                        nextShards
-                      );
-                    } else if (onFillInputBuffer && node.inputs.length > 0) {
+                    if (onFillInputBuffer && node.inputs.length > 0) {
                       onFillInputBuffer();
                     }
                   }}
-                  title={
-                    slot.isPowerShard
-                      ? 'Tap to install Power Shard (+50% Overclock capacity)'
-                      : `${slot.name} (${slot.count}) · Tap to load into machine`
-                  }
-                  className={`relative w-11 h-11 rounded-[3px] bg-[#D9D9D9] flex items-center justify-center p-1 hover:ring-2 hover:ring-[#E59329] ${
-                    slot.isPowerShard ? 'border-2 border-[#E59329]' : 'border border-[#474A52]'
-                  }`}
+                  title={`${slot.name} (${slot.count}) · Tap to load into machine`}
+                  className="relative w-10 h-10 rounded-[2px] bg-[#CFCFD1] border border-[#454850] flex items-center justify-center p-0.5 hover:ring-2 hover:ring-[#DF8A2E]"
                 >
-                  {slot.isPowerShard ? (
-                    <PowerShardCrystalIcon active />
-                  ) : (
-                    slot.iconUrl && (
-                      <img
-                        src={slot.iconUrl}
-                        alt={slot.name}
-                        className="w-8 h-8 object-contain"
-                      />
-                    )
+                  {slot.iconUrl && (
+                    <img
+                      src={slot.iconUrl}
+                      alt={slot.name}
+                      className="w-8 h-8 object-contain"
+                    />
                   )}
-                  <span className="absolute bottom-0 right-0 px-1 py-0.2 rounded-tl-[2px] bg-[#E59329] text-white font-mono text-[10px] font-bold leading-tight">
+                  <span className="absolute bottom-0 right-0 px-1 py-[0.5px] bg-[#DF8A2E] text-white font-sans text-[9px] font-bold leading-tight">
                     {slot.count}
                   </span>
                 </button>
@@ -254,10 +279,10 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
 
           {/* All Items 9x5 Grid (45 Square Slots) */}
           <div>
-            <div className="text-xs font-medium text-slate-200 mb-1.5">
+            <div className="text-[11px] font-sans text-[#D4D5D8] mb-1">
               All Items:
             </div>
-            <div className="grid grid-cols-9 gap-1">
+            <div className="grid grid-cols-9 gap-[3px]">
               {allGridSlots.map((slot, idx) =>
                 slot ? (
                   <button
@@ -274,10 +299,14 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                         onFillInputBuffer();
                       }
                     }}
-                    title={`${slot.name} (${slot.count})`}
-                    className={`relative aspect-square w-full rounded-[2px] bg-[#D9D9D9] flex items-center justify-center p-0.5 hover:ring-2 hover:ring-[#E59329] ${
+                    title={
                       slot.isPowerShard
-                        ? 'border-2 border-[#E59329]'
+                        ? `Power Shard (${slot.count}) · Tap to install into Overclock slot`
+                        : `${slot.name} (${slot.count})`
+                    }
+                    className={`relative aspect-square w-full rounded-[2px] bg-[#CFCFD1] flex items-center justify-center p-0.5 hover:ring-2 hover:ring-[#DF8A2E] ${
+                      slot.isPowerShard
+                        ? 'border-2 border-[#DF8A2E]'
                         : 'border border-[#454850]'
                     }`}
                   >
@@ -292,14 +321,14 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                         />
                       )
                     )}
-                    <span className="absolute bottom-0 right-0 px-1 rounded-tl-[2px] bg-[#E59329] text-white font-mono text-[9px] font-bold leading-tight">
+                    <span className="absolute bottom-0 right-0 px-1 bg-[#DF8A2E] text-white font-sans text-[8.5px] font-bold leading-tight">
                       {slot.count}
                     </span>
                   </button>
                 ) : (
                   <div
                     key={`empty_${idx}`}
-                    className="aspect-square w-full rounded-[2px] bg-[#32353B]/90 border border-[#26282D]"
+                    className="aspect-square w-full rounded-[2px] bg-[#3A3C41]/85 border border-[#282A2E]"
                   />
                 )
               )}
@@ -307,8 +336,8 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
           </div>
         </div>
 
-        {/* Bottom Inventory Bar: [ ↓≡ Sort ] on Left + [ 🗑️ ] Trash Slot on Right */}
-        <div className="mt-4 pt-2 border-t border-[#2E3138] flex items-center justify-between">
+        {/* Flush Bottom Inventory Bar: [ ↓≡ Sort ] on Left + [ 🗑️ ] Trash Slot on Right */}
+        <div className="h-10 bg-[#2C2E33] border-t border-[#3E4046] flex items-stretch justify-between shrink-0">
           <button
             type="button"
             onClick={() =>
@@ -316,9 +345,11 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                 prev === 'default' ? 'count' : prev === 'count' ? 'name' : 'default'
               )
             }
-            className="h-10 px-5 rounded bg-[#4A4D55] hover:bg-[#5A5E68] text-xs font-semibold text-white flex items-center gap-2 border border-[#2C2E33] shadow"
+            className="h-full px-6 bg-[#6C6F75] hover:bg-[#7D8087] text-xs font-semibold text-white flex items-center gap-2 border-r border-[#3E4046] transition-colors"
           >
-            <span className="font-mono text-sm leading-none">↓≡</span>
+            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M5 3a1 1 0 011 1v9.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 111.414-1.414L4 13.586V4a1 1 0 011-1zm6 2h7a1 1 0 110 2h-7a1 1 0 110-2zm0 4h7a1 1 0 110 2h-7a1 1 0 110-2zm0 4h7a1 1 0 110 2h-7a1 1 0 110-2z" />
+            </svg>
             <span>
               Sort{sortMode !== 'default' ? ` (${sortMode.toUpperCase()})` : ''}
             </span>
@@ -329,20 +360,10 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
             onClick={onFlushBuffer}
             title="Trash / Flush Machine Internal Buffers"
             aria-label="Flush Machine Buffers"
-            className="w-10 h-10 rounded bg-[#4A4D55] hover:bg-rose-700 text-white flex items-center justify-center border border-[#2C2E33] shadow transition-colors"
+            className="w-11 h-full bg-[#6C6F75] hover:bg-rose-600 text-white flex items-center justify-center border-l border-[#3E4046] transition-colors"
           >
-            <svg
-              className="w-5 h-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9 3h6a1 1 0 011 1v1h4a1 1 0 110 2h-1v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7H4a1 1 0 110-2h4V4a1 1 0 011-1zm1 2h4V4h-4v1zM7 7v12h10V7H7zm2 2a1 1 0 011 1v7a1 1 0 11-2 0v-7a1 1 0 011-1zm6 0a1 1 0 011 1v7a1 1 0 11-2 0v-7a1 1 0 011-1z" />
             </svg>
           </button>
         </div>

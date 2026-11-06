@@ -256,9 +256,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.19 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.19');
-  assert.equal(APP_BUILD_TAG, '0.0.19 dev build');
+test('version tracking matches 0.0.191 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.191');
+  assert.equal(APP_BUILD_TAG, '0.0.191 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {

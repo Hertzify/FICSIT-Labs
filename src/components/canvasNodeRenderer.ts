@@ -525,44 +525,138 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
       ctx.textAlign = 'right';
       ctx.fillText('250%', segBarX + segBarW, tickLabelY);
 
-      // 4. EXTERIOR STANDBY ROCKER SWITCH LIVE STATE (keeps Media item 1 housing & look, flips rocker when STANDBY is active)
-      if (isStandby) {
-        const swX = nx + 0.835 * W;
-        const swY = ny + 0.772 * H;
-        const swW = 0.102 * W;
-        const swH = 0.096 * H;
+      // 4. EXTERIOR STANDBY ROCKER SWITCH LIVE STATE (I / O symbols + distinct color when flipped)
+      // Uses miner_chassis_bg.jpg (1131..1316 x 576..696, centered at x=1223.5) and its exact
+      // horizontal mirror so ON (I) and STANDBY (O) are 100% pixel-symmetrical.
+      {
+        const leftSymX = nx + (1190 / 1376) * W;
+        const rightSymX = nx + (1257 / 1376) * W;
+        const symY = ny + (636 / 768) * H;
+        const iHalfH = (16 / 768) * H;
+        const oRadius = (15 / 768) * H;
 
-        // Inner recessed switch cavity
-        drawRoundedRect(ctx, swX, swY, swW, swH, 2.5);
-        ctx.fillStyle = '#181A1D';
-        ctx.fill();
+        if (!isStandby) {
+          if (chassisImg) {
+            // Seamlessly cover the baked-in horizontal bar on the left lit half so we can render crisp I / O markings
+            ctx.drawImage(
+              chassisImg,
+              1170,
+              610,
+              46,
+              12,
+              nx + (1170 / 1376) * W,
+              ny + (622 / 768) * H,
+              (46 / 1376) * W,
+              (28 / 768) * H
+            );
+          }
 
-        // Left raised 3D metallic rocker half (flipped to left when in STANDBY)
-        const tabW = swW * 0.46;
-        const tabGrad = ctx.createLinearGradient(swX + 1, swY + 1, swX + tabW, swY + swH - 1);
-        tabGrad.addColorStop(0, '#5A5E66');
-        tabGrad.addColorStop(0.5, '#3E4248');
-        tabGrad.addColorStop(1, '#26292E');
-        drawRoundedRect(ctx, swX + 1, swY + 1, tabW, swH - 2, 2);
-        ctx.fillStyle = tabGrad;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.lineWidth = 0.7;
-        ctx.stroke();
+          // Left depressed active half: glowing 'I'
+          ctx.save();
+          ctx.strokeStyle = '#FFF7ED';
+          ctx.shadowColor = '#FB923C';
+          ctx.shadowBlur = 4;
+          ctx.lineWidth = 2.1;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(leftSymX, symY - iHalfH);
+          ctx.lineTo(leftSymX, symY + iHalfH);
+          ctx.stroke();
+          ctx.restore();
 
-        // Right depressed glowing red/amber STANDBY side with horizontal LED bar
-        const rightX = swX + tabW + 1;
-        const rightW = swW - tabW - 2;
-        const glowGrad = ctx.createLinearGradient(rightX, swY + 1, rightX + rightW, swY + 1);
-        glowGrad.addColorStop(0, '#451A1C');
-        glowGrad.addColorStop(1, '#991B1B');
-        drawRoundedRect(ctx, rightX, swY + 1, rightW, swH - 2, 2);
-        ctx.fillStyle = glowGrad;
-        ctx.fill();
+          // Right raised dark metallic half: engraved 'O'
+          ctx.save();
+          ctx.strokeStyle = 'rgba(226, 232, 240, 0.65)';
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.arc(rightSymX, symY, oRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          if (chassisImg) {
+            const srcX = 1131;
+            const srcY = 576;
+            const srcW = 185;
+            const srcH = 120;
+            const dstX = nx + (srcX / 1376) * W;
+            const dstY = ny + (srcY / 768) * H;
+            const dstW = (srcW / 1376) * W;
+            const dstH = (srcH / 768) * H;
 
-        // Glowing horizontal STANDBY indicator slit on right half
-        ctx.fillStyle = '#FCA5A5';
-        ctx.fillRect(rightX + 2.5, swY + swH * 0.5 - 1, Math.max(3, rightW - 5), 2);
+            ctx.save();
+            drawRoundedRect(ctx, dstX, dstY, dstW, dstH, 4);
+            ctx.clip();
+            ctx.translate(dstX + dstW * 0.5, dstY + dstH * 0.5);
+            ctx.scale(-1, 1);
+            // Shift the warm orange-red glow to a distinct cool cyan-blue standby glow while keeping neutral grey metal unchanged
+            ctx.filter = 'hue-rotate(190deg) saturate(1.2)';
+            ctx.drawImage(
+              chassisImg,
+              srcX,
+              srcY,
+              srcW,
+              srcH,
+              -dstW * 0.5,
+              -dstH * 0.5,
+              dstW,
+              dstH
+            );
+            // Cover the baked-in horizontal slit on the mirrored lit half
+            ctx.drawImage(
+              chassisImg,
+              1170,
+              610,
+              46,
+              12,
+              -dstW * 0.5 + ((1170 - srcX) / srcW) * dstW,
+              -dstH * 0.5 + ((622 - srcY) / srcH) * dstH,
+              (46 / srcW) * dstW,
+              (28 / srcH) * dstH
+            );
+            ctx.filter = 'none';
+            ctx.restore();
+          } else {
+            const swX = nx + (1140 / 1376) * W;
+            const swY = ny + (584 / 768) * H;
+            const swW = (168 / 1376) * W;
+            const swH = (104 / 768) * H;
+            const halfW = (swW - 2) * 0.5;
+
+            drawRoundedRect(ctx, swX, swY, swW, swH, 3);
+            ctx.fillStyle = '#181A1D';
+            ctx.fill();
+
+            drawRoundedRect(ctx, swX + 1, swY + 1, halfW, swH - 2, 2);
+            ctx.fillStyle = '#3E4248';
+            ctx.fill();
+
+            drawRoundedRect(ctx, swX + 1 + halfW, swY + 1, halfW, swH - 2, 2);
+            ctx.fillStyle = '#0284C7';
+            ctx.fill();
+          }
+
+          // Left raised dark metallic half: engraved 'I'
+          ctx.save();
+          ctx.strokeStyle = 'rgba(226, 232, 240, 0.65)';
+          ctx.lineWidth = 1.8;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(leftSymX, symY - iHalfH);
+          ctx.lineTo(leftSymX, symY + iHalfH);
+          ctx.stroke();
+          ctx.restore();
+
+          // Right depressed active standby half: glowing 'O'
+          ctx.save();
+          ctx.strokeStyle = '#E0F2FE';
+          ctx.shadowColor = '#38BDF8';
+          ctx.shadowBlur = 4;
+          ctx.lineWidth = 2.0;
+          ctx.beginPath();
+          ctx.arc(rightSymX, symY, oRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
 
       ctx.restore();

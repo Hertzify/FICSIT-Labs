@@ -3,27 +3,21 @@
  * MODULE INDEX: Machine Overclocking (0%-250%) & Footer (`src/components/MachineOverclockSection.tsx`)
  * ============================================================================
  * [Lines 018-045] MachineOverclockSectionProps
- * [Lines 047-225] Overclock Card (1%-250% Slider, 3 Power Shard Slots, Multiplier & Belt Tiers)
- * [Lines 227-325] Bottom Footer (Copy/Paste Settings, Fill/Unwire/Dismantle, Standby Rocker Switch)
+ * [Lines 047-250] Overclock Bay (1%-250% Full-Height Divided Card, 3 Shard Slots, Multiplier, Conduit Pipe & Heat Vents)
+ * [Lines 252-360] Bottom Footer (Copy/Paste Settings Buttons + Framed I/O Standby Rocker Switch)
  * ============================================================================
  */
 
 import React from 'react';
+import { getMaxClockSpeedPct, getRequiredPowerShards } from '../game/catalog';
 import {
-  CONVEYOR_BELT_TIER_LIST,
-  getMaxClockSpeedPct,
-  getRequiredPowerShards,
-} from '../game/catalog';
-import {
-  ConveyorBeltTier,
-  ConveyorConnection,
-  MachineNode,
-} from '../game/types';
-import { PowerShardCrystalIcon, ScrewHead } from './PioneerInventoryPanel';
+  MultiplierSlotSilhouetteIcon,
+  PowerShardCrystalIcon,
+  ScrewHead,
+  StemBadge,
+} from './PioneerInventoryPanel';
 
 interface MachineOverclockSectionProps {
-  node: MachineNode;
-  attachedConns: ConveyorConnection[];
   powerShards: number;
   clockSpeedPct: number;
   maxUnlockedClockPct: number;
@@ -34,21 +28,10 @@ interface MachineOverclockSectionProps {
   onToggleStandby?: () => void;
   onCopySettings?: () => void;
   onPasteSettings?: () => void;
-  onFillInputBuffer?: () => void;
-  onFillOutputBuffer?: () => void;
-  onUpgradeConnectedBelts: (
-    tier: ConveyorBeltTier,
-    shortLabel: string,
-    capacityPerMin: number
-  ) => void;
-  onUnwireBelts: () => void;
-  onDismantleNode: () => void;
 }
 
 export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = React.memo(
   ({
-    node,
-    attachedConns,
     powerShards,
     clockSpeedPct,
     maxUnlockedClockPct,
@@ -59,15 +42,10 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
     onToggleStandby,
     onCopySettings,
     onPasteSettings,
-    onFillInputBuffer,
-    onFillOutputBuffer,
-    onUpgradeConnectedBelts,
-    onUnwireBelts,
-    onDismantleNode,
   }) => {
     const handleSliderChange = (rawVal: number) => {
       if (!onUpdateOverclock) return;
-      const clampedVal = Math.min(250, Math.max(1, Math.round(rawVal * 2) / 2));
+      const clampedVal = Math.min(250, Math.max(1, Math.round(rawVal)));
       const reqShards = getRequiredPowerShards(clampedVal);
       const nextShards = Math.max(powerShards, reqShards);
       onUpdateOverclock(clampedVal, nextShards);
@@ -86,54 +64,60 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
         {/* =============================================================== */}
         {/* LOWER OVERCLOCK (0% – 250% WITH 3 POWER SHARDS) & MULTIPLIER    */}
         {/* =============================================================== */}
-        <div className="flex items-stretch gap-1.5">
+        <div className="relative flex items-stretch gap-1.5 bg-[#2A2C30] border-2 border-[#18191C] rounded-md p-1.5 shadow-inner">
           {/* Left Glowing Orange Vertical Heat Vents */}
-          <div className="w-5 rounded bg-[#1E2024] border border-[#34373E] py-1.5 flex flex-col items-center justify-between shrink-0">
+          <div className="w-4 py-1 flex flex-col items-center justify-between shrink-0">
             <ScrewHead />
-            <div className="flex gap-[2px] h-8">
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
+            <div className="flex gap-[2px] h-9">
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
             </div>
-            <div className="flex gap-[2px] h-8">
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
+            <div className="flex gap-[2px] h-9">
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
             </div>
             <ScrewHead />
           </div>
 
-          {/* Center White OVERCLOCK Card (1% to 250% with 3 Power Shard Slots) */}
-          <div className="flex-1 rounded-md bg-[#2E3036] border-2 border-[#18191C] p-2 flex flex-col justify-between">
-            <div className="rounded bg-white text-slate-900 p-2 space-y-2 shadow">
-              <div className="grid grid-cols-[1.25fr_1fr_1fr_1fr] divide-x divide-slate-200 items-center">
-                {/* Clock Speed & Target Rate Readouts */}
-                <div className="pr-2 space-y-1">
-                  <div className="text-[10px] font-bold text-slate-700 leading-tight">
+          {/* Center OVERCLOCK Housing */}
+          <div className="flex-1 rounded-[5px] bg-[#36383E] border-2 border-[#1B1C20] px-2 pt-2 pb-1 flex flex-col justify-between shadow-md">
+            {/* Crisp White Overclock Interior with Continuous Vertical Column Dividers */}
+            <div className="relative rounded-[4px] bg-[#F5F5F7] border border-[#2C2E33] text-[#333538] overflow-hidden px-2.5 pt-2 pb-1.5">
+              {/* Continuous Full-Height Vertical Column Divider Lines at 40% (100%), 60% (150%), 80% (200%) */}
+              <span className="pointer-events-none absolute top-0 bottom-4 left-[40%] w-[1.5px] bg-[#DF8A2E] z-10" />
+              <span className="pointer-events-none absolute top-0 bottom-4 left-[60%] w-[1px] bg-[#D4D6DA] z-10" />
+              <span className="pointer-events-none absolute top-0 bottom-4 left-[80%] w-[1px] bg-[#D4D6DA] z-10" />
+
+              {/* Upper Row: Left 40% Clock Speed Readouts + Right 3x20% Power Shard Slots */}
+              <div className="flex items-center">
+                <div className="w-[40%] pr-2 space-y-0.5">
+                  <div className="text-[10px] font-bold text-[#333538] leading-tight">
                     Clock Speed:
                   </div>
-                  <div className="inline-block px-1.5 py-0.5 rounded bg-slate-100 border border-slate-300 text-sm font-mono font-bold text-[#E59329]">
+                  <div className="inline-block min-w-[54px] px-1.5 py-[1px] rounded-[2px] bg-[#EAEBED] border border-[#D4D6DA] text-sm font-sans font-bold text-[#DF8A2E] leading-tight">
                     {clockSpeedPct}%
                   </div>
-                  <div className="text-[10px] font-bold text-slate-700 leading-tight">
+                  <div className="text-[9.5px] font-bold text-[#333538] leading-tight pt-0.5">
                     Target production rate:
                   </div>
-                  <div className="text-xs text-slate-600">
-                    <span className="px-1 py-0.2 rounded bg-slate-100 border border-slate-300 font-mono font-bold text-[#E59329]">
+                  <div className="text-[11px] text-[#45474C] flex items-center gap-1">
+                    <span className="inline-block min-w-[28px] text-center px-1 py-[0.5px] rounded-[2px] bg-[#EAEBED] border border-[#D4D6DA] font-sans font-bold text-[#DF8A2E]">
                       {targetOutputRate}
-                    </span>{' '}
-                    per min
+                    </span>
+                    <span className="font-medium">per min</span>
                   </div>
                 </div>
 
-                {/* 3 Power Shard Slots (+50% each: 150%, 200%, 250%) */}
+                {/* 3 Power Shard Slots (each 20% width to align strictly with 100%-150%, 150%-200%, 200%-250%) */}
                 {[0, 1, 2].map((slotIdx) => {
                   const isInstalled = slotIdx < powerShards;
                   const unlockedCap = 150 + slotIdx * 50;
                   return (
                     <div
                       key={slotIdx}
-                      className="flex flex-col items-center justify-center px-1"
+                      className="w-[20%] flex items-center justify-center py-1"
                     >
                       <button
                         type="button"
@@ -144,22 +128,20 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
                             : `Install Power Shard #${slotIdx + 1} (Unlocks up to ${unlockedCap}% Clock Speed)`
                         }
                         aria-label={`Power Shard Slot ${slotIdx + 1}`}
-                        className={`relative w-11 h-11 rounded bg-[#D9D9D9] border flex items-center justify-center transition-all ${
+                        className={`relative w-11 h-11 rounded-[3px] bg-[#D8D9DC] border flex items-center justify-center transition-all ${
                           isInstalled
-                            ? 'border-[#E59329] ring-1 ring-[#E59329]/50 shadow-sm'
-                            : 'border-slate-300 hover:border-[#E59329]'
+                            ? 'border-[#DF8A2E] ring-1 ring-[#DF8A2E]/60'
+                            : 'border-[#C5C7CB] hover:border-[#DF8A2E]'
                         }`}
                       >
                         <PowerShardCrystalIcon active={isInstalled} />
-                        {isInstalled ? (
-                          <span className="absolute -bottom-1.5 inset-x-0.5 py-0.2 rounded bg-[#E59329] text-white font-mono text-[9px] font-bold leading-tight text-center shadow">
-                            1/1
-                          </span>
-                        ) : (
-                          <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-[#52555C] text-white font-mono text-[9px] font-bold leading-tight">
-                            1
-                          </span>
-                        )}
+                        <span
+                          className={`absolute bottom-0 right-0 px-1 rounded-tl-[2px] font-sans text-[9px] font-bold leading-tight text-white ${
+                            isInstalled ? 'bg-[#DF8A2E]' : 'bg-[#686B70]'
+                          }`}
+                        >
+                          1
+                        </span>
                       </button>
                     </div>
                   );
@@ -167,9 +149,9 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
               </div>
 
               {/* Segmented 0% — 100% | 150% | 200% | 250% Slider Bar */}
-              <div className="pt-1 space-y-1">
-                <div className="relative h-4 w-full flex items-center select-none">
-                  <div className="w-full h-3.5 flex gap-[2px] rounded-sm overflow-hidden">
+              <div className="mt-1.5">
+                <div className="relative h-3.5 w-full flex items-center select-none">
+                  <div className="w-full h-3.5 flex bg-[#CFCFD3]">
                     {[
                       { start: 0, end: 100, widthClass: 'w-[40%]' },
                       { start: 100, end: 150, widthClass: 'w-[20%]' },
@@ -187,12 +169,12 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
                         <div
                           key={seg.start}
                           className={`${seg.widthClass} h-full relative ${
-                            isUnlocked ? 'bg-[#585A60]' : 'bg-[#D1D5DB]'
+                            isUnlocked ? 'bg-[#73757A]' : 'bg-[#CFCFD3]'
                           }`}
                         >
                           {fillRatio > 0 && (
                             <div
-                              className="h-full bg-[#E59329]"
+                              className="h-full bg-[#DF8A2E]"
                               style={{ width: `${fillRatio}%` }}
                             />
                           )}
@@ -209,44 +191,44 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
                     step={1}
                     value={clockSpeedPct}
                     onChange={(e) => handleSliderChange(Number(e.target.value))}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
                   />
                 </div>
 
                 {/* Tick Labels: 0%, 100%, 150%, 200%, 250% */}
-                <div className="relative h-3.5 text-[9px] font-mono font-bold text-slate-600 select-none">
+                <div className="relative h-3 mt-0.5 text-[8.5px] font-sans font-semibold select-none">
                   <button
                     type="button"
                     onClick={() => handleSliderChange(25)}
-                    className="absolute left-0 hover:text-[#E59329]"
+                    className="absolute left-0 text-[#DF8A2E] hover:underline"
                   >
                     0%
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSliderChange(100)}
-                    className="absolute left-[40%] -translate-x-1/2 text-[#E59329] hover:underline"
+                    className="absolute left-[40%] -translate-x-1/2 text-[#DF8A2E] hover:underline"
                   >
                     100%
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSliderChange(150)}
-                    className="absolute left-[60%] -translate-x-1/2 hover:text-[#E59329]"
+                    className="absolute left-[60%] -translate-x-1/2 text-[#A0A3A9] hover:text-[#DF8A2E]"
                   >
                     150%
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSliderChange(200)}
-                    className="absolute left-[80%] -translate-x-1/2 hover:text-[#E59329]"
+                    className="absolute left-[80%] -translate-x-1/2 text-[#A0A3A9] hover:text-[#DF8A2E]"
                   >
                     200%
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSliderChange(250)}
-                    className="absolute right-0 hover:text-[#E59329]"
+                    className="absolute right-0 text-[#A0A3A9] hover:text-[#DF8A2E]"
                   >
                     250%
                   </button>
@@ -254,173 +236,141 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
               </div>
             </div>
 
-            <div className="mt-1.5 flex justify-center">
-              <span className="px-4 py-0.5 rounded bg-[#E5E7EB] border border-slate-400 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-700">
-                OVERCLOCK
-              </span>
-            </div>
+            <StemBadge label="OVERCLOCK" />
           </div>
 
-          {/* Right MULTIPLIER & Belt Tier Module */}
-          <div className="w-28 rounded-md bg-[#2E3036] border-2 border-[#18191C] p-2 flex flex-col justify-between shrink-0">
-            <div className="rounded bg-[#1E2024] border border-[#3B3E45] p-1.5 flex flex-col items-center text-center gap-1">
-              <div className="relative w-10 h-10 rounded bg-[#D9D9D9] flex items-center justify-center">
-                <span className="text-slate-400 font-bold text-sm">∞</span>
-                <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-[#52555C] text-white font-mono text-[8px] font-bold">
+          {/* Right MULTIPLIER Housing */}
+          <div className="w-[106px] rounded-[5px] bg-[#36383E] border-2 border-[#1B1C20] px-2 pt-2 pb-1 flex flex-col justify-between shrink-0 shadow-md">
+            <div className="flex-1 rounded-[4px] bg-[#18191D] border border-[#2C2E33] p-2 flex flex-col items-center justify-center text-center gap-1.5">
+              <div className="relative w-11 h-11 rounded-[3px] bg-[#D8D9DC] flex items-center justify-center">
+                <MultiplierSlotSilhouetteIcon />
+                <span className="absolute bottom-0 right-0 px-1 rounded-tl-[2px] bg-[#686B70] text-white font-sans text-[9px] font-bold leading-tight">
                   1
                 </span>
               </div>
-              <div className="text-[9px] text-slate-300 leading-tight">
+              <div className="text-[9.5px] text-[#D4D5D8] leading-tight">
                 Output Multiplier:
-                <div className="font-mono font-bold text-slate-400">x1</div>
-              </div>
-              {/* Connected Belt Quick-Upgrade Pills */}
-              <div className="w-full grid grid-cols-3 gap-0.5 pt-0.5">
-                {CONVEYOR_BELT_TIER_LIST.map((bt) => {
-                  const isCur =
-                    attachedConns.length > 0 &&
-                    attachedConns.every((c) => (c.beltTier ?? 1) === bt.tier);
-                  return (
-                    <button
-                      key={bt.id}
-                      type="button"
-                      onClick={() =>
-                        onUpgradeConnectedBelts(
-                          bt.tier,
-                          bt.shortLabel,
-                          bt.capacityPerMin
-                        )
-                      }
-                      title={`Upgrade connected belts to ${bt.name} (${bt.capacityPerMin}/m)`}
-                      className={`py-0.5 rounded text-[8px] font-mono font-bold border ${
-                        isCur
-                          ? 'bg-[#E59329] text-slate-950 border-[#E59329]'
-                          : 'bg-[#141518] text-slate-300 border-[#34373E] hover:border-slate-400'
-                      }`}
-                    >
-                      {bt.shortLabel}
-                    </button>
-                  );
-                })}
+                <div className="font-sans font-bold text-[#5A5D64] text-xs mt-0.5">
+                  x1
+                </div>
               </div>
             </div>
-            <div className="mt-1.5 flex justify-center">
-              <span className="px-2.5 py-0.5 rounded bg-[#E5E7EB] border border-slate-400 text-[9px] font-mono font-bold uppercase tracking-wider text-slate-700">
-                MULTIPLIER
-              </span>
-            </div>
+
+            <StemBadge label="MULTIPLIER" />
           </div>
 
           {/* Right Glowing Orange Vertical Heat Vents */}
-          <div className="w-5 rounded bg-[#1E2024] border border-[#34373E] py-1.5 flex flex-col items-center justify-between shrink-0">
+          <div className="w-4 py-1 flex flex-col items-center justify-between shrink-0">
             <ScrewHead />
-            <div className="flex gap-[2px] h-8">
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
+            <div className="flex gap-[2px] h-9">
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
             </div>
-            <div className="flex gap-[2px] h-8">
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              <span className="w-[2px] h-full rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
+            <div className="flex gap-[2px] h-9">
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
+              <span className="w-[2px] h-full rounded-full bg-[#FF981A] shadow-[0_0_6px_#FF981A]" />
             </div>
             <ScrewHead />
           </div>
         </div>
 
         {/* =============================================================== */}
-        {/* BOTTOM FOOTER: COPY/PASTE SETTINGS + STANDBY ROCKER SWITCH      */}
+        {/* BOTTOM FOOTER: COPY/PASTE SETTINGS + FRAMED STANDBY SWITCH      */}
         {/* =============================================================== */}
-        <div className="rounded-md bg-[#18191C] border border-[#2E3036] p-2.5 flex items-center justify-between gap-2">
-          <div className="flex flex-col gap-1.5 w-44">
+        <div className="rounded-md bg-[#222428] border-2 border-[#18191C] px-3 py-2 flex items-center justify-between shadow-inner">
+          <div className="flex flex-col gap-1.5 w-48">
             <button
               type="button"
               onClick={onCopySettings}
-              className="w-full py-1 px-2.5 rounded bg-[#2A2C32] hover:bg-[#373A42] border border-[#3E4149] text-xs font-medium text-slate-200 flex items-center justify-center gap-1.5 shadow"
+              className="w-full py-1.5 px-3 rounded-[3px] bg-gradient-to-b from-[#34373D] to-[#26282D] hover:from-[#40444B] hover:to-[#2E3138] border border-[#141518] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] text-xs font-sans text-[#E4E5E7] flex items-center justify-center gap-2 transition-colors"
             >
-              <span>📋</span>
+              <svg
+                className="w-3.5 h-3.5 text-white shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
               <span>Copy Settings</span>
             </button>
             <button
               type="button"
               onClick={onPasteSettings}
               disabled={!hasCopiedSettings}
-              className={`w-full py-1 px-2.5 rounded border text-xs font-medium flex items-center justify-center gap-1.5 shadow ${
+              className={`w-full py-1.5 px-3 rounded-[3px] border text-xs font-sans flex items-center justify-center gap-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] transition-colors ${
                 hasCopiedSettings
-                  ? 'bg-[#2A2C32] hover:bg-[#373A42] border-[#3E4149] text-slate-200'
-                  : 'bg-[#202226] border-[#2C2E33] text-slate-500 cursor-not-allowed'
+                  ? 'bg-gradient-to-b from-[#34373D] to-[#26282D] hover:from-[#40444B] hover:to-[#2E3138] border-[#141518] text-[#E4E5E7]'
+                  : 'bg-[#232529] border-[#18191C] text-[#7A7D84] cursor-not-allowed'
               }`}
             >
-              <span>📋</span>
+              <svg
+                className="w-3.5 h-3.5 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+              </svg>
               <span>Paste Settings</span>
             </button>
           </div>
 
-          {/* Compact Utility Controls (Fill, Unwire, Dismantle) */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5">
-            {onFillInputBuffer && node.inputs.length > 0 && (
-              <button
-                type="button"
-                onClick={onFillInputBuffer}
-                className="px-2 py-1 rounded bg-[#26282E] hover:bg-[#32353D] border border-[#3B3E46] text-[10px] font-mono text-cyan-300"
-              >
-                Fill In
-              </button>
-            )}
-            {onFillOutputBuffer && (
-              <button
-                type="button"
-                onClick={onFillOutputBuffer}
-                className="px-2 py-1 rounded bg-[#26282E] hover:bg-[#32353D] border border-[#3B3E46] text-[10px] font-mono text-amber-300"
-              >
-                Fill Out
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onUnwireBelts}
-              className="px-2 py-1 rounded bg-[#26282E] hover:bg-[#32353D] border border-[#3B3E46] text-[10px] font-mono text-slate-300"
-            >
-              Unwire
-            </button>
-            <button
-              type="button"
-              onClick={onDismantleNode}
-              className="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900 border border-rose-700/60 text-[10px] font-mono text-rose-200"
-            >
-              Dismantle
-            </button>
-          </div>
-
-          {/* Right Glowing Orange/Red [ STANDBY ] Rocker Switch */}
-          <div className="flex flex-col items-center">
+          {/* Right Framed [ STANDBY ] I/O Rocker Switch with White Stem */}
+          <div className="flex flex-col items-center mr-6">
             <button
               type="button"
               aria-label="Toggle Standby Mode"
               aria-pressed={isStandby}
               onClick={onToggleStandby}
-              className="w-12 h-11 rounded border border-white/70 bg-[#141518] flex items-center justify-center p-1.5 shadow-inner hover:border-[#E59329]"
-            >
-              <span
-                className={`w-4 h-7 rounded-[2px] flex flex-col items-center justify-between p-0.5 transition-all ${
-                  isStandby
-                    ? 'bg-gradient-to-b from-rose-500 to-rose-700 shadow-[0_0_10px_rgba(244,63,94,0.85)]'
-                    : 'bg-gradient-to-b from-[#F59E0B] to-[#D97706] shadow-[0_0_10px_rgba(245,158,11,0.75)]'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full border border-white/80" />
-                <span className="w-2 h-[2px] bg-white/90" />
-              </span>
-            </button>
-            <span
-              className={`mt-1 px-3 py-0.2 rounded border text-[9px] font-mono font-bold uppercase tracking-wider ${
+              className={`w-14 h-12 rounded-[5px] border bg-[#1B1D20] flex items-center justify-center p-1 shadow-inner transition-colors ${
                 isStandby
-                  ? 'bg-rose-600 text-white border-rose-400'
-                  : 'bg-[#E5E7EB] text-slate-800 border-slate-400'
+                  ? 'border-sky-400 hover:border-sky-300'
+                  : 'border-white/85 hover:border-[#DF8A2E]'
               }`}
             >
-              {isStandby ? 'PAUSED' : 'STANDBY'}
-            </span>
+              <span className="w-5 h-9 rounded-[2px] overflow-hidden border border-[#3E4046] bg-[#141518] p-[1.5px] flex flex-col">
+                {/* Top Half: I (ON) */}
+                <span
+                  className={`w-full h-1/2 flex items-center justify-center transition-all ${
+                    !isStandby
+                      ? 'bg-gradient-to-b from-[#FF981A] to-[#D96B16] shadow-[0_0_6px_rgba(255,152,26,0.6)]'
+                      : 'bg-gradient-to-b from-[#454950] to-[#282B30]'
+                  }`}
+                >
+                  <span
+                    className={`w-[1.8px] h-2.5 rounded-full ${
+                      !isStandby ? 'bg-white' : 'bg-white/50'
+                    }`}
+                  />
+                </span>
+                {/* Bottom Half: O (STANDBY) */}
+                <span
+                  className={`w-full h-1/2 flex items-center justify-center border-t border-black/40 transition-all ${
+                    isStandby
+                      ? 'bg-gradient-to-b from-[#0EA5E9] to-[#0284C7] shadow-[0_0_6px_rgba(14,165,233,0.65)]'
+                      : 'bg-gradient-to-b from-[#3A3E45] to-[#22252A]'
+                  }`}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full border-[1.6px] ${
+                      isStandby ? 'border-white' : 'border-white/55'
+                    }`}
+                  />
+                </span>
+              </span>
+            </button>
+            <StemBadge
+              label="STANDBY"
+              active={isStandby}
+              activeClassName="bg-sky-600 text-white border-sky-400"
+            />
           </div>
         </div>
       </>

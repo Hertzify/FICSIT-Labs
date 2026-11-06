@@ -225,46 +225,103 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
       }
     }
 
+    // Rebuild default ports if a saved node is missing its port arrays
+    const templatePorts =
+      !Array.isArray(n.inputs) ||
+      !Array.isArray(n.outputs) ||
+      (bDef &&
+        n.buildingId !== 'miner_mk1' &&
+        n.buildingId !== 'resource_deposit' &&
+        n.inputs.length === 0 &&
+        bDef.inputPortCount > 0) ||
+      (bDef &&
+        n.buildingId !== 'resource_deposit' &&
+        n.outputs.length === 0 &&
+        bDef.outputPortCount > 0)
+        ? buildNodePorts(n.id, n.buildingId, n.recipeId, n.purity)
+        : null;
+
     // In Satisfactory, Miner Mk.1 has 0 input ports and only 1 output storage buffer!
-    const sanitizedInputs =
-      n.buildingId === 'miner_mk1' || n.buildingId === 'resource_deposit' ? [] : n.inputs;
+    const rawInputs =
+      n.buildingId === 'miner_mk1' || n.buildingId === 'resource_deposit'
+        ? []
+        : Array.isArray(n.inputs) && n.inputs.length > 0
+        ? n.inputs
+        : templatePorts?.inputs ?? [];
+
+    const rawOutputs =
+      n.buildingId === 'resource_deposit'
+        ? []
+        : Array.isArray(n.outputs) && n.outputs.length > 0
+        ? n.outputs
+        : templatePorts?.outputs ?? [];
 
     // Migrate legacy starter_hub y=2772 to 2808 so its input port aligns straight with starter_constructor
     const migratedY = n.id === 'starter_hub' && n.y === 2772 ? 2808 : n.y;
-    const maxStoredCount = getBuildingMaxStorage(
+    const recipe = n.recipeId ? RECIPES[n.recipeId] : null;
+    const activeItemName =
+      rawOutputs[0]?.itemName ??
+      rawInputs.find((p) => p.itemName)?.itemName ??
+      recipe?.outputs[0]?.itemName ??
+      null;
+
+    const computedMaxStored = getBuildingMaxStorage(
       n.buildingId,
       n.recipeId,
-      n.outputs[0]?.itemName ??
-        sanitizedInputs.find((p) => p.itemName)?.itemName ??
-        null
+      activeItemName
     );
-    const syncedInputs = sanitizedInputs.map((p) => ({
-      ...p,
-      bufferedCount: Math.min(p.maxBuffer ?? 100, Math.max(0, p.bufferedCount ?? 0)),
-    }));
+    const maxStoredCount = Math.max(computedMaxStored, n.maxStoredCount ?? 0);
+
+    const syncedInputs = rawInputs.map((p, idx) => {
+      const rIn = recipe?.inputs[idx];
+      const portStackLimit =
+        n.buildingId === 'splitter' || n.buildingId === 'merger'
+          ? getBuildingMaxStorage(n.buildingId, null, null)
+          : Math.max(
+              p.maxBuffer ?? 0,
+              getItemStackSize(rIn?.itemId ?? rIn?.itemName ?? p.itemName ?? null)
+            );
+      return {
+        ...p,
+        maxBuffer: portStackLimit,
+        bufferedCount: Math.min(portStackLimit, Math.max(0, Math.round(p.bufferedCount ?? 0))),
+      };
+    });
+
     let inputStoredCount = syncedInputs.reduce(
       (acc, p) => acc + (p.bufferedCount ?? 0),
       0
     );
-    if (inputStoredCount === 0 && (n.inputStoredCount ?? 0) > 0 && syncedInputs[0]) {
-      const restoredIn = Math.min(
-        syncedInputs[0].maxBuffer ?? 100,
-        Math.max(0, n.inputStoredCount ?? 0)
+    const savedInputTotal = Math.max(0, Math.round(n.inputStoredCount ?? 0));
+    if (savedInputTotal > inputStoredCount && syncedInputs.length > 0) {
+      let rem = savedInputTotal - inputStoredCount;
+      for (const inp of syncedInputs) {
+        if (rem <= 0) break;
+        const cap = inp.maxBuffer ?? 100;
+        const cur = inp.bufferedCount ?? 0;
+        const add = Math.min(rem, Math.max(0, cap - cur));
+        inp.bufferedCount = cur + add;
+        rem -= add;
+      }
+      inputStoredCount = syncedInputs.reduce(
+        (acc, p) => acc + (p.bufferedCount ?? 0),
+        0
       );
-      syncedInputs[0].bufferedCount = restoredIn;
-      inputStoredCount = restoredIn;
     }
+
     const maxInputStoredCount = syncedInputs.reduce(
       (acc, p) => acc + (p.maxBuffer ?? 100),
       0
     );
     const rawStored = Math.max(
       n.storedCount ?? 0,
-      n.outputs[0]?.bufferedCount ?? 0
+      rawOutputs[0]?.bufferedCount ?? 0
     );
-    const storedCount = Math.min(maxStoredCount, Math.max(0, rawStored));
-    const syncedOutputs = n.outputs.map((p, idx) =>
-      idx === 0 ? { ...p, bufferedCount: storedCount } : { ...p }
+    const storedCount = Math.min(maxStoredCount, Math.max(0, Math.round(rawStored)));
+    const syncedOutputs = rawOutputs.map((p, idx) =>
+      idx === 0
+        ? { ...p, maxBuffer: maxStoredCount, bufferedCount: storedCount }
+        : { ...p, bufferedCount: Math.max(0, Math.round(p.bufferedCount ?? 0)) }
     );
     return {
       ...n,

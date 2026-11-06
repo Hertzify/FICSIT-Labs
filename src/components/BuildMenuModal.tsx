@@ -4,6 +4,7 @@ import {
   BUILDING_LIST,
   CONVEYOR_BELT_TIER_LIST,
   CONVEYOR_BELT_TIERS,
+  formatRatePerMin,
   RECIPES,
 } from '../game/catalog';
 import { getBuildingIconUrl, getItemIconUrl } from '../game/icons';
@@ -130,7 +131,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                               color: bt.accentColor,
                             }}
                           >
-                            {bt.capacityPerMin}/m
+                            {formatRatePerMin(bt.capacityPerMin, settings)}
                           </span>
                         </div>
                         <div className="mt-1.5">
@@ -139,8 +140,8 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                           </div>
                           <div className="text-[10px] text-slate-400 truncate">
                             {isEquipped
-                              ? `Equipped · ${bt.capacityPerMin} items/min`
-                              : `Max ${bt.capacityPerMin} items/min`}
+                              ? `Equipped · ${formatRatePerMin(bt.capacityPerMin, settings)}`
+                              : `Max ${formatRatePerMin(bt.capacityPerMin, settings)}`}
                           </div>
                         </div>
                       </button>
@@ -233,7 +234,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                           className="text-[11px] font-mono font-bold tabular-nums shrink-0"
                           style={{ color: selectedBeltDef.accentColor }}
                         >
-                          {selectedBeltDef.capacityPerMin} items/min
+                          {formatRatePerMin(selectedBeltDef.capacityPerMin, settings)}
                         </span>
                       </div>
                       <p className="mt-1.5 text-[11px] text-slate-300 leading-snug">
@@ -244,7 +245,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                         <div className="flex items-center justify-between">
                           <span>Max Throughput:</span>
                           <span className="text-slate-200 font-semibold">
-                            {selectedBeltDef.capacityPerMin} items/min
+                            {formatRatePerMin(selectedBeltDef.capacityPerMin, settings)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -265,7 +266,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                     }}
                     className="w-full min-h-[40px] px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-xs active:scale-[0.99] whitespace-nowrap"
                   >
-                    Equip {selectedBeltDef.name} ({selectedBeltDef.capacityPerMin}/m)
+                    Equip {selectedBeltDef.name} ({formatRatePerMin(selectedBeltDef.capacityPerMin, settings)})
                   </button>
                 </div>
               </>
@@ -341,7 +342,7 @@ export const BuildMenuModal: React.FC<BuildMenuModalProps> = ({
                                 </span>
                               </div>
                               <span className="font-mono tabular-nums text-amber-300 shrink-0 ml-2">
-                                {outSpec?.ratePerMin ?? 0}/min
+                                {formatRatePerMin(outSpec?.ratePerMin ?? 0, settings)}
                               </span>
                             </div>
                           );

@@ -14,6 +14,8 @@ export const ITEM_ICON_PATHS: Record<string, string> = {
   concrete: './icons/items/concrete.png',
   reinforced_plate: './icons/items/reinforced_plate.png',
   rotor: './icons/items/rotor.png',
+  power_shard: './icons/items/power_shard.png',
+  somersloop: './icons/items/somersloop.png',
 };
 
 export const BUILDING_ICON_PATHS: Record<string, string> = {
@@ -53,6 +55,8 @@ const NAME_TO_ITEM_ID: Record<string, string> = {
   'reinforced iron plate': 'reinforced_plate',
   rotor: 'rotor',
   'modular rotor': 'rotor',
+  'power shard': 'power_shard',
+  somersloop: 'somersloop',
 };
 
 const ITEM_ACCENT_COLORS: Record<string, string> = {
@@ -69,6 +73,8 @@ const ITEM_ACCENT_COLORS: Record<string, string> = {
   concrete: '#D6D3D1',
   reinforced_plate: '#818CF8',
   rotor: '#F59E0B',
+  power_shard: '#38BDF8',
+  somersloop: '#EC4899',
 };
 
 export function resolveItemId(itemIdOrName: string | null | undefined): string | null {

@@ -42,41 +42,26 @@ export const StemBadge: React.FC<{
   </div>
 );
 
-export const PowerShardCrystalIcon: React.FC<{ active: boolean }> = ({ active }) =>
-  active ? (
-    <svg
-      viewBox="0 0 36 36"
-      className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(56,189,248,0.45)]"
-    >
-      <rect x="11" y="3" width="14" height="4" rx="1.5" fill="#1E293B" />
-      <rect x="10" y="6" width="16" height="3" rx="1" fill="#F59E0B" />
-      <polygon
-        points="12,9 24,9 26,18 23,27 13,27 10,18"
-        fill="#38BDF8"
-        stroke="#E0F2FE"
-        strokeWidth="1.2"
-      />
-      <polygon points="18,9 24,9 22,27 18,27" fill="#0284C7" opacity="0.65" />
-      <rect x="10" y="27" width="16" height="3" rx="1" fill="#F59E0B" />
-      <rect x="11" y="30" width="14" height="3.5" rx="1.5" fill="#1E293B" />
-    </svg>
-  ) : (
-    /* Authentic Satisfactory empty Power Shard canister silhouette */
-    <svg viewBox="0 0 36 36" className="w-8 h-8">
-      <path
-        d="M11 4 h14 l2 5 l-2 11 l2 7 l-2 5 h-14 l-2 -5 l2 -7 l-2 -11 z"
-        fill="#BDBEC2"
-      />
-    </svg>
-  );
+export const PowerShardCrystalIcon: React.FC<{ active: boolean }> = ({ active }) => (
+  <img
+    src={ITEM_ICON_PATHS.power_shard}
+    alt="Power Shard"
+    draggable={false}
+    className={
+      active
+        ? 'w-8 h-8 object-contain select-none pointer-events-none drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]'
+        : 'w-8 h-8 object-contain select-none pointer-events-none brightness-0 invert-[0.73] opacity-90'
+    }
+  />
+);
 
 export const MultiplierSlotSilhouetteIcon: React.FC = () => (
-  <svg viewBox="0 0 36 36" className="w-8 h-8">
-    <path
-      d="M18 4 C24 4, 28 9, 26 15 C24 19, 27 23, 25 29 C23 33, 13 33, 11 29 C9 23, 12 19, 10 15 C8 9, 12 4, 18 4 Z"
-      fill="#BDBEC2"
-    />
-  </svg>
+  <img
+    src={ITEM_ICON_PATHS.somersloop}
+    alt="Somersloop Multiplier Slot"
+    draggable={false}
+    className="w-8 h-8 object-contain select-none pointer-events-none brightness-0 invert-[0.73] opacity-90"
+  />
 );
 
 export interface InventorySlotItem {

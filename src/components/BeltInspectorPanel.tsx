@@ -1,5 +1,10 @@
 import React from 'react';
-import { CONVEYOR_BELT_TIER_LIST, PIXELS_PER_METER } from '../game/catalog';
+import {
+  CONVEYOR_BELT_TIER_LIST,
+  formatDualRatePerMin,
+  formatRatePerMin,
+  PIXELS_PER_METER,
+} from '../game/catalog';
 import { getBuildingIconUrl, getItemIconUrl } from '../game/icons';
 import { getBeltTierDef } from '../game/rules';
 import {
@@ -78,7 +83,7 @@ export const BeltInspectorPanel: React.FC<BeltInspectorPanelProps> = React.memo(
                 {tierDef.name}
               </h3>
               <p className="text-[11px] font-mono text-slate-400 truncate">
-                {tierDef.speedMetersPerSec} m/s · {tierDef.capacityPerMin}/m Max
+                {tierDef.speedMetersPerSec} m/s · {formatRatePerMin(tierDef.capacityPerMin, settings)} Max
               </p>
             </div>
           </div>
@@ -154,7 +159,7 @@ export const BeltInspectorPanel: React.FC<BeltInspectorPanelProps> = React.memo(
 
             <div className="text-right shrink-0">
               <div className="text-xs font-mono font-bold text-amber-300">
-                {connection.ratePerMin} / {tierDef.capacityPerMin}/m
+                {formatDualRatePerMin(connection.ratePerMin, tierDef.capacityPerMin, settings)}
               </div>
               <div
                 className={`text-[10px] font-mono font-semibold ${
@@ -231,7 +236,7 @@ export const BeltInspectorPanel: React.FC<BeltInspectorPanelProps> = React.memo(
                     <span>{bt.shortLabel}</span>
                   </span>
                   <span className="text-[9px] text-slate-400">
-                    {bt.capacityPerMin}/m
+                    {bt.capacityPerMin}
                   </span>
                 </button>
               );

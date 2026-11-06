@@ -14,6 +14,7 @@
 
 import {
   BUILDINGS,
+  formatDualRatePerMin,
 } from '../game/catalog';
 import {
   getCanvasBuildingImage,
@@ -636,7 +637,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
 
       const badgeText = isBackedUp && conn.ratePerMin === 0
         ? `${tierDef.shortLabel} · STALLED (FULL)`
-        : `${tierDef.shortLabel} · ${conn.ratePerMin}/${tierDef.capacityPerMin}`;
+        : `${tierDef.shortLabel} · ${formatDualRatePerMin(conn.ratePerMin, tierDef.capacityPerMin, cfg)}`;
 
       ctx.font = '600 9px "JetBrains Mono", monospace';
       const beltImg = getCanvasBuildingImage(tierDef.id);

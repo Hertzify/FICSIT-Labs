@@ -159,6 +159,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* 1.5 Rate Display Format: "60 per minute" (Default) vs "60/m" (Compact) */}
+              <div className="col-span-2 p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Rate Display Format (Items per Minute)
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Choose between Satisfactory full text (&ldquo;60 per minute&rdquo;) or compact shorthand (&ldquo;60/m&rdquo;)
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {(
+                    [
+                      { id: 'per_minute', label: '60 per minute (Default)' },
+                      { id: 'compact', label: '60/m (Compact)' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => updateField('rateDisplayFormat', opt.id)}
+                      className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                        (settings.rateDisplayFormat ?? 'per_minute') === opt.id
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'bg-[#131B2E] text-slate-300 border border-[#26334D]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* 2. Show Port Item Rate Numbers Toggle */}
               <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] flex items-center justify-between gap-3">
                 <div>
@@ -166,7 +199,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Show Item Rate Numbers on Ports
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    Live items/min throughput next to port dots
+                    Live throughput next to port dots ({(settings.rateDisplayFormat ?? 'per_minute') === 'compact' ? '60/m' : '60 per minute'})
                   </div>
                 </div>
                 <input

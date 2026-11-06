@@ -10,6 +10,7 @@
 
 import React from 'react';
 import { getMaxClockSpeedPct, getRequiredPowerShards } from '../game/catalog';
+import { RateDisplayFormat } from '../game/types';
 import {
   MultiplierSlotSilhouetteIcon,
   PowerShardCrystalIcon,
@@ -24,6 +25,7 @@ interface MachineOverclockSectionProps {
   targetOutputRate: number;
   isStandby: boolean;
   hasCopiedSettings: boolean;
+  rateDisplayFormat?: RateDisplayFormat;
   onUpdateOverclock?: (clockSpeedPct: number, powerShards: number) => void;
   onToggleStandby?: () => void;
   onCopySettings?: () => void;
@@ -38,11 +40,13 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
     targetOutputRate,
     isStandby,
     hasCopiedSettings,
+    rateDisplayFormat = 'per_minute',
     onUpdateOverclock,
     onToggleStandby,
     onCopySettings,
     onPasteSettings,
   }) => {
+    const isCompactRate = rateDisplayFormat === 'compact';
     const handleSliderChange = (rawVal: number) => {
       if (!onUpdateOverclock) return;
       const clampedVal = Math.min(250, Math.max(1, Math.round(rawVal)));
@@ -106,7 +110,9 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
                     <span className="inline-block min-w-[28px] text-center px-1 py-[0.5px] rounded-[2px] bg-[#EAEBED] border border-[#D4D6DA] font-sans font-bold text-[#DF8A2E]">
                       {targetOutputRate}
                     </span>
-                    <span className="font-medium">per min</span>
+                    <span className="font-medium">
+                      {isCompactRate ? '/m' : 'per minute'}
+                    </span>
                   </div>
                 </div>
 
@@ -128,20 +134,22 @@ export const MachineOverclockSection: React.FC<MachineOverclockSectionProps> = R
                             : `Install Power Shard #${slotIdx + 1} (Unlocks up to ${unlockedCap}% Clock Speed)`
                         }
                         aria-label={`Power Shard Slot ${slotIdx + 1}`}
-                        className={`relative w-11 h-11 rounded-[3px] bg-[#D8D9DC] border flex items-center justify-center transition-all ${
+                        className={`relative w-11 h-11 rounded-[3px] bg-[#D8D9DC] border flex items-center justify-center overflow-hidden transition-all ${
                           isInstalled
-                            ? 'border-[#DF8A2E] ring-1 ring-[#DF8A2E]/60'
+                            ? 'border-[#DF8A2E] ring-1 ring-[#DF8A2E]/60 pb-2'
                             : 'border-[#C5C7CB] hover:border-[#DF8A2E]'
                         }`}
                       >
                         <PowerShardCrystalIcon active={isInstalled} />
-                        <span
-                          className={`absolute bottom-0 right-0 px-1 rounded-tl-[2px] font-sans text-[9px] font-bold leading-tight text-white ${
-                            isInstalled ? 'bg-[#DF8A2E]' : 'bg-[#686B70]'
-                          }`}
-                        >
-                          1
-                        </span>
+                        {isInstalled ? (
+                          <span className="absolute bottom-0 inset-x-0 text-center py-[0.5px] bg-[#DF8A2E] font-sans text-[8.5px] font-bold leading-tight text-white">
+                            1/1
+                          </span>
+                        ) : (
+                          <span className="absolute bottom-0 right-0 px-1 rounded-tl-[2px] bg-[#686B70] font-sans text-[9px] font-bold leading-tight text-white">
+                            1
+                          </span>
+                        )}
                       </button>
                     </div>
                   );

@@ -367,18 +367,22 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       lastTime = now;
       const frameDt = Math.min(Math.max(rawDt, 0.001), 0.15);
 
-      simAccumulatorSec = Math.min(simAccumulatorSec + frameDt, FIXED_SIM_DT * 3);
       let ranSimStep = false;
-      while (simAccumulatorSec >= FIXED_SIM_DT) {
-        const simResult = stepSimulation(
-          nodesRef.current,
-          connectionsRef.current,
-          FIXED_SIM_DT
-        );
-        nodesRef.current = simResult.nodes;
-        connectionsRef.current = simResult.connections;
-        simAccumulatorSec -= FIXED_SIM_DT;
-        ranSimStep = true;
+      if (modeRef.current === 'interactive') {
+        simAccumulatorSec = Math.min(simAccumulatorSec + frameDt, FIXED_SIM_DT * 3);
+        while (simAccumulatorSec >= FIXED_SIM_DT) {
+          const simResult = stepSimulation(
+            nodesRef.current,
+            connectionsRef.current,
+            FIXED_SIM_DT
+          );
+          nodesRef.current = simResult.nodes;
+          connectionsRef.current = simResult.connections;
+          simAccumulatorSec -= FIXED_SIM_DT;
+          ranSimStep = true;
+        }
+      } else {
+        simAccumulatorSec = 0;
       }
 
       if (ranSimStep && selectedNodeIdRef.current) {
@@ -418,7 +422,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const width = canvas.width / dpr;
       const height = canvas.height / dpr;
 
-      if (modeRef.current === 'background') {
+      if (
+        modeRef.current === 'background' &&
+        document.body.dataset.state === 'title'
+      ) {
         cameraRef.current.x = -1820 + Math.sin(now * 0.00025) * 90;
         cameraRef.current.y = -1920 + Math.cos(now * 0.0002) * 35;
         cameraRef.current.zoom = 0.74;

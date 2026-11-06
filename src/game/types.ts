@@ -4,6 +4,7 @@ export type ConveyorLineStyle = 'orthogonal';
 export type TouchWiringMode = 'drag' | 'tap' | 'both';
 
 export type PerformanceMode = 'high' | 'battery_saver';
+export type RateDisplayFormat = 'per_minute' | 'compact';
 
 export interface SettingsConfig {
   conveyorStyle: ConveyorLineStyle;
@@ -12,6 +13,7 @@ export interface SettingsConfig {
   gridSize: number; // 24 px default
   uiScale: number; // 0.85 to 1.15
   showPortRates: boolean; // Toggle item rate numbers on port dots
+  rateDisplayFormat?: RateDisplayFormat; // 'per_minute' ("60 per minute", default) or 'compact' ("60/m")
   performanceMode?: PerformanceMode; // 'high' (default) or 'battery_saver' (1.0x DPR & zero shadow overhead for low-end devices)
   wiringMode: TouchWiringMode; // Drag vs Tap-to-Tap
   skipMainMenu: boolean; // Option to skip main menu directly to latest save

@@ -17,11 +17,13 @@ import React, { useEffect, useState } from 'react';
 import {
   BUILDINGS,
   clampClockSpeedPct,
+  formatRatePerMin,
   getBuildingMaxStorage,
   getBuildingPowerMw,
   getMaxClockSpeedPct,
   getScaledCycleTimeSec,
   getScaledRatePerMin,
+  isCompactRateFormat,
   PURITY_CONFIG,
   RECIPES,
 } from '../game/catalog';
@@ -38,32 +40,55 @@ import {
   StemBadge,
 } from './PioneerInventoryPanel';
 
+/**
+ * Exact Satisfactory Power Consumption Icon:
+ * Flat horizontal top edge, vertical upper-left edge, middle step, and sharp lower tip.
+ */
 const PowerBoltSvg: React.FC = () => (
-  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
+  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="8.5,2 15.5,2 12.2,10.5 17.5,10.5 8.5,22 10.8,13 6.8,13" />
   </svg>
 );
 
+/**
+ * Exact Satisfactory Cooldown / Cycle Duration Stopwatch Icon:
+ * Top flat T-cap plunger, angled upper-right ear button, circular outer bezel ring,
+ * and 270-degree solid filled inner pie sector (3 o'clock clockwise around to 12 o'clock).
+ */
 const StopwatchSvg: React.FC = () => (
-  <svg
-    className="w-3.5 h-3.5 text-white"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.2"
-  >
-    <path strokeLinecap="round" d="M10 2h4M12 2v3M19 6l-1.5 1.5" />
-    <circle cx="12" cy="14" r="7" />
-    <path strokeLinecap="round" d="M12 14V10" />
+  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24">
+    <path
+      d="M9.2 2h5.6M12 2v3.1M17.4 6.6l2-2"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+    />
+    <circle
+      cx="12"
+      cy="13.5"
+      r="7.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    />
+    <path
+      d="M12 13.5 L16.9 13.5 A4.9 4.9 0 1 1 12 8.6 Z"
+      fill="currentColor"
+    />
   </svg>
 );
 
+/**
+ * Exact Satisfactory Production Effectiveness 4-Bar Chart Icon:
+ * Non-monotonic bar heights: Bar 1 = short (38%), Bar 2 = tall (100%), Bar 3 = medium (62%), Bar 4 = tall (100%).
+ */
 const EfficiencyBarsSvg: React.FC = () => (
-  <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
-    <rect x="3" y="14" width="3.5" height="7" rx="0.5" />
-    <rect x="8.5" y="10" width="3.5" height="11" rx="0.5" />
-    <rect x="14" y="6" width="3.5" height="15" rx="0.5" />
-    <rect x="19.5" y="3" width="2.5" height="18" rx="0.5" />
+  <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+    <rect x="3" y="14" width="3.2" height="7" />
+    <rect x="8" y="3" width="3.2" height="18" />
+    <rect x="13" y="9.5" width="3.2" height="11.5" />
+    <rect x="18" y="3" width="3.2" height="18" />
   </svg>
 );
 
@@ -122,6 +147,9 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
     }, []);
 
     if (!buildingDef) return null;
+
+    const isCompactRate = isCompactRateFormat(settings);
+    const rateUnitSuffix = isCompactRate ? '/m' : ' per minute';
 
     const isWorldDeposit =
       node.buildingId === 'resource_deposit' || Boolean(node.isWorldDeposit);
@@ -223,7 +251,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                   border: `1px solid ${pCfg.badgeColor}77`,
                 }}
               >
-                {pCfg.label} · {pCfg.ratePerMin}/m
+                {pCfg.label} · {formatRatePerMin(pCfg.ratePerMin, settings)}
               </span>
             </div>
             <p className="text-[11px] text-slate-300 leading-snug">
@@ -311,7 +339,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                   <span>{isMiner ? 'Miner' : node.title}</span>
                   {isMiner && underlyingDeposit && (
                     <span className="ml-1 px-1.5 py-0.2 rounded bg-black/35 text-[10px] font-mono text-amber-300 border border-amber-500/40">
-                      {depositPurityCfg.label} · {depositPurityCfg.ratePerMin}/m
+                      {depositPurityCfg.label} · {formatRatePerMin(depositPurityCfg.ratePerMin, settings)}
                     </span>
                   )}
                   {isMiner && !underlyingDeposit && (
@@ -374,7 +402,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
           {/* =================================================================== */}
           {/* FIXED TWO-COLUMN BODY: LEFT MACHINE GUI + RIGHT PIONEER INVENTORY   */}
           {/* =================================================================== */}
-          <div className="grid grid-cols-[500px_360px] divide-x-2 divide-[#141518] bg-[#23252A]">
+          <div className="grid grid-cols-[496px_360px] divide-x-2 divide-[#141518] bg-[#23252A]">
             {/* LEFT COLUMN: AUTHENTIC SATISFACTORY MACHINE INTERFACE */}
             <div className="p-2 flex flex-col gap-1.5 bg-[#23252A]">
               {isRecipeMachine && activeTab === 'recipe' ? (
@@ -428,12 +456,17 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                                 {r.name}
                               </div>
                               <div className="text-[10px] text-slate-300 truncate">
-                                {r.inputs.map((i) => `${i.ratePerMin}/m ${i.itemName}`).join(' + ')}
+                                {r.inputs
+                                  .map(
+                                    (i) =>
+                                      `${formatRatePerMin(i.ratePerMin, settings)} ${i.itemName}`
+                                  )
+                                  .join(' + ')}
                               </div>
                             </div>
                           </div>
                           <span className="px-1.5 py-0.5 rounded bg-[#DF8A2E]/20 border border-[#DF8A2E] text-[#DF8A2E] font-mono text-[10px] font-bold shrink-0">
-                            {outSpec?.ratePerMin ?? 30}/m
+                            {formatRatePerMin(outSpec?.ratePerMin ?? 30, settings)}
                           </span>
                         </button>
                       );
@@ -556,8 +589,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                               <div className="text-[10px] text-[#55575C] leading-tight">
                                 <span className="text-[#DF8A2E] font-bold">
                                   {targetOutputRate}
-                                </span>{' '}
-                                per minute
+                                </span>
+                                {rateUnitSuffix}
                               </div>
                             </div>
                           );
@@ -594,7 +627,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                     </div>
                   </div>
 
-                  <div className="flex-1 min-h-0 mt-1.5 grid grid-cols-[1fr_112px_1fr] gap-1.5 items-stretch">
+                  <div className="flex-1 min-h-0 mt-1.5 grid grid-cols-[1fr_118px_1fr] gap-1.5 items-stretch">
                     {/* LEFT COLUMN: Crisp White INPUT Card */}
                     <div className="flex flex-col">
                       <div className="flex-1 rounded-[4px] bg-[#F5F5F7] border-2 border-[#2C2E33] p-2 flex flex-col justify-center gap-2 text-[#333538]">
@@ -644,8 +677,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                                   <div className="text-[10px] text-[#55575C]">
                                     <span className="text-[#DF8A2E] font-bold">
                                       {scaledInRate}
-                                    </span>{' '}
-                                    per minute
+                                    </span>
+                                    {rateUnitSuffix}
                                   </div>
                                 </div>
                               </div>
@@ -675,7 +708,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                         </svg>
                       </div>
 
-                      <div className="my-1 flex-1 rounded-[3px] bg-[#141518] px-2 py-1.5 flex flex-col items-center justify-between text-center">
+                      <div className="my-1 flex-1 rounded-[3px] bg-[#141518] px-1.5 py-1 flex flex-col items-center justify-between text-center">
                         {(() => {
                           const outName =
                             activeRecipe?.outputs[0]?.itemName ??
@@ -687,7 +720,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                               <img
                                 src={outIcon}
                                 alt={outName}
-                                className="w-9 h-9 object-contain"
+                                className="w-8 h-8 object-contain"
                               />
                             )
                           );
@@ -700,7 +733,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                               style={{ width: `${isStandby ? 0 : progressPct}%` }}
                             />
                           </div>
-                          <div className="text-[9.5px] text-[#D4D5D8] leading-tight">
+                          <div className="text-[9px] text-[#D4D5D8] leading-tight">
                             {isStandby ? 'Standby' : 'Constructing'} -{' '}
                             <span className="text-[#DF8A2E] font-bold">
                               {isStandby ? 0 : progressPct}%
@@ -708,14 +741,19 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                           </div>
                         </div>
 
-                        <div className="flex flex-col items-center text-[10px] font-sans font-bold leading-tight">
-                          <PowerBoltSvg />
-                          <span className="text-[#DF8A2E]">{powerMw} MW</span>
-                        </div>
-
-                        <div className="flex flex-col items-center text-[10px] font-sans font-bold leading-tight">
-                          <StopwatchSvg />
-                          <span className="text-[#DF8A2E]">{scaledCycleSec} sec</span>
+                        <div className="w-full grid grid-cols-3 gap-0.5 pt-0.5 text-[9px] font-sans font-bold leading-tight">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <PowerBoltSvg />
+                            <span className="text-[#DF8A2E]">{powerMw} MW</span>
+                          </div>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <StopwatchSvg />
+                            <span className="text-[#DF8A2E]">{scaledCycleSec}s</span>
+                          </div>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <EfficiencyBarsSvg />
+                            <span className="text-[#DF8A2E]">{effPct}%</span>
+                          </div>
                         </div>
                       </div>
 
@@ -766,8 +804,8 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                                 <div className="text-[10px] text-[#55575C]">
                                   <span className="text-[#DF8A2E] font-bold">
                                     {targetOutputRate}
-                                  </span>{' '}
-                                  per minute
+                                  </span>
+                                  {rateUnitSuffix}
                                 </div>
                               </div>
                             </div>
@@ -788,6 +826,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = React.memo(
                 targetOutputRate={targetOutputRate}
                 isStandby={isStandby}
                 hasCopiedSettings={hasCopiedSettings}
+                rateDisplayFormat={settings.rateDisplayFormat}
                 onUpdateOverclock={onUpdateOverclock}
                 onToggleStandby={onToggleStandby}
                 onCopySettings={onCopySettings}

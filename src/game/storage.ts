@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: SettingsConfig = {
   gridSize: 24,
   uiScale: 1.0,
   showPortRates: true,
+  rateDisplayFormat: 'per_minute',
   performanceMode: 'high',
   wiringMode: 'both',
   skipMainMenu: false,
@@ -47,6 +48,8 @@ export function loadSettings(): SettingsConfig {
       ...DEFAULT_SETTINGS,
       ...parsed,
       conveyorStyle: 'orthogonal',
+      rateDisplayFormat:
+        parsed.rateDisplayFormat === 'compact' ? 'compact' : 'per_minute',
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -179,11 +182,41 @@ export function cloneSaveGraph(
   connections: SaveSlot['connections']
 ): { nodes: SaveSlot['nodes']; connections: SaveSlot['connections'] } {
   return {
-    nodes: nodes.map((n) => ({
-      ...n,
-      inputs: n.inputs.map((p) => ({ ...p })),
-      outputs: n.outputs.map((p) => ({ ...p })),
-    })),
+    nodes: nodes.map((n) => {
+      const syncedInputs = Array.isArray(n.inputs)
+        ? n.inputs.map((p) => ({
+            ...p,
+            bufferedCount: Math.max(0, Math.round(p.bufferedCount ?? 0)),
+          }))
+        : [];
+      const sumInBuf = syncedInputs.reduce((acc, p) => acc + (p.bufferedCount ?? 0), 0);
+      const effectiveInStored = Math.max(Math.round(n.inputStoredCount ?? 0), sumInBuf);
+      if (syncedInputs.length > 0 && sumInBuf === 0 && effectiveInStored > 0) {
+        syncedInputs[0].bufferedCount = Math.min(
+          syncedInputs[0].maxBuffer ?? 100,
+          effectiveInStored
+        );
+      }
+      const effectiveOutStored = Math.max(
+        0,
+        Math.round(Math.max(n.storedCount ?? 0, n.outputs?.[0]?.bufferedCount ?? 0))
+      );
+      const syncedOutputs = Array.isArray(n.outputs)
+        ? n.outputs.map((p, idx) =>
+            idx === 0
+              ? { ...p, bufferedCount: effectiveOutStored }
+              : { ...p, bufferedCount: Math.max(0, Math.round(p.bufferedCount ?? 0)) }
+          )
+        : [];
+
+      return {
+        ...n,
+        inputStoredCount: syncedInputs.reduce((acc, p) => acc + (p.bufferedCount ?? 0), 0),
+        storedCount: effectiveOutStored,
+        inputs: syncedInputs,
+        outputs: syncedOutputs,
+      };
+    }),
     connections: connections.map((c) => ({
       ...c,
       waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
@@ -239,20 +272,24 @@ export function upsertAutoSaveForSession(
     camera: { ...camera },
   };
 
-  // Also keep the active slot's live node storages in sync so reloading or continuing never loses items
-  const syncedSlots = activeSlotId
-    ? slots.map((s) => {
-        if (s.id !== activeSlotId || s.id === autoSlot.id) return s;
-        const activeClone = cloneSaveGraph(nodes, connections);
-        return {
-          ...s,
-          updatedAt: now - 1,
-          nodes: activeClone.nodes,
-          connections: activeClone.connections,
-          camera: { ...camera },
-        };
-      })
-    : slots;
+  // Also keep the active slot (and the session's Initial Deployment slot) synced with live node storages
+  // so reloading, continuing, or loading the session's slot never loses machine storages!
+  const syncedSlots = slots.map((s) => {
+    const isTargetActive = activeSlotId && s.id === activeSlotId && s.id !== autoSlot.id;
+    const isInitialDeploymentForSession =
+      s.sessionName === sessionName &&
+      s.kind === 'manual' &&
+      s.slotName === 'Initial Deployment';
+    if (!isTargetActive && !isInitialDeploymentForSession) return s;
+    const activeClone = cloneSaveGraph(nodes, connections);
+    return {
+      ...s,
+      updatedAt: now - 1,
+      nodes: activeClone.nodes,
+      connections: activeClone.connections,
+      camera: { ...camera },
+    };
+  });
 
   const next = upsertSaveSlot(syncedSlots, autoSlot);
   return { slots: next, autoSlot };

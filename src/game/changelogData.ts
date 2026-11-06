@@ -15,6 +15,53 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.20',
+    tag: '0.0.20 dev build',
+    date: '2026-11-06',
+    categories: [
+      {
+        category: '⚡ Authentic Satisfactory Icons, Overclocking & Standby Rocker Switch',
+        items: [
+          {
+            title: 'Official Satisfactory Telemetry & Artifact Icons (Inside & Outside GUI)',
+            description:
+              'Replaced custom icons across both the exterior canvas machine cards and the internal Machine Inspector with the official Satisfactory game icons: Power Shard (power_shard.png), Somersloop Output Multiplier (somersloop.png), lightning bolt power consumption, stopwatch cycle timer with 270° sector fill, and the 4-bar production efficiency histogram.',
+          },
+          {
+            title: 'Symmetrical Illuminated I / O Standby Rocker Switch',
+            description:
+              'Redesigned the Standby rocker switch both on the exterior Miner Mk.1 canvas card and inside the Machine Inspector with a symmetrical 50/50 split rocker, glowing orange active state (I), crimson standby state (O), and tactile bevel shading.',
+          },
+          {
+            title: 'True-to-Game Machine Inspector Proportions & Overclocking Bay',
+            description:
+              'Refined the Machine Inspector layout to match the in-game Satisfactory UI with centered overlapping monitor/output cards, 3 Power Shard slots with 1/1 stack badges, and an Output Multiplier (Somersloop) panel.',
+          },
+        ],
+      },
+      {
+        category: '📊 Rate Display Format Setting & Full Machine Storage Persistence',
+        items: [
+          {
+            title: 'New Rate Display Format Setting ("60 per minute" Default vs "60/m")',
+            description:
+              'Added a Rate Display Format toggle under Settings → Visuals that displays throughput as "60 per minute" by default (matching Satisfactory) with an option to switch to compact "60/m" across all cards, ports, deposits, belt badges, and menus.',
+          },
+          {
+            title: 'Direct Belt-Click Upgrading Only',
+            description:
+              'Removed conveyor belt tier upgrade controls from machine nodes so belt upgrades happen exclusively by clicking a conveyor belt directly.',
+          },
+          {
+            title: 'Complete Machine Input & Output Storage Save Persistence',
+            description:
+              'Fixed save files and session auto-saves so all machine input and output buffers (including 100, 200, and 500 stack items and multi-input Assemblers) are reconciled and preserved across manual saves, auto-saves, JSON import/export, and reloads without draining while on the Title Screen or Pause Menu.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.19',
     tag: '0.0.19 dev build',
     date: '2026-11-05',

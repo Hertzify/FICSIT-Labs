@@ -4,6 +4,37 @@ All notable changes for **FICSIT Labs** are documented below. Straight to the po
 
 ---
 
+## [0.0.20] — 2026-11-06 (`0.0.20 dev build`)
+
+### ⚡ Authentic Satisfactory Icons, Overclocking & Standby Rocker Switch
+- **Official Satisfactory Telemetry & Artifact Icons (Inside & Outside GUI)**: Replaced custom icons across both the exterior canvas machine cards and the internal Machine Inspector with the official Satisfactory game icons: **Power Shard** (`power_shard.png`), **Somersloop Output Multiplier** (`somersloop.png`), lightning bolt power consumption, stopwatch cycle timer with 270° sector fill, and the 4-bar `[38%, 100%, 62%, 100%]` production efficiency histogram.
+- **Symmetrical Illuminated `I / O` Standby Rocker Switch**: Redesigned the Standby rocker switch both on the exterior Miner Mk.1 canvas card and inside the Machine Inspector with a symmetrical 50/50 split rocker, glowing orange active state (`I`), crimson standby state (`O`), and tactile bevel shading.
+- **True-to-Game Machine Inspector Proportions & Overclocking Bay**: Refined the Machine Inspector layout to match the in-game Satisfactory UI with centered overlapping monitor/output cards, 3 Power Shard slots with `1/1` stack badges, and an Output Multiplier (`Somersloop`) panel.
+
+### 📊 Rate Display Format Setting & Full Machine Storage Persistence
+- **New Rate Display Format Setting (`60 per minute` Default vs `60/m`)**: Added a **Rate Display Format** toggle under **Settings → Visuals** that displays throughput as `60 per minute` by default (matching Satisfactory) with an option to switch to compact `60/m` across all cards, ports, deposits, belt badges, and menus.
+- **Direct Belt-Click Upgrading Only**: Removed conveyor belt tier upgrade controls from machine nodes so belt upgrades happen exclusively by clicking a conveyor belt directly.
+- **Complete Machine Input & Output Storage Save Persistence**: Fixed save files and session auto-saves so all machine input and output buffers (including 100, 200, and 500 stack items and multi-input Assemblers) are reconciled and preserved across manual saves, auto-saves, JSON import/export, and reloads without draining while on the Title Screen or Pause Menu.
+
+---
+
+## [0.0.19] — 2026-11-05 (`0.0.19 dev build`)
+
+### 🔘 Interactive Exterior Standby Switch & Real-Time Node Storage Saving
+- **Interactive Exterior STANDBY Rocker Switch on Miner Mk.1**: Made the exterior `STANDBY` rocker switch on the bottom-right of Miner Mk.1 cards directly clickable from the canvas without opening the full inspector, complete with live rocker toggle state, Undo/Redo history, and instant telemetry update.
+- **Real-Time Node Input & Output Storage Persistence**: Fixed node storage persistence across page reloads, tab switches, manual saves, and auto-saves by preserving exact input/output buffer counts (`dt = 0` on load) and continuously syncing live machine storages to `localStorage`.
+
+---
+
+## [0.0.18] — 2026-11-05 (`0.0.18 dev build`)
+
+### 🏭 Authentic Satisfactory Machine GUIs, Pioneer Inventory & Miner HUD
+- **Authentic Satisfactory Machine Inspector & Pioneer Inventory GUI**: Redesigned the internal Machine Inspector to match the original Satisfactory FICSIT brushed-metal window with Select Recipe and Production tabs, Miner centrifugal drum, Input/Output cards, and the right-hand Pioneer Inventory (`Relevant Items` + 9×5 `All Items` grid + Sort & Trash).
+- **250% Overclocking Slider, 3 Power Shard Slots & Standby Switch**: Added authentic 1%–250% clock speed scaling with 3 interactive Power Shard slots (unlocking 150%, 200%, and 250% max clock speed), polynomial MW power scaling, Copy/Paste Settings, and an illuminated Standby rocker switch.
+- **Miner Mk.1 Exterior Canvas HUD & Stable Rolling Efficiency**: Upgraded the Miner Mk.1 canvas node with the riveted industrial exterior HUD (ribbed drum, status LED, Mining monitor, white Output card, 0%–250% segmented clock bar, and Standby switch) plus rolling-average productivity telemetry.
+
+---
+
 ## [0.0.17] — 2026-11-04 (`0.0.17 dev build`)
 
 ### 🛠️ Satisfactory Mobile Control Bar & 90° Corner Dot Routing

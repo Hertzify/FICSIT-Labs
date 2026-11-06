@@ -20,12 +20,17 @@ import { SatisfactoryToolbar } from './components/SatisfactoryToolbar';
 import { SaveLoadModal } from './components/SaveLoadModal';
 import { SettingsModal } from './components/SettingsModal';
 import { playSynthSfx } from './game/audio';
-import { CONVEYOR_BELT_TIER_LIST, CONVEYOR_BELT_TIERS } from './game/catalog';
+import {
+  CONVEYOR_BELT_TIER_LIST,
+  CONVEYOR_BELT_TIERS,
+  formatRatePerMin,
+} from './game/catalog';
 import { invalidateAllConveyorCaches } from './game/geometry';
 import { factoryHistory } from './game/history';
 import { getBuildingIconUrl } from './game/icons';
 import { stepSimulation } from './game/rules';
 import {
+  cloneSaveGraph,
   createInitialSeedSaveSlot,
   DEFAULT_SETTINGS,
   deleteSaveSlotById,
@@ -86,11 +91,21 @@ export default function App() {
     });
   }, []);
 
-  // Mutable refs for 60fps canvas engine and DOM interaction
+  // Mutable refs for 60fps canvas engine and synchronous storage persistence
   const beltContainerRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<MachineNode[]>(activeSlot.nodes);
   const connectionsRef = useRef<ConveyorConnection[]>(activeSlot.connections);
   const cameraRef = useRef<CameraState>({ ...activeSlot.camera });
+  const saveSlotsRef = useRef<SaveSlot[]>(saveSlots);
+  const activeSlotRef = useRef<SaveSlot>(activeSlot);
+
+  useEffect(() => {
+    saveSlotsRef.current = saveSlots;
+  }, [saveSlots]);
+
+  useEffect(() => {
+    activeSlotRef.current = activeSlot;
+  }, [activeSlot]);
 
   // Mirror state to document.body.dataset.state & CSS variable --ui-scale
   useEffect(() => {
@@ -102,21 +117,13 @@ export default function App() {
   }, [settings.uiScale]);
 
   const hydrateSlotIntoEngine = useCallback((slot: SaveSlot) => {
-    nodesRef.current = slot.nodes.map((n) => ({
-      ...n,
-      inputs: n.inputs.map((p) => ({ ...p })),
-      outputs: n.outputs.map((p) => ({ ...p })),
-    }));
-    connectionsRef.current = slot.connections.map((c) => ({
-      ...c,
-      waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
-      inFlightItems: c.inFlightItems
-        ? c.inFlightItems.map((pkt) => ({ ...pkt }))
-        : undefined,
-    }));
+    const cloned = cloneSaveGraph(slot.nodes, slot.connections);
+    nodesRef.current = cloned.nodes;
+    connectionsRef.current = cloned.connections;
     cameraRef.current = { ...slot.camera };
     invalidateAllConveyorCaches();
     factoryHistory.clear();
+    activeSlotRef.current = slot;
     setActiveSlot(slot);
   }, []);
 
@@ -126,26 +133,31 @@ export default function App() {
     playSynthSfx('click', next);
   };
 
-  // Trigger Auto-Save helper (also keeps activeSlot's live node storages synced)
+  // Trigger Auto-Save helper: writes synchronously to localStorage AND updates saveSlots + activeSlot
   const triggerSessionAutoSave = useCallback(
     (showBadge = true) => {
       if (!settings.autoSaveEnabled && showBadge) return;
-      setSaveSlots((prevSlots) => {
-        const { slots: updatedSlots } = upsertAutoSaveForSession(
-          prevSlots,
-          activeSlot.sessionName,
-          nodesRef.current,
-          connectionsRef.current,
-          cameraRef.current,
-          activeSlot.id
-        );
-        return updatedSlots;
-      });
+      const curActive = activeSlotRef.current;
+      const { slots: updatedSlots, autoSlot } = upsertAutoSaveForSession(
+        saveSlotsRef.current,
+        curActive.sessionName,
+        nodesRef.current,
+        connectionsRef.current,
+        cameraRef.current,
+        curActive.id
+      );
+      saveSlotsRef.current = updatedSlots;
+      setSaveSlots(updatedSlots);
+      const syncedCurrent =
+        updatedSlots.find((s) => s.id === curActive.id) ?? autoSlot;
+      activeSlotRef.current = syncedCurrent;
+      setActiveSlot(syncedCurrent);
+
       if (showBadge && settings.autoSaveEnabled) {
         setAutoSaveNotice('Auto-Saved');
       }
     },
-    [settings.autoSaveEnabled, activeSlot.sessionName, activeSlot.id]
+    [settings.autoSaveEnabled]
   );
 
   const handleUndo = useCallback(() => {
@@ -253,24 +265,15 @@ export default function App() {
   };
 
   const handleCreateManualSave = (slotName: string) => {
+    const cloned = cloneSaveGraph(nodesRef.current, connectionsRef.current);
     const newSlot: SaveSlot = {
       id: `slot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       sessionName: activeSlot.sessionName,
       slotName,
       kind: 'manual',
       updatedAt: Date.now(),
-      nodes: nodesRef.current.map((n) => ({
-        ...n,
-        inputs: n.inputs.map((p) => ({ ...p })),
-        outputs: n.outputs.map((p) => ({ ...p })),
-      })),
-      connections: connectionsRef.current.map((c) => ({
-        ...c,
-        waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
-        inFlightItems: c.inFlightItems
-          ? c.inFlightItems.map((pkt) => ({ ...pkt }))
-          : undefined,
-      })),
+      nodes: cloned.nodes,
+      connections: cloned.connections,
       camera: { ...cameraRef.current },
     };
     const updated = upsertSaveSlot(saveSlots, newSlot);
@@ -283,21 +286,12 @@ export default function App() {
   const handleOverwriteSlot = (slotId: string) => {
     const target = saveSlots.find((s) => s.id === slotId);
     if (!target) return;
+    const cloned = cloneSaveGraph(nodesRef.current, connectionsRef.current);
     const overwritten: SaveSlot = {
       ...target,
       updatedAt: Date.now(),
-      nodes: nodesRef.current.map((n) => ({
-        ...n,
-        inputs: n.inputs.map((p) => ({ ...p })),
-        outputs: n.outputs.map((p) => ({ ...p })),
-      })),
-      connections: connectionsRef.current.map((c) => ({
-        ...c,
-        waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
-        inFlightItems: c.inFlightItems
-          ? c.inFlightItems.map((pkt) => ({ ...pkt }))
-          : undefined,
-      })),
+      nodes: cloned.nodes,
+      connections: cloned.connections,
       camera: { ...cameraRef.current },
     };
     const updated = upsertSaveSlot(saveSlots, overwritten);
@@ -460,7 +454,7 @@ export default function App() {
                       onClick={() => {
                         playSynthSfx('click', settings);
                         setActiveBeltTier(bt.tier);
-                        setAutoSaveNotice(`Belt: ${bt.name} (${bt.capacityPerMin}/m)`);
+                        setAutoSaveNotice(`Belt: ${bt.name} (${formatRatePerMin(bt.capacityPerMin, settings)})`);
                         setShowBeltTab(false);
                       }}
                       className={`w-full min-h-[34px] px-2 py-1 rounded-lg text-xs font-mono font-bold flex items-center justify-between gap-1.5 transition-colors ${
@@ -484,7 +478,7 @@ export default function App() {
                           isSelected ? 'text-slate-950 font-bold' : 'text-slate-400'
                         }`}
                       >
-                        {bt.capacityPerMin}/m
+                        {formatRatePerMin(bt.capacityPerMin, settings)}
                       </span>
                     </button>
                   );

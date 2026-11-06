@@ -258,6 +258,38 @@ export function getBuildingPowerMw(
   return Number((baseMw * Math.pow(ratio, OVERCLOCK_POWER_EXPONENT)).toFixed(1));
 }
 
+export type RateFormatSettingOrValue =
+  | 'per_minute'
+  | 'compact'
+  | { rateDisplayFormat?: 'per_minute' | 'compact' }
+  | null
+  | undefined;
+
+export function isCompactRateFormat(settings?: RateFormatSettingOrValue): boolean {
+  if (!settings) return false;
+  if (typeof settings === 'string') return settings === 'compact';
+  return settings.rateDisplayFormat === 'compact';
+}
+
+export function getRateUnitSuffix(settings?: RateFormatSettingOrValue): string {
+  return isCompactRateFormat(settings) ? '/m' : ' per minute';
+}
+
+export function formatRatePerMin(
+  rate: number | string,
+  settings?: RateFormatSettingOrValue
+): string {
+  return `${rate}${getRateUnitSuffix(settings)}`;
+}
+
+export function formatDualRatePerMin(
+  actual: number | string,
+  target: number | string,
+  settings?: RateFormatSettingOrValue
+): string {
+  return `${actual}/${target}${getRateUnitSuffix(settings)}`;
+}
+
 
 export const RECIPES: Record<string, RecipeDef> = {
   // Resource Deposits (Raw Nodes)

@@ -13,7 +13,12 @@
 
 import {
   BUILDINGS,
+  formatDualRatePerMin,
+  formatRatePerMin,
   getBuildingMaxStorage,
+  getBuildingPowerMw,
+  getScaledCycleTimeSec,
+  isCompactRateFormat,
   PURITY_CONFIG,
   RECIPES,
 } from '../game/catalog';
@@ -34,6 +39,9 @@ import {
   drawMachineVectorIcon,
   drawNaturalResourceDeposit,
   drawRoundedRect,
+  drawSatisfactoryEfficiencyIcon,
+  drawSatisfactoryPowerIcon,
+  drawSatisfactoryStopwatchIcon,
 } from './canvasArtwork';
 
 export interface NodeRenderParams {
@@ -70,6 +78,8 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
     connectedOutputPortKeys,
     isBoxInViewport,
   } = params;
+
+  const isCompactRate = isCompactRateFormat(cfg);
 
   const depositsList: MachineNode[] = [];
   const buildingsList: MachineNode[] = [];
@@ -276,7 +286,8 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
         isSelected,
         isBatterySaver,
         primaryItemImg,
-        isMinerMounted
+        isMinerMounted,
+        cfg
       );
       continue;
     }
@@ -344,7 +355,7 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
         ctx.fillRect(nx, ny, W, H);
       }
 
-      // 1. CENTER DARK SCREEN LIVE OVERLAY (Status + MW / sec / Efficiency %)
+      // 1. CENTER DARK SCREEN LIVE OVERLAY (Status + Authentic Game Icons + MW / sec / Efficiency %)
       const scrTopX = nx + 0.510 * W;
       const scrTopY = ny + 0.114 * H;
       const scrTopW = 0.221 * W;
@@ -377,17 +388,38 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
       ctx.textBaseline = 'middle';
       ctx.fillText(headerLabel, startHeaderX + dotRadius * 2 + 4.5, statusCenterY + 0.5);
 
+      // Cover both the baked-in icon row (0.258..0.330 H) and text row (0.330..0.385 H) in all 3 columns
+      // so we render the exact Satisfactory game telemetry icons cleanly on the outside card!
       const col1X = nx + 0.510 * W;
       const col2X = nx + 0.586 * W;
       const col3X = nx + 0.661 * W;
       const colBoxW = 0.070 * W;
+      const iconBoxY = ny + 0.258 * H;
+      const iconBoxH = 0.127 * H;
+      ctx.fillStyle = '#0D0F12';
+      ctx.fillRect(col1X, iconBoxY, colBoxW, iconBoxH);
+      ctx.fillRect(col2X, iconBoxY, colBoxW, iconBoxH);
+      ctx.fillRect(col3X, iconBoxY, colBoxW, iconBoxH);
+
+      const iconCenterY = ny + 0.292 * H;
+      drawSatisfactoryPowerIcon(ctx, col1X + colBoxW * 0.5, iconCenterY, 10.2, '#FFFFFF');
+      drawSatisfactoryStopwatchIcon(
+        ctx,
+        col2X + colBoxW * 0.5,
+        iconCenterY,
+        10.2,
+        '#FFFFFF'
+      );
+      drawSatisfactoryEfficiencyIcon(
+        ctx,
+        col3X + colBoxW * 0.5,
+        iconCenterY,
+        10.2,
+        node.efficiency < 100 ? lightColor : '#FFFFFF'
+      );
+
       const valPatchY = ny + 0.330 * H;
       const valPatchH = 0.055 * H;
-      ctx.fillStyle = '#0D0F12';
-      ctx.fillRect(col1X, valPatchY, colBoxW, valPatchH);
-      ctx.fillRect(col2X, valPatchY, colBoxW, valPatchH);
-      ctx.fillRect(col3X, valPatchY, colBoxW, valPatchH);
-
       ctx.font = '600 5.7px "Plus Jakarta Sans", sans-serif';
       ctx.fillStyle = '#FFFFFF';
       ctx.textAlign = 'center';
@@ -448,8 +480,8 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
       ctx.fillText(`1 ${rawOreName}`, outCenterX, ny + 0.482 * H);
 
       ctx.font = '700 6.5px "Plus Jakarta Sans", sans-serif';
-      const rateNumStr = `${outTargetRate} `;
-      const rateUnitStr = 'per minute';
+      const rateNumStr = isCompactRate ? `${outTargetRate}` : `${outTargetRate} `;
+      const rateUnitStr = isCompactRate ? '/m' : 'per minute';
       const rateNumW = ctx.measureText(rateNumStr).width;
       ctx.font = '500 6.5px "Plus Jakarta Sans", sans-serif';
       const rateUnitW = ctx.measureText(rateUnitStr).width;
@@ -482,7 +514,11 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
       const tprPrefixW = ctx.measureText(tprPrefix).width;
       ctx.font = '700 6.8px "Plus Jakarta Sans", sans-serif';
       ctx.fillStyle = '#D9822B';
-      ctx.fillText(`${outTargetRate} per min`, ocTextX + tprPrefixW, ny + 0.788 * H);
+      ctx.fillText(
+        formatRatePerMin(outTargetRate, cfg),
+        ocTextX + tprPrefixW,
+        ny + 0.788 * H
+      );
 
       const segBarX = nx + 0.068 * W;
       const segBarY = ny + 0.819 * H;
@@ -796,6 +832,42 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
         ctx.fillText(recipeTitle, node.x + 14, node.y + 50);
       }
 
+      // Render Authentic Satisfactory Telemetry Icons (Power, Cycle Stopwatch, Production Effectiveness)
+      // on outside processor machine cards (Smelter, Constructor, Assembler)
+      if (recipe && bDef && bDef.powerMw > 0) {
+        const clockPct = node.clockSpeedPct ?? 100;
+        const pMw = getBuildingPowerMw(node.buildingId, clockPct, Boolean(node.isStandby));
+        const cSec = getScaledCycleTimeSec(recipe.cycleTimeSec, clockPct);
+        const pillW = 122;
+        const pillH = 18;
+        const pillX = node.x + node.width - pillW - 12;
+        const pillY = node.y + 41;
+
+        drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 4);
+        ctx.fillStyle = '#0B0F17';
+        ctx.fill();
+        ctx.strokeStyle = '#1E293B';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const cy = pillY + pillH * 0.5;
+        ctx.font = '700 8px "Plus Jakarta Sans", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        drawSatisfactoryPowerIcon(ctx, pillX + 8, cy, 9.5, '#FFFFFF');
+        ctx.fillStyle = '#DF8A2E';
+        ctx.fillText(`${pMw}MW`, pillX + 14, cy + 0.5);
+
+        drawSatisfactoryStopwatchIcon(ctx, pillX + 51, cy, 9.5, '#FFFFFF');
+        ctx.fillStyle = '#DF8A2E';
+        ctx.fillText(`${cSec}s`, pillX + 57, cy + 0.5);
+
+        drawSatisfactoryEfficiencyIcon(ctx, pillX + 86, cy, 9.5, '#FFFFFF');
+        ctx.fillStyle = node.efficiency >= 99 ? '#10B981' : '#DF8A2E';
+        ctx.fillText(`${node.efficiency}%`, pillX + 93, cy + 0.5);
+      }
+
       const barX = node.x + 14;
       const barW = node.width - 28;
 
@@ -967,7 +1039,7 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
         ctx.font = '600 9.5px "JetBrains Mono", monospace';
         ctx.fillStyle = isPortFull ? '#FBBF24' : '#38BDF8';
         ctx.fillText(
-          `${port.actualRatePerMin}/${port.targetRatePerMin}/m`,
+          formatDualRatePerMin(port.actualRatePerMin, port.targetRatePerMin, cfg),
           textOffsetX,
           pt.y + 7
         );
@@ -1024,7 +1096,7 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
 
         ctx.font = '600 9.5px "JetBrains Mono", monospace';
         ctx.fillStyle = '#FBBF24';
-        ctx.fillText(`${port.actualRatePerMin}/m`, textRightX, pt.y + 7);
+        ctx.fillText(formatRatePerMin(port.actualRatePerMin, cfg), textRightX, pt.y + 7);
       } else {
         ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
         ctx.fillStyle = '#F8FAFC';

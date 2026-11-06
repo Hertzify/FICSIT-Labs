@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BUILDING_LIST, CONVEYOR_BELT_TIERS, PURITY_CONFIG } from './catalog';
+import {
+  BUILDING_LIST,
+  CONVEYOR_BELT_TIERS,
+  formatDualRatePerMin,
+  formatRatePerMin,
+  PURITY_CONFIG,
+} from './catalog';
 import { BUILDING_ICON_PATHS, ITEM_ICON_PATHS, getItemIconUrl } from './icons';
+import { cloneSaveGraph, DEFAULT_SETTINGS } from './storage';
 import {
   canConnectPorts,
   changeNodeRecipe,
@@ -196,13 +203,15 @@ test('Satisfactory Conveyor Belt tiers (Mk.1 60/m @ 1.2m/s .. Mk.6 1200/m @ 24m/
   assert.equal(minerMk2.outputs[0].actualRatePerMin, 120);
 });
 
-test('all 13 Satisfactory Wiki resource/part icons and 6 Conveyor Belt Mk.1-Mk.6 icons resolve cleanly', () => {
-  assert.equal(Object.keys(ITEM_ICON_PATHS).length, 13);
+test('all 15 Satisfactory Wiki resource/part/artifact icons and 6 Conveyor Belt Mk.1-Mk.6 icons resolve cleanly', () => {
+  assert.equal(Object.keys(ITEM_ICON_PATHS).length, 15);
   assert.ok(getItemIconUrl('Iron Ore')?.endsWith('iron_ore.png'));
   assert.ok(getItemIconUrl('Copper Ingot')?.endsWith('copper_ingot.png'));
   assert.ok(getItemIconUrl('Screws')?.endsWith('screw.png'));
   assert.ok(getItemIconUrl('Reinforced Plate')?.endsWith('reinforced_plate.png'));
   assert.ok(getItemIconUrl('Rotor')?.endsWith('rotor.png'));
+  assert.ok(getItemIconUrl('Power Shard')?.endsWith('power_shard.png'));
+  assert.ok(getItemIconUrl('Somersloop')?.endsWith('somersloop.png'));
   assert.ok(BUILDING_ICON_PATHS.conveyor_belt_mk1?.endsWith('conveyor_belt_mk1.png'));
   assert.ok(BUILDING_ICON_PATHS.conveyor_belt_mk2?.endsWith('conveyor_belt_mk2.png'));
   assert.ok(BUILDING_ICON_PATHS.conveyor_belt_mk6?.endsWith('conveyor_belt_mk6.png'));
@@ -256,9 +265,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.191 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.191');
-  assert.equal(APP_BUILD_TAG, '0.0.191 dev build');
+test('version tracking matches 0.0.20 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.20');
+  assert.equal(APP_BUILD_TAG, '0.0.20 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -1544,5 +1553,74 @@ test('30. Exterior Miner Mk.1 STANDBY switch hit-testing and exact node storage 
   assert.equal(loadedHub.inputs[0].bufferedCount, 15);
 });
 
+test('Rate Display Format setting defaults to "per_minute" (60 per minute) and supports "compact" (60/m)', () => {
+  assert.equal(DEFAULT_SETTINGS.rateDisplayFormat, 'per_minute');
+  assert.equal(formatRatePerMin(60), '60 per minute');
+  assert.equal(formatRatePerMin(60, DEFAULT_SETTINGS), '60 per minute');
+  assert.equal(formatRatePerMin(30, 'per_minute'), '30 per minute');
+  assert.equal(formatRatePerMin(30, 'compact'), '30/m');
+  assert.equal(formatDualRatePerMin(30, 60, 'per_minute'), '30/60 per minute');
+  assert.equal(formatDualRatePerMin(30, 60, 'compact'), '30/60/m');
 
+  // Verify Power Shard and Somersloop authentic game icons are registered
+  assert.equal(ITEM_ICON_PATHS.power_shard, './icons/items/power_shard.png');
+  assert.equal(ITEM_ICON_PATHS.somersloop, './icons/items/somersloop.png');
+});
 
+test('Machine storages for 200-stack and 500-stack items and multi-input Assemblers survive save/load and cloneSaveGraph', () => {
+  // Constructor making Screws (stack size 500) with 385 buffered output screws
+  const screwConstructor = createMachineNode('constructor', 1200, 1200, 'ctor_screws', 'construct_screws');
+  screwConstructor.inputs[0].bufferedCount = 88;
+  screwConstructor.inputStoredCount = 88;
+  screwConstructor.storedCount = 385;
+  screwConstructor.outputs[0].bufferedCount = 385;
+  screwConstructor.progress = 0.64;
+
+  // Constructor making Iron Plates (stack size 200) with 175 buffered output plates
+  const plateConstructor = createMachineNode('constructor', 1600, 1200, 'ctor_plates', 'construct_iron_plate');
+  plateConstructor.inputs[0].bufferedCount = 92;
+  plateConstructor.inputStoredCount = 92;
+  plateConstructor.storedCount = 175;
+  plateConstructor.outputs[0].bufferedCount = 175;
+
+  // Multi-input Assembler making Reinforced Iron Plates (Iron Plate input up to 200, Screw input up to 500)
+  const assembler = createMachineNode('assembler', 2000, 1200, 'asm_rip', 'assemble_reinforced_plate');
+  assembler.inputs[0].bufferedCount = 140; // Iron Plate (max 200)
+  assembler.inputs[1].bufferedCount = 410; // Screw (max 500)
+  assembler.inputStoredCount = 550;
+  assembler.storedCount = 65;
+  assembler.outputs[0].bufferedCount = 65;
+
+  const cloned = cloneSaveGraph([screwConstructor, plateConstructor, assembler], []);
+  const slotJson = serializeSaveExport({
+    id: 'test_high_stack_storage',
+    sessionName: 'High Stack Storage Test',
+    slotName: 'High Stack Slot',
+    kind: 'manual',
+    updatedAt: Date.now(),
+    nodes: cloned.nodes,
+    connections: cloned.connections,
+    camera: { x: 0, y: 0, zoom: 1 },
+  });
+
+  const imported = parseSaveImport(slotJson);
+  assert.ok(imported.slot);
+  const loadedScrews = imported.slot!.nodes.find((n) => n.id === 'ctor_screws')!;
+  const loadedPlates = imported.slot!.nodes.find((n) => n.id === 'ctor_plates')!;
+  const loadedAsm = imported.slot!.nodes.find((n) => n.id === 'asm_rip')!;
+
+  assert.equal(loadedScrews.storedCount, 385);
+  assert.equal(loadedScrews.outputs[0].bufferedCount, 385);
+  assert.equal(loadedScrews.inputs[0].bufferedCount, 88);
+  assert.equal(loadedScrews.progress, 0.64);
+
+  assert.equal(loadedPlates.storedCount, 175);
+  assert.equal(loadedPlates.outputs[0].bufferedCount, 175);
+  assert.equal(loadedPlates.inputs[0].bufferedCount, 92);
+
+  assert.equal(loadedAsm.inputs[0].bufferedCount, 140);
+  assert.equal(loadedAsm.inputs[1].bufferedCount, 410);
+  assert.equal(loadedAsm.inputStoredCount, 550);
+  assert.equal(loadedAsm.storedCount, 65);
+  assert.equal(loadedAsm.outputs[0].bufferedCount, 65);
+});

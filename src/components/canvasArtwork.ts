@@ -1,5 +1,5 @@
-import { PURITY_CONFIG } from '../game/catalog';
-import { MachineNode } from '../game/types';
+import { formatRatePerMin, PURITY_CONFIG } from '../game/catalog';
+import { MachineNode, SettingsConfig } from '../game/types';
 
 export const TOPOGRAPHIC_RIDGE_CENTERS = [
   { x: 2300, y: 1100, rx: 620, ry: 420 },
@@ -31,6 +31,114 @@ export function drawRoundedRect(
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+}
+
+/**
+ * Authentic Satisfactory Power Consumption Lightning Bolt Icon
+ * Matches the in-game telemetry bolt: flat horizontal top edge, vertical left upper edge,
+ * middle right step, and sharp lower point.
+ */
+export function drawSatisfactoryPowerIcon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  color = '#FFFFFF'
+) {
+  const s = size / 24;
+  const ox = cx - 12 * s;
+  const oy = cy - 12 * s;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(ox + 8.5 * s, oy + 2 * s);
+  ctx.lineTo(ox + 15.5 * s, oy + 2 * s);
+  ctx.lineTo(ox + 12.4 * s, oy + 10.6 * s);
+  ctx.lineTo(ox + 16.8 * s, oy + 10.6 * s);
+  ctx.lineTo(ox + 10.2 * s, oy + 22 * s);
+  ctx.lineTo(ox + 11.2 * s, oy + 13.2 * s);
+  ctx.lineTo(ox + 8.5 * s, oy + 13.2 * s);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Authentic Satisfactory Cooldown / Cycle Duration Stopwatch Icon
+ * Matches the in-game stopwatch: top T-cap plunger, angled upper-right button,
+ * circular outer bezel ring, and 270° solid filled inner pie sector (3 o'clock clockwise to 12 o'clock).
+ */
+export function drawSatisfactoryStopwatchIcon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  color = '#FFFFFF'
+) {
+  const s = size / 24;
+  const ox = cx - 12 * s;
+  const oy = cy - 12 * s;
+  const dialCx = ox + 12 * s;
+  const dialCy = oy + 13.6 * s;
+
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+
+  // Top flat cap + neck stem
+  ctx.fillRect(ox + 9.2 * s, oy + 1.4 * s, 5.6 * s, 2.0 * s);
+  ctx.fillRect(ox + 10.6 * s, oy + 3.2 * s, 2.8 * s, 2.2 * s);
+
+  // Upper-right angled ear button
+  ctx.beginPath();
+  ctx.moveTo(ox + 16.4 * s, oy + 5.2 * s);
+  ctx.lineTo(ox + 18.8 * s, oy + 7.6 * s);
+  ctx.lineWidth = Math.max(1.2, 2.1 * s);
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Outer bezel circle
+  ctx.beginPath();
+  ctx.arc(dialCx, dialCy, 7.8 * s, 0, Math.PI * 2);
+  ctx.lineWidth = Math.max(1.1, 1.85 * s);
+  ctx.stroke();
+
+  // Inner 270° filled pie sector (from 0 rad / 3 o'clock clockwise around to -PI/2 / 12 o'clock)
+  ctx.beginPath();
+  ctx.moveTo(dialCx, dialCy);
+  ctx.arc(dialCx, dialCy, 5.3 * s, 0, -Math.PI * 0.5, false);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * Authentic Satisfactory Production Effectiveness / Efficiency 4-Bar Icon
+ * Matches the in-game 4-bar telemetry icon: Bar 1 = short (38%), Bar 2 = tall (100%),
+ * Bar 3 = medium (62%), Bar 4 = tall (100%).
+ */
+export function drawSatisfactoryEfficiencyIcon(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  color = '#FFFFFF'
+) {
+  const s = size / 24;
+  const ox = cx - 12 * s;
+  const oy = cy - 12 * s;
+  ctx.save();
+  ctx.fillStyle = color;
+  // Bar 1: Short (left)
+  ctx.fillRect(ox + 2.2 * s, oy + 14.2 * s, 3.3 * s, 6.8 * s);
+  // Bar 2: Tall (2nd)
+  ctx.fillRect(ox + 7.6 * s, oy + 4.0 * s, 3.3 * s, 17.0 * s);
+  // Bar 3: Medium (3rd)
+  ctx.fillRect(ox + 13.0 * s, oy + 10.2 * s, 3.3 * s, 10.8 * s);
+  // Bar 4: Tall (4th)
+  ctx.fillRect(ox + 18.4 * s, oy + 4.0 * s, 3.3 * s, 17.0 * s);
+  ctx.restore();
 }
 
 /**
@@ -141,7 +249,8 @@ export function drawNaturalResourceDeposit(
   isSelected: boolean,
   isBatterySaver: boolean,
   primaryItemImg: HTMLImageElement | null,
-  isMinerMounted: boolean
+  isMinerMounted: boolean,
+  cfg?: Pick<SettingsConfig, 'rateDisplayFormat'>
 ) {
   const purityKey = node.purity ?? 'normal';
   const purityInfo = PURITY_CONFIG[purityKey];
@@ -157,6 +266,7 @@ export function drawNaturalResourceDeposit(
   const isLimestone =
     node.recipeId === 'deposit_limestone' || node.title.toLowerCase().includes('limestone');
   const oreName = isCopper ? 'Copper Ore' : isLimestone ? 'Limestone' : 'Iron Ore';
+  const formattedRate = formatRatePerMin(purityInfo.ratePerMin, cfg);
 
   ctx.save();
 
@@ -210,7 +320,9 @@ export function drawNaturalResourceDeposit(
 
   if (isMinerMounted) {
     // Protruding Bedrock Pedestal Tab below the mounted Miner Mk.1
-    const tabW = 224;
+    const tabText = `● ${oreName.toUpperCase()} DEPOSIT (${purityInfo.label.toUpperCase()} · ${formattedRate})`;
+    ctx.font = '700 8px "JetBrains Mono", monospace';
+    const tabW = Math.max(224, ctx.measureText(tabText).width + 20);
     const tabH = 19;
     const tabX = cx - tabW * 0.5;
     const tabY = y + h + 3;
@@ -221,15 +333,10 @@ export function drawNaturalResourceDeposit(
     ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    ctx.font = '700 8.5px "JetBrains Mono", monospace';
     ctx.fillStyle = '#10B981';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(
-      `● ${oreName.toUpperCase()} DEPOSIT (${purityInfo.label.toUpperCase()} · ${purityInfo.ratePerMin}/m)`,
-      cx,
-      tabY + tabH * 0.5 + 0.5
-    );
+    ctx.fillText(tabText, cx, tabY + tabH * 0.5 + 0.5);
   }
 
   // 4. Natural Ore Rock Fractures & Fissures
@@ -325,9 +432,11 @@ export function drawNaturalResourceDeposit(
   }
 
   // 7. FICSIT Survey Holographic Beacon (Top-Left Badge)
-  const beaconW = 146;
+  const beaconText = `${purityInfo.label.toUpperCase()} · ${formattedRate}`;
+  ctx.font = '700 8.5px "JetBrains Mono", monospace';
+  const beaconW = Math.max(126, ctx.measureText(beaconText).width + 16);
   const beaconH = 22;
-  const beaconX = x + 16;
+  const beaconX = x + 14;
   const beaconY = y + 10;
   drawRoundedRect(ctx, beaconX, beaconY, beaconW, beaconH, 6);
   ctx.fillStyle = '#080D15';
@@ -336,12 +445,11 @@ export function drawNaturalResourceDeposit(
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
-  ctx.font = '700 9px "JetBrains Mono", monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = purityInfo.badgeColor;
   ctx.fillText(
-    `${purityInfo.label.toUpperCase()} · ${purityInfo.ratePerMin}/m`,
+    beaconText,
     beaconX + 8,
     beaconY + beaconH * 0.5 + 0.5
   );

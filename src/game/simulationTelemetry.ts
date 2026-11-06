@@ -83,19 +83,28 @@ export function normalizeNodeStorageCapacities(nextNodes: MachineNode[]): void {
     node.isStandby = Boolean(node.isStandby);
 
     const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
+    const rawOutStored = Math.max(
+      node.storedCount ?? 0,
+      node.outputs[0]?.bufferedCount ?? 0
+    );
+
     if (node.buildingId === 'storage_container' || node.buildingId === 'the_hub') {
       const activeItem =
         node.outputs[0]?.itemName ??
         node.inputs.find((p) => p.itemName)?.itemName ??
         null;
       const stackSize = getItemStackSize(activeItem);
-      const maxCap = STORAGE_CONTAINER_SLOTS * stackSize;
+      const maxCap = Math.max(
+        STORAGE_CONTAINER_SLOTS * stackSize,
+        node.maxStoredCount ?? 0
+      );
       node.maxStoredCount = maxCap;
-      node.storedCount = Math.min(maxCap, Math.max(0, Math.round(node.storedCount ?? 0)));
+      node.storedCount = Math.min(maxCap, Math.max(0, Math.round(rawOutStored)));
       for (const inPort of node.inputs) {
-        inPort.maxBuffer = stackSize;
+        const portStack = Math.max(stackSize, getItemStackSize(inPort.itemName));
+        inPort.maxBuffer = portStack;
         inPort.bufferedCount = Math.min(
-          stackSize,
+          portStack,
           Math.max(0, Math.round(inPort.bufferedCount ?? 0))
         );
       }
@@ -108,7 +117,7 @@ export function normalizeNodeStorageCapacities(nextNodes: MachineNode[]): void {
       node.maxStoredCount = logisticsMax;
       node.storedCount = Math.min(
         logisticsMax,
-        Math.max(0, Math.round(node.storedCount ?? 0))
+        Math.max(0, Math.round(rawOutStored))
       );
       for (const inPort of node.inputs) {
         inPort.maxBuffer = logisticsMax;
@@ -146,23 +155,49 @@ export function normalizeNodeStorageCapacities(nextNodes: MachineNode[]): void {
       node.maxStoredCount = outMax;
       node.storedCount = Math.min(
         outMax,
-        Math.max(0, Math.round(node.storedCount ?? node.outputs[0]?.bufferedCount ?? 0))
+        Math.max(0, Math.round(rawOutStored))
       );
       if (node.outputs[0]) {
         node.outputs[0].maxBuffer = outMax;
         node.outputs[0].bufferedCount = node.storedCount;
       }
     } else {
-      const maxCap = getBuildingMaxStorage(node.buildingId, node.recipeId, null);
+      const maxCap = Math.max(
+        getBuildingMaxStorage(node.buildingId, node.recipeId, null),
+        node.maxStoredCount ?? 0
+      );
       node.maxStoredCount = maxCap;
-      node.storedCount = Math.min(maxCap, Math.max(0, Math.round(node.storedCount ?? 0)));
+      node.storedCount = Math.min(maxCap, Math.max(0, Math.round(rawOutStored)));
+      if (node.outputs[0]) {
+        node.outputs[0].maxBuffer = maxCap;
+        node.outputs[0].bufferedCount = node.storedCount;
+      }
     }
 
-    node.maxInputStoredCount = node.inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 0), 0);
-    node.inputStoredCount = node.inputs.reduce(
+    // Reconcile node.inputStoredCount into node.inputs[].bufferedCount if inputStoredCount was populated directly
+    let sumPortBuffers = node.inputs.reduce(
       (acc, p) => acc + Math.round(p.bufferedCount ?? 0),
       0
     );
+    const savedInTotal = Math.max(0, Math.round(node.inputStoredCount ?? 0));
+    if (savedInTotal > sumPortBuffers && node.inputs.length > 0) {
+      let rem = savedInTotal - sumPortBuffers;
+      for (const inPort of node.inputs) {
+        if (rem <= 0) break;
+        const cap = inPort.maxBuffer ?? 100;
+        const cur = Math.round(inPort.bufferedCount ?? 0);
+        const add = Math.min(rem, Math.max(0, cap - cur));
+        inPort.bufferedCount = cur + add;
+        rem -= add;
+      }
+      sumPortBuffers = node.inputs.reduce(
+        (acc, p) => acc + Math.round(p.bufferedCount ?? 0),
+        0
+      );
+    }
+
+    node.maxInputStoredCount = node.inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 0), 0);
+    node.inputStoredCount = sumPortBuffers;
   }
 }
 

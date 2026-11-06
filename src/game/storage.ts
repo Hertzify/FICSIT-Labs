@@ -44,9 +44,22 @@ export function loadSettings(): SettingsConfig {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_SETTINGS };
+    const rawGrid = Number(parsed.gridSize);
+    const rawScale = Number(parsed.uiScale);
+    const rawAutoSaveSec = Number(parsed.autoSaveIntervalSec);
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      gridSize: Number.isFinite(rawGrid) && rawGrid >= 12 ? rawGrid : DEFAULT_SETTINGS.gridSize,
+      uiScale:
+        Number.isFinite(rawScale) && rawScale >= 0.7 && rawScale <= 1.5
+          ? rawScale
+          : DEFAULT_SETTINGS.uiScale,
+      autoSaveIntervalSec:
+        Number.isFinite(rawAutoSaveSec) && rawAutoSaveSec >= 5
+          ? rawAutoSaveSec
+          : DEFAULT_SETTINGS.autoSaveIntervalSec,
       conveyorStyle: 'orthogonal',
       rateDisplayFormat:
         parsed.rateDisplayFormat === 'compact' ? 'compact' : 'per_minute',
@@ -98,10 +111,62 @@ export function loadSaveSlots(): SaveSlot[] {
       localStorage.setItem(SAVES_KEY, JSON.stringify([seed]));
       return [seed];
     }
-    const validSlots = parsed
-      .filter((slot: unknown): slot is SaveSlot => Boolean(slot && typeof slot === 'object'))
-      .map((slot: SaveSlot) => {
-        const syncedNodes = ensureWorldDepositsPresent(Array.isArray(slot.nodes) ? slot.nodes : []);
+    const validSlots: SaveSlot[] = [];
+    for (const rawSlot of parsed) {
+      if (!rawSlot || typeof rawSlot !== 'object') continue;
+      try {
+        const slot = rawSlot as SaveSlot;
+        const rawNodes = Array.isArray(slot.nodes)
+          ? slot.nodes.filter(
+              (n) =>
+                Boolean(
+                  n &&
+                    typeof n === 'object' &&
+                    typeof n.id === 'string' &&
+                    typeof n.buildingId === 'string' &&
+                    Number.isFinite(n.x) &&
+                    Number.isFinite(n.y)
+                )
+            )
+          : [];
+        const sanitizedInputNodes = rawNodes.map((n) => ({
+          ...n,
+          x: Number.isFinite(n.x) ? n.x : 2544,
+          y: Number.isFinite(n.y) ? n.y : 2784,
+          width: Number.isFinite(n.width) && n.width > 0 ? n.width : 192,
+          height: Number.isFinite(n.height) && n.height > 0 ? n.height : 120,
+          storedCount: Number.isFinite(n.storedCount) ? Math.max(0, n.storedCount!) : 0,
+          inputStoredCount: Number.isFinite(n.inputStoredCount)
+            ? Math.max(0, n.inputStoredCount!)
+            : 0,
+          progress: Number.isFinite(n.progress)
+            ? Math.min(1, Math.max(0, n.progress!))
+            : 0,
+          clockSpeedPct:
+            Number.isFinite(n.clockSpeedPct) && n.clockSpeedPct! > 0
+              ? Math.min(250, Math.max(1, n.clockSpeedPct!))
+              : 100,
+          inputs: Array.isArray(n.inputs)
+            ? n.inputs.map((p, idx) => ({
+                ...p,
+                id: p?.id || `in-${idx}`,
+                bufferedCount: Number.isFinite(p?.bufferedCount)
+                  ? Math.max(0, Math.round(p.bufferedCount!))
+                  : 0,
+              }))
+            : [],
+          outputs: Array.isArray(n.outputs)
+            ? n.outputs.map((p, idx) => ({
+                ...p,
+                id: p?.id || `out-${idx}`,
+                bufferedCount: Number.isFinite(p?.bufferedCount)
+                  ? Math.max(0, Math.round(p.bufferedCount!))
+                  : 0,
+              }))
+            : [],
+        }));
+
+        const syncedNodes = ensureWorldDepositsPresent(sanitizedInputNodes);
         const legacyMiner = syncedNodes.find(
           (n) => n.id === 'starter_miner' && n.x === 408 && n.y === 216
         );
@@ -110,7 +175,8 @@ export function loadSaveSlots(): SaveSlot[] {
           slot.camera &&
           Number.isFinite(slot.camera.x) &&
           Number.isFinite(slot.camera.y) &&
-          Number.isFinite(slot.camera.zoom)
+          Number.isFinite(slot.camera.zoom) &&
+          slot.camera.zoom > 0.05
             ? slot.camera
             : { x: -1820, y: -1920, zoom: 0.74 };
 
@@ -129,21 +195,52 @@ export function loadSaveSlots(): SaveSlot[] {
 
         const nodeById = new Map(finalNodes.map((n) => [n.id, n]));
         const rawConnections = Array.isArray(slot.connections) ? slot.connections : [];
-        const validConns = rawConnections.filter((c) => {
-          const fromN = nodeById.get(c.fromNodeId);
-          const toN = nodeById.get(c.toNodeId);
-          if (!fromN || !toN) return false;
-          if (fromN.buildingId === 'resource_deposit' || toN.buildingId === 'miner_mk1') {
-            return false;
-          }
-          return true;
-        });
+        const validConns = rawConnections
+          .filter((c) => {
+            if (!c || typeof c !== 'object') return false;
+            const fromN = nodeById.get(c.fromNodeId);
+            const toN = nodeById.get(c.toNodeId);
+            if (!fromN || !toN) return false;
+            if (fromN.buildingId === 'resource_deposit' || toN.buildingId === 'miner_mk1') {
+              return false;
+            }
+            return true;
+          })
+          .map((c) => ({
+            ...c,
+            waypoints: Array.isArray(c.waypoints)
+              ? c.waypoints
+                  .filter(
+                    (w) =>
+                      Boolean(
+                        w &&
+                          typeof w === 'object' &&
+                          Number.isFinite(w.x) &&
+                          Number.isFinite(w.y)
+                      )
+                  )
+                  .slice(0, 16)
+              : undefined,
+            inFlightItems: Array.isArray(c.inFlightItems)
+              ? c.inFlightItems
+                  .filter(
+                    (pkt) =>
+                      Boolean(
+                        pkt &&
+                          typeof pkt === 'object' &&
+                          Number.isFinite(pkt.distancePx) &&
+                          pkt.distancePx >= 0
+                      )
+                  )
+                  .slice(0, 300)
+              : undefined,
+          }));
 
         // Use dt = 0 so steady-state telemetry and capacities are computed without draining stored items on load
         const sim = stepSimulation(finalNodes, validConns, 0);
-        return {
+        validSlots.push({
           ...slot,
-          id: slot.id || `slot_${Date.now()}`,
+          id: slot.id || `slot_${Date.now()}_${validSlots.length}`,
           sessionName: slot.sessionName || 'Rocky Desert Sector 01',
           slotName: slot.slotName || 'Manual Save',
           kind: slot.kind === 'autosave' ? 'autosave' : 'manual',
@@ -151,9 +248,13 @@ export function loadSaveSlots(): SaveSlot[] {
           nodes: sim.nodes,
           connections: sim.connections,
           camera: finalCamera,
-        } as SaveSlot;
-      })
-      .sort((a: SaveSlot, b: SaveSlot) => b.updatedAt - a.updatedAt);
+        });
+      } catch {
+        // Skip individual corrupted save slot instead of crashing startup
+      }
+    }
+
+    validSlots.sort((a: SaveSlot, b: SaveSlot) => b.updatedAt - a.updatedAt);
 
     if (validSlots.length === 0) {
       const seed = createInitialSeedSaveSlot('Rocky Desert Sector 01', true);

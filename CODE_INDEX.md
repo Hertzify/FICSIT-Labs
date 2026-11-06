@@ -26,7 +26,7 @@ Every source file is modularized (`< 900 lines`) and contains a `MODULE INDEX` h
 | **Belt Inspector GUI** | `/src/components/BeltInspectorPanel.tsx` | ~264 | Conveyor Belt Inspector modal (Mk.1–Mk.6 tier upgrade, clear items, reset route, dismantle belt) |
 | **Build Menu Modal** | `/src/components/BuildMenuModal.tsx` | ~370 | Categorized FICSIT Build Menu (Extractors, Smelters, Constructors, Assemblers, Logistics, Belt Tiers) |
 | **Top Control Toolbar** | `/src/components/SatisfactoryToolbar.tsx` | ~194 | Top-center tool selector (`Edit`, `Move`, `Select`, `Corner`) + `Undo` / `Redo` buttons |
-| **Main Menu & New Game** | `/src/components/MainMenu.tsx` | ~339 | Satisfactory-style title screen, Continue Latest, New Game session creator, Changelog trigger |
+| **Main Menu & New Game** | `/src/components/MainMenu.tsx` | ~320 | Satisfactory-style title screen, Continue Latest, New Game session creator |
 | **Save / Load Modal** | `/src/components/SaveLoadModal.tsx` | ~197 | Manual & Auto-Save slot browser, create/overwrite/delete save slots |
 | **Settings Modal** | `/src/components/SettingsModal.tsx` | ~585 | UI Scale, Wiring Mode, Snap Mode, Performance Mode (`60fps` / `battery_saver`), JSON import/export, Factory Reset |
 | **Core Types** | `/src/game/types.ts` | ~162 | `MachineNode`, `ConveyorConnection`, `PortDescriptor`, `BuildingDefinition`, `RecipeDefinition`, `SettingsConfig` |

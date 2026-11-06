@@ -21,6 +21,7 @@ export const ITEM_ICON_PATHS: Record<string, string> = {
 export const BUILDING_ICON_PATHS: Record<string, string> = {
   the_hub: './icons/buildings/the_hub.png',
   miner_mk1: './icons/buildings/miner_mk1.png',
+  miner_chassis_bg: './icons/buildings/miner_chassis_bg.jpg?v=2',
   smelter: './icons/buildings/smelter.png',
   constructor: './icons/buildings/constructor.png',
   assembler: './icons/buildings/assembler.png',
@@ -33,7 +34,6 @@ export const BUILDING_ICON_PATHS: Record<string, string> = {
   conveyor_belt_mk4: './icons/buildings/conveyor_belt_mk4.png',
   conveyor_belt_mk5: './icons/buildings/conveyor_belt_mk5.png',
   conveyor_belt_mk6: './icons/buildings/conveyor_belt_mk6.png',
-  miner_chassis_bg: './icons/buildings/miner_chassis_bg.jpg',
 };
 
 const NAME_TO_ITEM_ID: Record<string, string> = {
@@ -133,4 +133,13 @@ export function getCanvasBuildingImage(
   recipeId?: string | null
 ): HTMLImageElement | null {
   return getOrLoadImage(getBuildingIconUrl(buildingId, recipeId));
+}
+
+if (typeof Image !== 'undefined') {
+  for (const src of Object.values(ITEM_ICON_PATHS)) {
+    getOrLoadImage(src);
+  }
+  for (const src of Object.values(BUILDING_ICON_PATHS)) {
+    getOrLoadImage(src);
+  }
 }

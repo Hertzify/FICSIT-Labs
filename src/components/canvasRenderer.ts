@@ -132,6 +132,14 @@ export function renderFactoryScene(params: CanvasRenderParams) {
 
   if (width <= 0 || height <= 0) return;
 
+  const safeZoom =
+    Number.isFinite(cam.zoom) && cam.zoom >= 0.08 ? Math.min(3.5, cam.zoom) : 0.74;
+  const safeCamX = Number.isFinite(cam.x) ? cam.x : -1820;
+  const safeCamY = Number.isFinite(cam.y) ? cam.y : -1920;
+  cam.zoom = safeZoom;
+  cam.x = safeCamX;
+  cam.y = safeCamY;
+
   const macroMode = isMacroIconZoom(cam.zoom);
   const isBatterySaver = cfg.performanceMode === 'battery_saver';
 
@@ -196,7 +204,9 @@ export function renderFactoryScene(params: CanvasRenderParams) {
   ctx.restore();
 
   // Bounded Blueprint Coordinate Grid
-  const gridStep = cfg.gridSize || 24;
+  const rawGridStep = Number(cfg.gridSize);
+  const gridStep =
+    Number.isFinite(rawGridStep) && rawGridStep >= 12 ? rawGridStep : 24;
   const majorStep = gridStep * 4;
   const rawMinX = -cam.x / cam.zoom;
   const rawMaxX = (-cam.x + width) / cam.zoom;
@@ -293,7 +303,10 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const route = getCachedConveyorRoute(fromNode, outIdx, toNode, inIdx, nodes, conn.waypoints);
     connRouteMap.set(conn.id, route);
     allBeltPathsList.push({ connId: conn.id, pts: route.pts });
-    const wpSig = (conn.waypoints ?? []).map((w) => `${w.x},${w.y}`).join(';');
+    const wpSig =
+      conn.waypoints && conn.waypoints.length > 0
+        ? conn.waypoints.map((w) => `${w.x},${w.y}`).join(';')
+        : '';
     beltSigParts += `${conn.id}:${route.pts.length}:${route.pts[0]?.x},${route.pts[0]?.y}->${route.pts[route.pts.length - 1]?.x},${route.pts[route.pts.length - 1]?.y}[${wpSig}]|`;
   }
 

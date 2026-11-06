@@ -246,7 +246,6 @@ export const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                 ? { ...n, clockSpeedPct, powerShards }
                 : n
             );
-            playSynthSfx('click', settings);
             syncTelemetryAndRedraw(selectedNodeSnapshot.id);
           }}
           onToggleStandby={() => {
@@ -388,39 +387,6 @@ export const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
             playSynthSfx('click', settings);
             syncTelemetryAndRedraw(selectedNodeSnapshot.id);
             showToast('Filled node output storage to 100%');
-          }}
-          onUnwireBelts={() => {
-            factoryHistory.pushSnapshot(
-              nodesRef.current,
-              connectionsRef.current,
-              'Disconnect Machine Belts'
-            );
-            connectionsRef.current = connectionsRef.current.filter(
-              (c) =>
-                c.fromNodeId !== selectedNodeSnapshot.id &&
-                c.toNodeId !== selectedNodeSnapshot.id
-            );
-            invalidateAllConveyorCaches();
-            playSynthSfx('disconnect', settings);
-            syncTelemetryAndRedraw(selectedNodeSnapshot.id);
-            showToast('Cleared attached conveyor lines');
-          }}
-          onDismantleNode={() => {
-            const targetId = selectedNodeSnapshot.id;
-            factoryHistory.pushSnapshot(
-              nodesRef.current,
-              connectionsRef.current,
-              `Dismantle ${BUILDINGS[selectedNodeSnapshot.buildingId]?.name ?? 'Machine'}`
-            );
-            nodesRef.current = nodesRef.current.filter((n) => n.id !== targetId);
-            connectionsRef.current = connectionsRef.current.filter(
-              (c) => c.fromNodeId !== targetId && c.toNodeId !== targetId
-            );
-            invalidateAllConveyorCaches();
-            setSelectedNodeId(null);
-            playSynthSfx('disconnect', settings);
-            syncTelemetryAndRedraw(null);
-            showToast('Machine dismantled');
           }}
         />
       )}

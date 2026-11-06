@@ -496,12 +496,29 @@ export function computeOrthogonalConveyorPath(
     }
   }
 
+  const boundedExitXs = exitXs
+    .slice()
+    .sort((a, b) => Math.abs(a - pExit.x) - Math.abs(b - pExit.x))
+    .filter((v, i, arr) => i === 0 || Math.abs(v - arr[i - 1]) >= 6)
+    .slice(0, 8);
+  const boundedEnterXs = enterXs
+    .slice()
+    .sort((a, b) => Math.abs(a - pEnter.x) - Math.abs(b - pEnter.x))
+    .filter((v, i, arr) => i === 0 || Math.abs(v - arr[i - 1]) >= 6)
+    .slice(0, 8);
+  const midTargetY = (y1 + y2) * 0.5;
+  const boundedMidYs = candidateMidYs
+    .slice()
+    .sort((a, b) => Math.abs(a - midTargetY) - Math.abs(b - midTargetY))
+    .filter((v, i, arr) => i === 0 || Math.abs(v - arr[i - 1]) >= 6)
+    .slice(0, 12);
+
   let bestPath: { x: number; y: number }[] | null = null;
   let bestLen = Infinity;
 
-  for (const exX of exitXs) {
-    for (const enX of enterXs) {
-      for (const midY of candidateMidYs) {
+  for (const exX of boundedExitXs) {
+    for (const enX of boundedEnterXs) {
+      for (const midY of boundedMidYs) {
         const p1Stub = { x: exX, y: y1 };
         const p2Turn = { x: exX, y: midY };
         const p3Turn = { x: enX, y: midY };

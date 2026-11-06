@@ -350,32 +350,46 @@ export function computeConveyorPathWithWaypoints(
     return { x: wx, y: wy };
   });
 
+  const dedupeCoords = (arr: number[], minGap = 8): number[] => {
+    const sorted = arr.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+    const out: number[] = [];
+    for (const v of sorted) {
+      if (out.length === 0 || Math.abs(v - out[out.length - 1]) >= minGap) {
+        out.push(v);
+      }
+    }
+    return out;
+  };
+
   const baseMargin = CLEARANCE + 8;
-  const globalCandidateXs: number[] = [startStubX, endStubX];
-  const globalCandidateYs: number[] = [y1, y2];
+  const rawGlobalXs: number[] = [startStubX, endStubX];
+  const rawGlobalYs: number[] = [y1, y2];
 
   for (const box of allObstacleBoxes) {
     const m = box.isEndpoint ? 16 : baseMargin;
-    globalCandidateXs.push(box.x - m, box.x + box.width + m);
-    globalCandidateYs.push(box.y - m, box.y + box.height + m);
+    rawGlobalXs.push(box.x - m, box.x + box.width + m);
+    rawGlobalYs.push(box.y - m, box.y + box.height + m);
   }
 
   for (let i = 0; i < allObstacleBoxes.length; i++) {
     for (let j = i + 1; j < allObstacleBoxes.length; j++) {
       const a = allObstacleBoxes[i];
       const b = allObstacleBoxes[j];
-      if (a.y + a.height < b.y && b.y - (a.y + a.height) >= 22) {
-        globalCandidateYs.push((a.y + a.height + b.y) * 0.5);
-      } else if (b.y + b.height < a.y && a.y - (b.y + b.height) >= 22) {
-        globalCandidateYs.push((b.y + b.height + a.y) * 0.5);
+      if (a.y + a.height < b.y && b.y - (a.y + a.height) >= 22 && b.y - (a.y + a.height) <= 320) {
+        rawGlobalYs.push((a.y + a.height + b.y) * 0.5);
+      } else if (b.y + b.height < a.y && a.y - (b.y + b.height) >= 22 && a.y - (b.y + b.height) <= 320) {
+        rawGlobalYs.push((b.y + b.height + a.y) * 0.5);
       }
-      if (a.x + a.width < b.x && b.x - (a.x + a.width) >= 22) {
-        globalCandidateXs.push((a.x + a.width + b.x) * 0.5);
-      } else if (b.x + b.width < a.x && a.x - (b.x + b.width) >= 22) {
-        globalCandidateXs.push((b.x + b.width + a.x) * 0.5);
+      if (a.x + a.width < b.x && b.x - (a.x + a.width) >= 22 && b.x - (a.x + a.width) <= 320) {
+        rawGlobalXs.push((a.x + a.width + b.x) * 0.5);
+      } else if (b.x + b.width < a.x && a.x - (b.x + b.width) >= 22 && a.x - (b.x + b.width) <= 320) {
+        rawGlobalXs.push((b.x + b.width + a.x) * 0.5);
       }
     }
   }
+
+  const globalCandidateXs = dedupeCoords(rawGlobalXs, 8);
+  const globalCandidateYs = dedupeCoords(rawGlobalYs, 8);
 
   interface BridgeResult {
     pts: { x: number; y: number }[];
@@ -460,10 +474,12 @@ export function computeConveyorPathWithWaypoints(
   ): BridgeResult | null => {
     const pA = { x: ax, y: ay };
     const pB = { x: bx, y: by };
+    const midTargetX = (ax + bx) * 0.5;
+    const midTargetY = (ay + by) * 0.5;
 
-    const candidateXs = Array.from(
-      new Set([
-        (ax + bx) * 0.5,
+    const candidateXs = dedupeCoords(
+      [
+        midTargetX,
         ax,
         bx,
         ax - 32,
@@ -471,11 +487,15 @@ export function computeConveyorPathWithWaypoints(
         bx - 32,
         bx + 32,
         ...globalCandidateXs,
-      ])
-    );
-    const candidateYs = Array.from(
-      new Set([
-        (ay + by) * 0.5,
+      ],
+      8
+    )
+      .sort((a, b) => Math.abs(a - midTargetX) - Math.abs(b - midTargetX))
+      .slice(0, 14);
+
+    const candidateYs = dedupeCoords(
+      [
+        midTargetY,
         ay,
         by,
         ay - 32,
@@ -483,8 +503,11 @@ export function computeConveyorPathWithWaypoints(
         by - 32,
         by + 32,
         ...globalCandidateYs,
-      ])
-    );
+      ],
+      8
+    )
+      .sort((a, b) => Math.abs(a - midTargetY) - Math.abs(b - midTargetY))
+      .slice(0, 14);
 
     let bestClear: BridgeResult | null = null;
     let bestFallback: BridgeResult | null = null;
@@ -535,10 +558,11 @@ export function computeConveyorPathWithWaypoints(
 
     if (bestClear) return bestClear;
 
-    const stepYs = [ay - 28, ay + 28, ...globalCandidateYs];
-    const endYs = [by - 28, by + 28, ...globalCandidateYs];
+    const stepYs = [ay - 28, ay + 28, ...candidateYs.slice(0, 5)];
+    const endYs = [by - 28, by + 28, ...candidateYs.slice(0, 5)];
+    const topMidXs = candidateXs.slice(0, 8);
     for (const yA of stepYs) {
-      for (const midX of candidateXs) {
+      for (const midX of topMidXs) {
         for (const yB of endYs) {
           consider([
             pA,
@@ -552,10 +576,13 @@ export function computeConveyorPathWithWaypoints(
       }
     }
 
-    const stepXs = [ax - 28, ax + 28, ...globalCandidateXs];
-    const endXs = [bx - 28, bx + 28, ...globalCandidateXs];
+    if (bestClear) return bestClear;
+
+    const stepXs = [ax - 28, ax + 28, ...candidateXs.slice(0, 5)];
+    const endXs = [bx - 28, bx + 28, ...candidateXs.slice(0, 5)];
+    const topMidYs = candidateYs.slice(0, 8);
     for (const xA of stepXs) {
-      for (const midY of candidateYs) {
+      for (const midY of topMidYs) {
         for (const xB of endXs) {
           consider([
             pA,

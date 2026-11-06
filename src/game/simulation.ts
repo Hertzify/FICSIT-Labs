@@ -181,14 +181,19 @@ export function stepSimulation(
       ? Math.min(conn.maxCapacityPerMin, outPort.actualRatePerMin)
       : conn.sourceRatePerMin ?? 60;
     const spacingRate = Math.max(conn.sourceRatePerMin ?? 0, rawSupplyRate, 20);
-    const idealSpacingPx = Math.max(
-      BELT_ITEM_FOOTPRINT_PX,
-      (tierDef.speedPxPerSec * 60) / Math.min(tierDef.capacityPerMin, spacingRate)
-    );
+    const rawSpacing =
+      (tierDef.speedPxPerSec * 60) / Math.max(1, Math.min(tierDef.capacityPerMin, spacingRate));
+    const idealSpacingPx = Number.isFinite(rawSpacing)
+      ? Math.max(BELT_ITEM_FOOTPRINT_PX, rawSpacing)
+      : BELT_ITEM_FOOTPRINT_PX;
     const itemName = conn.itemName ?? outPort?.itemName ?? 'Iron Ore';
     const items: BeltItemPacket[] = [];
 
-    for (let dist = lengthPx - idealSpacingPx * 0.5; dist >= 0; dist -= idealSpacingPx) {
+    for (
+      let dist = Math.min(lengthPx, 8000) - idealSpacingPx * 0.5;
+      dist >= 0 && items.length < 300;
+      dist -= idealSpacingPx
+    ) {
       items.push({
         id: `${conn.id}_init_${Math.round(dist * 10)}`,
         itemName,
@@ -244,7 +249,12 @@ export function stepSimulation(
 
         const defaultItemName = conn.itemName ?? outPort?.itemName ?? 'Iron Ore';
         const items = conn.inFlightItems ?? [];
-        items.sort((a, b) => b.distancePx - a.distancePx);
+        for (let k = 1; k < items.length; k++) {
+          if (items[k - 1].distancePx < items[k].distancePx) {
+            items.sort((a, b) => b.distancePx - a.distancePx);
+            break;
+          }
+        }
 
         const remaining: BeltItemPacket[] = [];
         let arrivedThisSubStep = false;
@@ -267,7 +277,9 @@ export function stepSimulation(
                   toNode.buildingId === 'merger')
               ) {
                 const maxMain = toNode.maxStoredCount ?? 100;
+                let guard = 0;
                 while (
+                  guard++ < 250 &&
                   Math.round(inPort.bufferedCount ?? 0) >= 1 &&
                   Math.round(toNode.storedCount ?? 0) < maxMain
                 ) {
@@ -343,6 +355,7 @@ export function stepSimulation(
       // STEP B: Advance machine crafting cycles
       for (const node of nextNodes) {
         const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
+        if (!Number.isFinite(node.progress)) node.progress = 0;
 
         if (node.buildingId === 'resource_deposit') {
           const purityKey = node.purity ?? 'normal';
@@ -350,7 +363,9 @@ export function stepSimulation(
           const outMax = node.maxStoredCount ?? 100;
           if (Math.round(node.storedCount ?? 0) < outMax) {
             node.progress = (node.progress ?? 0) + subDt * (purityRate / 60);
+            let guard = 0;
             while (
+              guard++ < 250 &&
               node.progress >= 1.0 - 1e-6 &&
               Math.round(node.storedCount ?? 0) < outMax
             ) {
@@ -385,7 +400,9 @@ export function stepSimulation(
 
           if (Math.round(node.storedCount ?? 0) < outMax) {
             node.progress = (node.progress ?? 0) + subDt * (extractRate / 60);
+            let guard = 0;
             while (
+              guard++ < 250 &&
               node.progress >= 1.0 - 1e-6 &&
               Math.round(node.storedCount ?? 0) < outMax
             ) {
@@ -406,7 +423,9 @@ export function stepSimulation(
         ) {
           const maxMain = node.maxStoredCount ?? 100;
           for (const inPort of node.inputs) {
+            let guard = 0;
             while (
+              guard++ < 250 &&
               Math.round(inPort.bufferedCount ?? 0) >= 1 &&
               Math.round(node.storedCount ?? 0) < maxMain
             ) {
@@ -443,7 +462,9 @@ export function stepSimulation(
 
           if (checkInputsReady() && checkOutputRoom()) {
             node.progress = (node.progress ?? 0) + subDt / effectiveCycleSec;
+            let guard = 0;
             while (
+              guard++ < 250 &&
               node.progress >= 1.0 - 1e-6 &&
               checkInputsReady() &&
               checkOutputRoom()

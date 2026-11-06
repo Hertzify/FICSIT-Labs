@@ -265,9 +265,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.20 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.20');
-  assert.equal(APP_BUILD_TAG, '0.0.20 dev build');
+test('version tracking matches 0.0.21 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.21');
+  assert.equal(APP_BUILD_TAG, '0.0.21 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -1624,3 +1624,42 @@ test('Machine storages for 200-stack and 500-stack items and multi-input Assembl
   assert.equal(loadedAsm.storedCount, 65);
   assert.equal(loadedAsm.outputs[0].bufferedCount, 65);
 });
+
+test('Dense 20-machine factory with multi-waypoint belts routes in under 50ms without hanging startup', () => {
+  const nodes: MachineNode[] = [];
+  for (let i = 0; i < 20; i++) {
+    nodes.push(
+      createMachineNode(
+        'smelter',
+        2000 + (i % 5) * 380,
+        2000 + Math.floor(i / 5) * 320,
+        `dense_m_${i}`,
+        'smelt_iron'
+      )
+    );
+  }
+  const conn = createConveyorConnection(
+    nodes[0].id,
+    nodes[0].outputs[0].id,
+    nodes[19].id,
+    nodes[19].inputs[0].id,
+    1,
+    'dense_wp_belt'
+  );
+  conn.waypoints = [
+    { x: 2300, y: 2150 },
+    { x: 2800, y: 2450 },
+    { x: 3100, y: 2750 },
+  ];
+
+  const t0 = Date.now();
+  const sim = stepSimulation(nodes, [conn], 0);
+  const elapsedMs = Date.now() - t0;
+
+  assert.ok(
+    elapsedMs < 50,
+    `Expected dense waypoint belt simulation to complete in < 50ms, took ${elapsedMs}ms`
+  );
+  assert.ok((sim.connections[0].lengthPx ?? 0) > 100);
+});
+

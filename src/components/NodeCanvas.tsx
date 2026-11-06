@@ -642,6 +642,76 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         onRedo?.();
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedWaypointRef.current) {
+          dismantleSelectedWaypoint();
+          return;
+        }
+        if (selectedNodeIdsRef.current.length > 1) {
+          dismantleSelectedGroup();
+          return;
+        }
+        if (selectedConnectionIdRef.current) {
+          const targetConnId = selectedConnectionIdRef.current;
+          factoryHistory.pushSnapshot(
+            nodesRef.current,
+            connectionsRef.current,
+            'Dismantle Conveyor Belt'
+          );
+          connectionsRef.current = connectionsRef.current.filter(
+            (c) => c.id !== targetConnId
+          );
+          invalidateAllConveyorCaches();
+          const simResult = stepSimulation(
+            nodesRef.current,
+            connectionsRef.current,
+            0
+          );
+          nodesRef.current = simResult.nodes;
+          connectionsRef.current = simResult.connections;
+          setSelectedConnectionId(null);
+          playSynthSfx('disconnect', settingsRef.current);
+          onGraphMutated();
+          showToast('Conveyor belt dismantled');
+          drawNowRef.current?.();
+          return;
+        }
+        if (selectedNodeIdRef.current) {
+          const targetId = selectedNodeIdRef.current;
+          const targetNode = nodesRef.current.find((n) => n.id === targetId);
+          if (
+            targetNode &&
+            targetNode.buildingId !== 'resource_deposit' &&
+            !targetNode.isWorldDeposit
+          ) {
+            factoryHistory.pushSnapshot(
+              nodesRef.current,
+              connectionsRef.current,
+              `Dismantle ${targetNode.title}`
+            );
+            nodesRef.current = nodesRef.current.filter((n) => n.id !== targetId);
+            connectionsRef.current = connectionsRef.current.filter(
+              (c) => c.fromNodeId !== targetId && c.toNodeId !== targetId
+            );
+            invalidateAllConveyorCaches();
+            const simResult = stepSimulation(
+              nodesRef.current,
+              connectionsRef.current,
+              0
+            );
+            nodesRef.current = simResult.nodes;
+            connectionsRef.current = simResult.connections;
+            setSelectedNodeId(null);
+            setSelectedNodeIds([]);
+            playSynthSfx('disconnect', settingsRef.current);
+            onGraphMutated();
+            showToast(`Dismantled ${targetNode.title}`);
+            drawNowRef.current?.();
+          }
+        }
       }
     };
 

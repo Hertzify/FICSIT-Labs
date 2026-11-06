@@ -232,12 +232,12 @@ export function clampClockSpeedPct(clockSpeedPct = 100, powerShards = 0): number
   const maxClock = getMaxClockSpeedPct(powerShards);
   const raw = Number.isFinite(clockSpeedPct) ? clockSpeedPct : 100;
   const clamped = Math.min(maxClock, Math.max(1, raw));
-  return Math.round(clamped * 10) / 10;
+  return Math.round(clamped * 10000) / 10000;
 }
 
 export function getScaledRatePerMin(baseRatePerMin: number, clockSpeedPct = 100): number {
   const scaled = baseRatePerMin * (Math.max(1, clockSpeedPct) / 100);
-  return Math.round(scaled * 10) / 10;
+  return Math.round(scaled * 100) / 100;
 }
 
 export function getScaledCycleTimeSec(baseCycleSec: number, clockSpeedPct = 100): number {

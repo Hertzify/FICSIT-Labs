@@ -12,10 +12,9 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-import { CHANGELOG_DATA } from '../game/changelogData';
 import { usePWAInstall } from './usePWAInstall';
 
-type SettingsTab = 'visuals' | 'controls' | 'audio' | 'data' | 'changelog';
+type SettingsTab = 'visuals' | 'controls' | 'audio' | 'data';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
@@ -93,7 +92,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   { id: 'controls', label: 'Touch & Startup' },
                   { id: 'audio', label: 'Audio & Haptics' },
                   { id: 'data', label: 'Save & Factory Reset' },
-                  { id: 'changelog', label: 'Changelog / Notes' },
                 ] as { id: SettingsTab; label: string }[]
               ).map((tab) => (
                 <button
@@ -551,64 +549,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {activeTab === 'changelog' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-[#26334D]">
-                <div>
-                  <div className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    Official Patch Notes
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    Straightforward build changes &amp; improvements
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 rounded-md bg-[#0B0F17] border border-amber-500/40 text-[10px] font-mono text-amber-400">
-                  {APP_BUILD_TAG}
-                </span>
-              </div>
-
-              {CHANGELOG_DATA.map((release) => (
-                <div
-                  key={release.version}
-                  className="p-3 rounded-xl bg-[#0B0F17] border border-[#26334D] space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold font-mono text-amber-400">
-                      {release.tag}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-500">
-                      {release.date}
-                    </span>
-                  </div>
-
-                  {release.categories.map((cat, cIdx) => (
-                    <div key={cIdx} className="space-y-1.5 pl-1">
-                      <div className="text-[11px] font-semibold text-slate-300">
-                        {cat.category}
-                      </div>
-                      <ul className="space-y-1 pl-2">
-                        {cat.items.map((it, iIdx) => (
-                          <li
-                            key={iIdx}
-                            className="text-[11px] text-slate-300 flex items-start gap-1.5 leading-snug"
-                          >
-                            <span className="text-amber-500 shrink-0 font-bold">•</span>
-                            <div>
-                              <strong className="text-slate-100 font-medium">
-                                {it.title}:
-                              </strong>{' '}
-                              <span>{it.description}</span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              ))}
             </div>
           )}
         </div>

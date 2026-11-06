@@ -4,6 +4,8 @@
 @layer base {
   :root {
     --ui-scale: 1;
+    color-scheme: dark;
+    forced-color-adjust: none;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
 

@@ -16,8 +16,6 @@ import {
   formatDualRatePerMin,
   formatRatePerMin,
   getBuildingMaxStorage,
-  getBuildingPowerMw,
-  getScaledCycleTimeSec,
   isCompactRateFormat,
   PURITY_CONFIG,
   RECIPES,
@@ -308,7 +306,9 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
 
     if (node.buildingId === 'miner_mk1') {
       // =========================================================================
-      // AUTHENTIC SATISFACTORY MINER EXTERIOR UI ("Media item 1" with 250% max)
+      // AUTHENTIC MINER MK.1 EXTERIOR UI (IMG_20261106_200138_7118c228.jpg)
+      // Base photo-realistic chassis (`miner_chassis_bg.jpg`, 1376x768) +
+      // dynamic telemetry, ore slot, 0%-250% overclock bar, and I/O standby switch
       // =========================================================================
       const W = node.width;
       const H = node.height;
@@ -321,7 +321,6 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
         ctx.fill();
       }
 
-      const chassisImg = getCanvasBuildingImage('miner_chassis_bg');
       const isStandby = Boolean(node.isStandby);
       const isBackedUp = node.status === 'backed_up';
       const lightColor =
@@ -344,371 +343,294 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
       const rawOreName =
         node.outputs[0]?.itemName ?? recipe?.outputs[0]?.itemName ?? 'Iron Ore';
 
+      const chassisImg = getCanvasBuildingImage('miner_chassis_bg');
+
       ctx.save();
-      drawRoundedRect(ctx, nx, ny, W, H, 8);
+      drawRoundedRect(ctx, nx, ny, W, H, 9);
       ctx.clip();
 
       if (chassisImg) {
         ctx.drawImage(chassisImg, nx, ny, W, H);
       } else {
-        ctx.fillStyle = '#686B70';
+        ctx.fillStyle = '#52565E';
         ctx.fillRect(nx, ny, W, H);
       }
 
-      // 1. CENTER DARK SCREEN LIVE OVERLAY (Status + Authentic Game Icons + MW / sec / Efficiency %)
-      const scrTopX = nx + 0.510 * W;
-      const scrTopY = ny + 0.114 * H;
-      const scrTopW = 0.221 * W;
-      const scrTopH = 0.138 * H;
-      ctx.fillStyle = '#0D0F12';
-      ctx.fillRect(scrTopX, scrTopY, scrTopW, scrTopH);
+      // -----------------------------------------------------------------------
+      // 1. CENTER DARK MONITOR SCREEN OVERLAY (Status LED + 3 Telemetry Columns)
+      // -----------------------------------------------------------------------
+      const scrX = nx + W * 0.506;
+      const scrY = ny + H * 0.111;
+      const scrW = W * 0.228;
+      const scrH = H * 0.281;
 
-      const headerLabel = isMinerMissingDeposit
-        ? 'NO DEPOSIT'
+      drawRoundedRect(ctx, scrX, scrY, scrW, scrH, 3);
+      ctx.fillStyle = '#0A0C0F';
+      ctx.fill();
+
+      // Top Half of Screen: Status LED Dot + Status Title ("Mining")
+      const statusLabel = isMinerMissingDeposit
+        ? 'No Deposit'
         : isStandby
-        ? 'STANDBY'
+        ? 'Standby'
         : isBackedUp
-        ? 'OUTPUT FULL'
+        ? 'Output Full'
         : 'Mining';
-
-      const statusCenterY = scrTopY + scrTopH * 0.52;
-      ctx.font = '700 9px "Plus Jakarta Sans", sans-serif';
-      const titleW = ctx.measureText(headerLabel).width;
-      const dotRadius = 3.2;
-      const totalHeaderW = dotRadius * 2 + 4.5 + titleW;
-      const startHeaderX = scrTopX + (scrTopW - totalHeaderW) * 0.5;
+      ctx.font = '700 8.5px "Plus Jakarta Sans", sans-serif';
+      const statusTextW = ctx.measureText(statusLabel).width;
+      const ledDotR = 3.6;
+      const totalHeaderW = ledDotR * 2 + 5 + statusTextW;
+      const headerStartX = scrX + (scrW - totalHeaderW) * 0.5;
+      const headerCenterY = scrY + scrH * 0.26;
 
       ctx.beginPath();
-      ctx.arc(startHeaderX + dotRadius, statusCenterY, dotRadius, 0, Math.PI * 2);
+      ctx.arc(headerStartX + ledDotR, headerCenterY, ledDotR, 0, Math.PI * 2);
       ctx.fillStyle = lightColor;
       ctx.fill();
 
-      ctx.fillStyle = isStandby || isMinerMissingDeposit ? '#FCA5A5' : '#FFFFFF';
+      ctx.fillStyle = '#FFFFFF';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(headerLabel, startHeaderX + dotRadius * 2 + 4.5, statusCenterY + 0.5);
+      ctx.fillText(statusLabel, headerStartX + ledDotR * 2 + 5, headerCenterY + 0.4);
 
-      // Cover both the baked-in icon row (0.258..0.330 H) and text row (0.330..0.385 H) in all 3 columns
-      // so we render the exact Satisfactory game telemetry icons cleanly on the outside card!
-      const col1X = nx + 0.510 * W;
-      const col2X = nx + 0.586 * W;
-      const col3X = nx + 0.661 * W;
-      const colBoxW = 0.070 * W;
-      const iconBoxY = ny + 0.258 * H;
-      const iconBoxH = 0.127 * H;
-      ctx.fillStyle = '#0D0F12';
-      ctx.fillRect(col1X, iconBoxY, colBoxW, iconBoxH);
-      ctx.fillRect(col2X, iconBoxY, colBoxW, iconBoxH);
-      ctx.fillRect(col3X, iconBoxY, colBoxW, iconBoxH);
+      // Horizontal & 2 Vertical Divider Lines inside Screen
+      const divY = scrY + scrH * 0.51;
+      ctx.strokeStyle = '#2B2E35';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(scrX + 1.5, divY);
+      ctx.lineTo(scrX + scrW - 1.5, divY);
+      ctx.moveTo(scrX + scrW / 3, divY + 1);
+      ctx.lineTo(scrX + scrW / 3, scrY + scrH - 1.5);
+      ctx.moveTo(scrX + (scrW * 2) / 3, divY + 1);
+      ctx.lineTo(scrX + (scrW * 2) / 3, scrY + scrH - 1.5);
+      ctx.stroke();
 
-      const iconCenterY = ny + 0.292 * H;
-      drawSatisfactoryPowerIcon(ctx, col1X + colBoxW * 0.5, iconCenterY, 10.2, '#FFFFFF');
-      drawSatisfactoryStopwatchIcon(
-        ctx,
-        col2X + colBoxW * 0.5,
-        iconCenterY,
-        10.2,
-        '#FFFFFF'
-      );
-      drawSatisfactoryEfficiencyIcon(
-        ctx,
-        col3X + colBoxW * 0.5,
-        iconCenterY,
-        10.2,
-        node.efficiency < 100 ? lightColor : '#FFFFFF'
-      );
+      const c1X = scrX + scrW * 0.167;
+      const c2X = scrX + scrW * 0.5;
+      const c3X = scrX + scrW * 0.833;
+      const iconY = divY + scrH * 0.19;
+      const valY = divY + scrH * 0.39;
 
-      const valPatchY = ny + 0.330 * H;
-      const valPatchH = 0.055 * H;
-      ctx.font = '600 5.7px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#FFFFFF';
+      const effColor =
+        isStandby || isMinerMissingDeposit || node.efficiency === 0
+          ? '#EF4444'
+          : node.efficiency < 99
+          ? '#FACC15'
+          : '#FFFFFF';
+
+      drawSatisfactoryPowerIcon(ctx, c1X, iconY, 8.2, '#FFFFFF');
+      drawSatisfactoryStopwatchIcon(ctx, c2X, iconY, 8.2, '#FFFFFF');
+      drawSatisfactoryEfficiencyIcon(ctx, c3X, iconY, 8.2, effColor);
+
+      ctx.font = '700 5.6px "Plus Jakarta Sans", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const valCenterY = valPatchY + valPatchH * 0.52;
-      ctx.fillText(`${powerMw} MW`, col1X + colBoxW * 0.5, valCenterY);
-      ctx.fillText(`${cycleSec.toFixed(1)} sec`, col2X + colBoxW * 0.5, valCenterY);
-      ctx.fillStyle = node.efficiency < 100 ? lightColor : '#FFFFFF';
-      ctx.fillText(`${node.efficiency}%`, col3X + colBoxW * 0.5, valCenterY);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(`${powerMw} MW`, c1X, valY);
+      ctx.fillText(`${cycleSec.toFixed(1)} sec`, c2X, valY);
+      ctx.fillStyle = effColor;
+      ctx.fillText(`${node.efficiency}%`, c3X, valY);
 
-      // 2. RIGHT WHITE [ OUTPUT ] CARD LIVE OVERLAY (Ore Icon + Live Count + Name + Rate)
-      const slotX = nx + 0.795 * W;
-      const slotY = ny + 0.166 * H;
-      const slotW = 0.142 * W;
-      const slotH = 0.270 * H;
+      // -----------------------------------------------------------------------
+      // 2. TOP-RIGHT WHITE [ OUTPUT ] CARD OVERLAY (Ore Slot, Badge & Rate)
+      // -----------------------------------------------------------------------
+      const slotX = nx + W * 0.795;
+      const slotY = ny + H * 0.165;
+      const slotW = W * 0.143;
+      const slotH = H * 0.276;
 
-      drawRoundedRect(ctx, slotX, slotY, slotW, slotH, 4.5);
-      ctx.fillStyle = '#9A9D9E';
-      ctx.fill();
-
-      if (primaryItemImg) {
-        const iconSize = Math.min(slotW, slotH) * 0.86;
+      // If mining non-Iron ore, replace the baked-in Iron Ore icon inside the gray slot
+      if (rawOreName !== 'Iron Ore' && primaryItemImg) {
+        drawRoundedRect(ctx, slotX, slotY, slotW, slotH, 3);
+        ctx.fillStyle = '#9EA2AB';
+        ctx.fill();
+        const imgDim = Math.min(slotW, slotH) * 0.84;
         ctx.drawImage(
           primaryItemImg,
-          slotX + (slotW - iconSize) * 0.5,
-          slotY + (slotH - iconSize) * 0.46,
-          iconSize,
-          iconSize
+          slotX + (slotW - imgDim) * 0.5,
+          slotY + (slotH - imgDim) * 0.44,
+          imgDim,
+          imgDim
         );
       }
 
-      const countStr = String(storedInt);
-      ctx.font = '700 7.8px "Plus Jakarta Sans", sans-serif';
-      const badgeW = Math.max(13.5, ctx.measureText(countStr).width + 5.5);
-      const badgeH = 9.5;
-      const badgeX = slotX + slotW - badgeW - 2;
+      // Live Orange Stored Count Badge at Bottom-Right of Ore Slot
+      const countText = String(storedInt);
+      ctx.font = '700 6.8px "Plus Jakarta Sans", sans-serif';
+      const badgeW = Math.max(W * 0.052, ctx.measureText(countText).width + 5);
+      const badgeH = H * 0.068;
+      const badgeX = slotX + slotW - badgeW - 1.5;
       const badgeY = slotY + slotH - badgeH - 1.5;
-      drawRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 2.2);
-      ctx.fillStyle = '#E58824';
+      drawRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 2.5);
+      ctx.fillStyle = '#DF8A2E';
       ctx.fill();
       ctx.fillStyle = '#FFFFFF';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(countStr, badgeX + badgeW * 0.5, badgeY + badgeH * 0.5 + 0.5);
+      ctx.fillText(countText, badgeX + badgeW * 0.5, badgeY + badgeH * 0.5 + 0.3);
 
-      const outTextPatchX = nx + 0.784 * W;
-      const outTextPatchY = ny + 0.442 * H;
-      const outTextPatchW = 0.163 * W;
-      const outTextPatchH = 0.142 * H;
+      // Cover & Redraw "1 Iron Ore" + "60 per minute" below the Ore Slot
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(outTextPatchX, outTextPatchY, outTextPatchW, outTextPatchH);
+      ctx.fillRect(nx + W * 0.785, ny + H * 0.456, W * 0.163, H * 0.125);
 
-      const outCenterX = nx + 0.866 * W;
-      ctx.font = '700 7.4px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#2B2E33';
+      const outCenterX = nx + W * 0.8665;
+      ctx.font = '700 7.2px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#26282C';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`1 ${rawOreName}`, outCenterX, ny + 0.482 * H);
+      ctx.fillText(`1 ${rawOreName}`, outCenterX, ny + H * 0.49);
 
-      ctx.font = '700 6.5px "Plus Jakarta Sans", sans-serif';
-      const rateNumStr = isCompactRate ? `${outTargetRate}` : `${outTargetRate} `;
+      const rateNumStr = `${outTargetRate} `;
       const rateUnitStr = isCompactRate ? '/m' : 'per minute';
+      ctx.font = '700 6.1px "Plus Jakarta Sans", sans-serif';
       const rateNumW = ctx.measureText(rateNumStr).width;
-      ctx.font = '500 6.5px "Plus Jakarta Sans", sans-serif';
+      ctx.font = '600 6.1px "Plus Jakarta Sans", sans-serif';
       const rateUnitW = ctx.measureText(rateUnitStr).width;
       const rateStartX = outCenterX - (rateNumW + rateUnitW) * 0.5;
 
       ctx.textAlign = 'left';
-      ctx.font = '700 6.5px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#D9822B';
-      ctx.fillText(rateNumStr, rateStartX, ny + 0.538 * H);
-      ctx.font = '500 6.5px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#1E293B';
-      ctx.fillText(rateUnitStr, rateStartX + rateNumW, ny + 0.538 * H);
+      ctx.font = '700 6.1px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#DF8A2E';
+      ctx.fillText(rateNumStr, rateStartX, ny + H * 0.548);
+      ctx.font = '600 6.1px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#374151';
+      ctx.fillText(rateUnitStr, rateStartX + rateNumW, ny + H * 0.548);
 
-      // 3. BOTTOM CHAMFERED WHITE CLOCK SPEED PANEL LIVE OVERLAY (0% to 250%)
+      // -----------------------------------------------------------------------
+      // 3. BOTTOM-LEFT STEPPED WHITE OVERCLOCK BOX OVERLAY (0% — 250%)
+      // -----------------------------------------------------------------------
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(nx + 0.064 * W, ny + 0.712 * H, 0.392 * W, 0.104 * H);
-      ctx.fillRect(nx + 0.064 * W, ny + 0.812 * H, 0.718 * W, 0.118 * H);
+      // Top-left white region (Clock Speed + Target production rate)
+      ctx.fillRect(nx + W * 0.063, ny + H * 0.714, W * 0.39, H * 0.105);
+      // Full-width lower white region (5-segment bar + 0%..250% tick labels)
+      ctx.fillRect(nx + W * 0.063, ny + H * 0.775, W * 0.72, H * 0.165);
 
-      const ocTextX = nx + 0.068 * W;
+      const ocTextX = nx + W * 0.068;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.font = '700 7.4px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#0F172A';
-      ctx.fillText(`Clock Speed: ${clockPct}%`, ocTextX, ny + 0.741 * H);
+      ctx.font = '700 7.2px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#1E2024';
+      ctx.fillText(`Clock Speed: ${clockPct}%`, ocTextX, ny + H * 0.742);
 
-      ctx.font = '500 6.8px "Plus Jakarta Sans", sans-serif';
-      const tprPrefix = 'Target production rate: ';
-      ctx.fillStyle = '#1E293B';
-      ctx.fillText(tprPrefix, ocTextX, ny + 0.788 * H);
-      const tprPrefixW = ctx.measureText(tprPrefix).width;
-      ctx.font = '700 6.8px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#D9822B';
+      ctx.font = '600 6.3px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#374151';
+      const targetPrefix = 'Target production rate: ';
+      const targetPrefixW = ctx.measureText(targetPrefix).width;
+      ctx.fillText(targetPrefix, ocTextX, ny + H * 0.793);
+
+      ctx.font = '700 6.5px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#DF8A2E';
       ctx.fillText(
-        formatRatePerMin(outTargetRate, cfg),
-        ocTextX + tprPrefixW,
-        ny + 0.788 * H
+        `${outTargetRate} ${isCompactRate ? '/m' : 'per minute'}`,
+        ocTextX + targetPrefixW,
+        ny + H * 0.793
       );
 
-      const segBarX = nx + 0.068 * W;
-      const segBarY = ny + 0.819 * H;
-      const segBarW = 0.709 * W;
-      const segBarH = 0.064 * H;
+      // 5-Segment Overclock Bar (0%-50%, 50%-100%, 100%-150%, 150%-200%, 200%-250%)
+      const segBarX = nx + W * 0.068;
+      const segBarY = ny + H * 0.822;
+      const segBarW = W * 0.712;
+      const segBarH = H * 0.068;
+      const installedShards = Math.min(
+        3,
+        Math.max(0, Math.floor(node.powerShards ?? 0))
+      );
+      const maxUnlockedClock = 100 + installedShards * 50;
 
-      const segBounds = [
-        { start: 0, end: 50 },
-        { start: 50, end: 100 },
-        { start: 100, end: 150 },
-        { start: 150, end: 200 },
-        { start: 200, end: 250 },
+      const ocSegments = [
+        { start: 0, end: 50, idx: 0 },
+        { start: 50, end: 100, idx: 1 },
+        { start: 100, end: 150, idx: 2 },
+        { start: 150, end: 200, idx: 3 },
+        { start: 200, end: 250, idx: 4 },
       ];
-      for (const seg of segBounds) {
-        const sx = segBarX + (seg.start / 250) * segBarW;
-        const sw = ((seg.end - seg.start) / 250) * segBarW - 1.3;
-        ctx.fillStyle = '#484A4E';
-        ctx.fillRect(sx, segBarY, Math.max(1, sw), segBarH);
+      const segW = segBarW / 5;
+      for (const seg of ocSegments) {
+        const sx = segBarX + seg.idx * segW;
+        const sw = segW - 1.5;
+        ctx.fillStyle = seg.end <= maxUnlockedClock ? '#484B51' : '#9CA3AF';
+        ctx.fillRect(sx, segBarY, sw, segBarH);
 
         if (clockPct > seg.start) {
-          const fillPct = Math.min(seg.end, clockPct) - seg.start;
-          const fw = (fillPct / 250) * segBarW - (clockPct >= seg.end ? 1.3 : 0);
+          const fillSpan = Math.min(seg.end, clockPct) - seg.start;
+          const fw = (fillSpan / (seg.end - seg.start)) * sw;
           if (fw > 0) {
-            ctx.fillStyle = '#E58824';
+            ctx.fillStyle = '#E0862B';
             ctx.fillRect(sx, segBarY, fw, segBarH);
           }
         }
       }
 
-      ctx.font = '600 5.8px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#0F172A';
-      ctx.textBaseline = 'top';
-      const tickLabelY = segBarY + segBarH + 1.5;
+      // Tick labels: 0%, 100%, 150%, 200%, 250%
+      ctx.font = '700 6.1px "Plus Jakarta Sans", sans-serif';
+      ctx.fillStyle = '#1E2024';
+      ctx.textBaseline = 'middle';
+      const tickY = ny + H * 0.916;
       ctx.textAlign = 'left';
-      ctx.fillText('0%', segBarX, tickLabelY);
+      ctx.fillText('0%', segBarX, tickY);
       ctx.textAlign = 'center';
-      ctx.fillText('100%', segBarX + (100 / 250) * segBarW, tickLabelY);
-      ctx.fillText('150%', segBarX + (150 / 250) * segBarW, tickLabelY);
-      ctx.fillText('200%', segBarX + (200 / 250) * segBarW, tickLabelY);
+      ctx.fillText('100%', segBarX + segW * 2, tickY);
+      ctx.fillText('150%', segBarX + segW * 3, tickY);
+      ctx.fillText('200%', segBarX + segW * 4, tickY);
       ctx.textAlign = 'right';
-      ctx.fillText('250%', segBarX + segBarW, tickLabelY);
+      ctx.fillText('250%', segBarX + segBarW, tickY);
 
-      // 4. EXTERIOR STANDBY ROCKER SWITCH LIVE STATE (I / O symbols + distinct color when flipped)
-      // Uses miner_chassis_bg.jpg (1131..1316 x 576..696, centered at x=1223.5) and its exact
-      // horizontal mirror so ON (I) and STANDBY (O) are 100% pixel-symmetrical.
-      {
-        const leftSymX = nx + (1190 / 1376) * W;
-        const rightSymX = nx + (1257 / 1376) * W;
-        const symY = ny + (636 / 768) * H;
-        const iHalfH = (16 / 768) * H;
-        const oRadius = (15 / 768) * H;
+      // -----------------------------------------------------------------------
+      // 4. BOTTOM-RIGHT HORIZONTAL I / O STANDBY ROCKER SWITCH OVERLAY
+      // -----------------------------------------------------------------------
+      const rkrX = nx + W * 0.838;
+      const rkrY = ny + H * 0.785;
+      const rkrW = W * 0.098;
+      const rkrH = H * 0.096;
+      const halfRkrW = rkrW * 0.5;
 
-        if (!isStandby) {
-          if (chassisImg) {
-            // Seamlessly cover the baked-in horizontal bar on the left lit half so we can render crisp I / O markings
-            ctx.drawImage(
-              chassisImg,
-              1170,
-              610,
-              46,
-              12,
-              nx + (1170 / 1376) * W,
-              ny + (622 / 768) * H,
-              (46 / 1376) * W,
-              (28 / 768) * H
-            );
-          }
+      // Left half ('I') and Right half ('O') inside the switch bezel
+      ctx.fillStyle = !isStandby ? '#B93815' : '#262930';
+      ctx.fillRect(rkrX, rkrY, halfRkrW, rkrH);
+      ctx.fillStyle = isStandby ? '#B91C1C' : '#32363E';
+      ctx.fillRect(rkrX + halfRkrW, rkrY, halfRkrW, rkrH);
 
-          // Left depressed active half: glowing 'I'
-          ctx.save();
-          ctx.strokeStyle = '#FFF7ED';
-          ctx.shadowColor = '#FB923C';
-          ctx.shadowBlur = 4;
-          ctx.lineWidth = 2.1;
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(leftSymX, symY - iHalfH);
-          ctx.lineTo(leftSymX, symY + iHalfH);
-          ctx.stroke();
-          ctx.restore();
+      // Left 'I' vertical bar symbol
+      ctx.save();
+      ctx.strokeStyle = !isStandby ? '#FFFFFF' : '#9CA3AF';
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(rkrX + halfRkrW * 0.48, rkrY + rkrH * 0.25);
+      ctx.lineTo(rkrX + halfRkrW * 0.48, rkrY + rkrH * 0.75);
+      ctx.stroke();
+      ctx.restore();
 
-          // Right raised dark metallic half: engraved 'O'
-          ctx.save();
-          ctx.strokeStyle = 'rgba(226, 232, 240, 0.65)';
-          ctx.lineWidth = 1.7;
-          ctx.beginPath();
-          ctx.arc(rightSymX, symY, oRadius, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-        } else {
-          if (chassisImg) {
-            const srcX = 1131;
-            const srcY = 576;
-            const srcW = 185;
-            const srcH = 120;
-            const dstX = nx + (srcX / 1376) * W;
-            const dstY = ny + (srcY / 768) * H;
-            const dstW = (srcW / 1376) * W;
-            const dstH = (srcH / 768) * H;
-
-            ctx.save();
-            drawRoundedRect(ctx, dstX, dstY, dstW, dstH, 4);
-            ctx.clip();
-            ctx.translate(dstX + dstW * 0.5, dstY + dstH * 0.5);
-            ctx.scale(-1, 1);
-            // Shift the warm orange-red glow to a distinct cool cyan-blue standby glow while keeping neutral grey metal unchanged
-            ctx.filter = 'hue-rotate(190deg) saturate(1.2)';
-            ctx.drawImage(
-              chassisImg,
-              srcX,
-              srcY,
-              srcW,
-              srcH,
-              -dstW * 0.5,
-              -dstH * 0.5,
-              dstW,
-              dstH
-            );
-            // Cover the baked-in horizontal slit on the mirrored lit half
-            ctx.drawImage(
-              chassisImg,
-              1170,
-              610,
-              46,
-              12,
-              -dstW * 0.5 + ((1170 - srcX) / srcW) * dstW,
-              -dstH * 0.5 + ((622 - srcY) / srcH) * dstH,
-              (46 / srcW) * dstW,
-              (28 / srcH) * dstH
-            );
-            ctx.filter = 'none';
-            ctx.restore();
-          } else {
-            const swX = nx + (1140 / 1376) * W;
-            const swY = ny + (584 / 768) * H;
-            const swW = (168 / 1376) * W;
-            const swH = (104 / 768) * H;
-            const halfW = (swW - 2) * 0.5;
-
-            drawRoundedRect(ctx, swX, swY, swW, swH, 3);
-            ctx.fillStyle = '#181A1D';
-            ctx.fill();
-
-            drawRoundedRect(ctx, swX + 1, swY + 1, halfW, swH - 2, 2);
-            ctx.fillStyle = '#3E4248';
-            ctx.fill();
-
-            drawRoundedRect(ctx, swX + 1 + halfW, swY + 1, halfW, swH - 2, 2);
-            ctx.fillStyle = '#0284C7';
-            ctx.fill();
-          }
-
-          // Left raised dark metallic half: engraved 'I'
-          ctx.save();
-          ctx.strokeStyle = 'rgba(226, 232, 240, 0.65)';
-          ctx.lineWidth = 1.8;
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(leftSymX, symY - iHalfH);
-          ctx.lineTo(leftSymX, symY + iHalfH);
-          ctx.stroke();
-          ctx.restore();
-
-          // Right depressed active standby half: glowing 'O'
-          ctx.save();
-          ctx.strokeStyle = '#E0F2FE';
-          ctx.shadowColor = '#38BDF8';
-          ctx.shadowBlur = 4;
-          ctx.lineWidth = 2.0;
-          ctx.beginPath();
-          ctx.arc(rightSymX, symY, oRadius, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-        }
-      }
+      // Right 'O' circle symbol
+      ctx.save();
+      ctx.strokeStyle = isStandby ? '#FFFFFF' : '#9CA3AF';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(
+        rkrX + halfRkrW * 1.48,
+        rkrY + rkrH * 0.5,
+        Math.min(halfRkrW, rkrH) * 0.24,
+        0,
+        Math.PI * 2
+      );
+      ctx.stroke();
+      ctx.restore();
 
       ctx.restore();
 
-      drawRoundedRect(ctx, nx, ny, W, H, 8);
+      drawRoundedRect(ctx, nx, ny, W, H, 9);
       ctx.strokeStyle = isDraggedColliding
         ? '#EF4444'
         : isSelected
         ? '#F59E0B'
         : '#27292E';
-      ctx.lineWidth = isDraggedColliding ? 3.2 : isSelected ? 2.4 : 1.4;
+      ctx.lineWidth = isDraggedColliding ? 3.2 : isSelected ? 2.4 : 1.5;
       ctx.stroke();
 
       if (isDraggedColliding) {
         ctx.save();
-        drawRoundedRect(ctx, nx, ny, W, H, 8);
+        drawRoundedRect(ctx, nx, ny, W, H, 9);
         ctx.fillStyle = 'rgba(239, 68, 68, 0.24)';
         ctx.fill();
         ctx.font = '700 11px "JetBrains Mono", monospace';
@@ -830,42 +752,6 @@ export function renderMachineNodesAndDeposits(params: NodeRenderParams): void {
         ctx.fillStyle = '#CBD5E1';
         ctx.textAlign = 'left';
         ctx.fillText(recipeTitle, node.x + 14, node.y + 50);
-      }
-
-      // Render Authentic Satisfactory Telemetry Icons (Power, Cycle Stopwatch, Production Effectiveness)
-      // on outside processor machine cards (Smelter, Constructor, Assembler)
-      if (recipe && bDef && bDef.powerMw > 0) {
-        const clockPct = node.clockSpeedPct ?? 100;
-        const pMw = getBuildingPowerMw(node.buildingId, clockPct, Boolean(node.isStandby));
-        const cSec = getScaledCycleTimeSec(recipe.cycleTimeSec, clockPct);
-        const pillW = 122;
-        const pillH = 18;
-        const pillX = node.x + node.width - pillW - 12;
-        const pillY = node.y + 41;
-
-        drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 4);
-        ctx.fillStyle = '#0B0F17';
-        ctx.fill();
-        ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        const cy = pillY + pillH * 0.5;
-        ctx.font = '700 8px "Plus Jakarta Sans", sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-
-        drawSatisfactoryPowerIcon(ctx, pillX + 8, cy, 9.5, '#FFFFFF');
-        ctx.fillStyle = '#DF8A2E';
-        ctx.fillText(`${pMw}MW`, pillX + 14, cy + 0.5);
-
-        drawSatisfactoryStopwatchIcon(ctx, pillX + 51, cy, 9.5, '#FFFFFF');
-        ctx.fillStyle = '#DF8A2E';
-        ctx.fillText(`${cSec}s`, pillX + 57, cy + 0.5);
-
-        drawSatisfactoryEfficiencyIcon(ctx, pillX + 86, cy, 9.5, '#FFFFFF');
-        ctx.fillStyle = node.efficiency >= 99 ? '#10B981' : '#DF8A2E';
-        ctx.fillText(`${node.efficiency}%`, pillX + 93, cy + 0.5);
       }
 
       const barX = node.x + 14;

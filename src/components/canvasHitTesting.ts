@@ -173,7 +173,7 @@ export function isPointOnMinerStandbySwitch(
   if (node.buildingId !== 'miner_mk1' || isMacroIconZoom(zoom)) return false;
   const relX = (wx - node.x) / node.width;
   const relY = (wy - node.y) / node.height;
-  return relX >= 0.805 && relX <= 0.972 && relY >= 0.73 && relY <= 0.975;
+  return relX >= 0.77 && relX <= 0.96 && relY >= 0.70 && relY <= 0.96;
 }
 
 

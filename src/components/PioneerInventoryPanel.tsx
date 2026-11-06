@@ -2,45 +2,18 @@
  * ============================================================================
  * MODULE INDEX: Pioneer Player Inventory Sidebar (`src/components/PioneerInventoryPanel.tsx`)
  * ============================================================================
- * [Lines 018-065] ScrewHead & PowerShardCrystalIcon & SommersloopIcon Subcomponents
- * [Lines 067-095] InventorySlotItem & PioneerInventoryPanelProps
- * [Lines 097-335] PioneerInventoryPanel (Relevant Items + 9x5 All Items Grid + Sort + Trash)
+ * Matches Satisfactory's translucent right-hand Pioneer Inventory panel:
+ * - Translucent smoky glass background (`bg-[#14161A]/68 backdrop-blur-[2px]`) so the
+ *   factory world remains subtly visible behind the inventory
+ * - Relevant Items row (50x50px slots)
+ * - 9x5 All Items grid (45 square slots with semi-transparent empty slots)
+ * - Flush bottom bar with `[ ↓≡ Sort ]` on the left and `[ 🗑️ ]` Trash/Delete on the right
  * ============================================================================
  */
 
 import React, { useMemo, useState } from 'react';
-import { getMaxClockSpeedPct } from '../game/catalog';
 import { getItemIconUrl, ITEM_ICON_PATHS } from '../game/icons';
 import { MachineNode, RecipeDef } from '../game/types';
-
-export const ScrewHead: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <span
-    aria-hidden="true"
-    className={`inline-flex items-center justify-center w-2.5 h-2.5 rounded-full bg-gradient-to-b from-[#686B70] to-[#3A3C40] border border-[#1E2024] shadow-inner select-none pointer-events-none ${className}`}
-  >
-    <span className="w-1.5 h-[1px] bg-[#1E2024] rotate-45 block" />
-  </span>
-);
-
-export const StemBadge: React.FC<{
-  label: string;
-  active?: boolean;
-  activeClassName?: string;
-  className?: string;
-}> = ({ label, active = false, activeClassName = '', className = '' }) => (
-  <div className={`flex flex-col items-center select-none ${className}`}>
-    <span className="w-[1.5px] h-1.5 bg-white/80 block" />
-    <span
-      className={`px-4 py-[1px] rounded-[3px] border text-[10px] font-sans font-bold uppercase tracking-wider leading-tight shadow-sm ${
-        active
-          ? activeClassName
-          : 'bg-[#DCDDE0] text-[#333538] border-[#9A9C9E]'
-      }`}
-    >
-      {label}
-    </span>
-  </div>
-);
 
 export const PowerShardCrystalIcon: React.FC<{ active: boolean }> = ({ active }) => (
   <img
@@ -227,14 +200,14 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
     }, [nodes, node.inputs, node.outputs, activeRecipe, powerShards, sortMode]);
 
     return (
-      <div className="flex flex-col justify-between bg-[#18191C]/95 select-none h-full">
-        <div className="p-2.5 space-y-2">
+      <div className="w-[401px] h-[706px] shrink-0 flex flex-col justify-between bg-[#121417]/68 backdrop-blur-[1.5px] select-none">
+        <div className="px-3 pt-2.5 pb-2 space-y-2.5">
           {/* Relevant Items Row */}
           <div>
-            <div className="text-[11px] font-sans text-[#D4D5D8] mb-1">
+            <div className="text-[13px] font-sans font-normal text-[#E8E8E8] mb-1.5">
               Relevant Items:
             </div>
-            <div className="flex flex-wrap gap-1 min-h-[38px]">
+            <div className="flex flex-wrap gap-1.5 min-h-[60px]">
               {relevantItems.map((slot) => (
                 <button
                   key={slot.id}
@@ -245,16 +218,16 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                     }
                   }}
                   title={`${slot.name} (${slot.count}) · Tap to load into machine`}
-                  className="relative w-10 h-10 rounded-[2px] bg-[#CFCFD1] border border-[#454850] flex items-center justify-center p-0.5 hover:ring-2 hover:ring-[#DF8A2E]"
+                  className="relative w-[60px] h-[60px] rounded-[3px] bg-[#D0D0D0] flex items-center justify-center p-1 hover:ring-2 hover:ring-[#E59334] cursor-pointer"
                 >
                   {slot.iconUrl && (
                     <img
                       src={slot.iconUrl}
                       alt={slot.name}
-                      className="w-8 h-8 object-contain"
+                      className="w-[50px] h-[50px] object-contain"
                     />
                   )}
-                  <span className="absolute bottom-0 right-0 px-1 py-[0.5px] bg-[#DF8A2E] text-white font-sans text-[9px] font-bold leading-tight">
+                  <span className="absolute bottom-[1px] right-[1px] px-1.5 py-[1px] rounded-[2px] bg-[#E59334] text-white font-sans text-[13px] font-bold leading-none">
                     {slot.count}
                   </span>
                 </button>
@@ -264,7 +237,7 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
 
           {/* All Items 9x5 Grid (45 Square Slots) */}
           <div>
-            <div className="text-[11px] font-sans text-[#D4D5D8] mb-1">
+            <div className="text-[13px] font-sans font-normal text-[#E8E8E8] mb-1.5">
               All Items:
             </div>
             <div className="grid grid-cols-9 gap-[3px]">
@@ -276,10 +249,7 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                     onClick={() => {
                       if (slot.isPowerShard && onUpdateOverclock) {
                         const nextShards = Math.min(3, powerShards + 1);
-                        onUpdateOverclock(
-                          Math.max(clockSpeedPct, getMaxClockSpeedPct(nextShards)),
-                          nextShards
-                        );
+                        onUpdateOverclock(clockSpeedPct, nextShards);
                       } else if (onFillInputBuffer && node.inputs.length > 0) {
                         onFillInputBuffer();
                       }
@@ -289,10 +259,10 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                         ? `Power Shard (${slot.count}) · Tap to install into Overclock slot`
                         : `${slot.name} (${slot.count})`
                     }
-                    className={`relative aspect-square w-full rounded-[2px] bg-[#CFCFD1] flex items-center justify-center p-0.5 hover:ring-2 hover:ring-[#DF8A2E] ${
+                    className={`relative aspect-square w-full rounded-[2px] flex items-center justify-center p-0.5 hover:ring-2 hover:ring-[#E59334] cursor-pointer ${
                       slot.isPowerShard
-                        ? 'border-2 border-[#DF8A2E]'
-                        : 'border border-[#454850]'
+                        ? 'bg-[#EAEAEA] border-2 border-[#E59334]'
+                        : 'bg-[#D0D0D0]'
                     }`}
                   >
                     {slot.isPowerShard ? (
@@ -302,18 +272,18 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                         <img
                           src={slot.iconUrl}
                           alt={slot.name}
-                          className="w-4/5 h-4/5 object-contain"
+                          className="w-[86%] h-[86%] object-contain"
                         />
                       )
                     )}
-                    <span className="absolute bottom-0 right-0 px-1 bg-[#DF8A2E] text-white font-sans text-[8.5px] font-bold leading-tight">
+                    <span className="absolute bottom-[1px] right-[1px] px-1 py-[1px] rounded-[1.5px] bg-[#E59334] text-white font-sans text-[11.5px] font-bold leading-none">
                       {slot.count}
                     </span>
                   </button>
                 ) : (
                   <div
                     key={`empty_${idx}`}
-                    className="aspect-square w-full rounded-[2px] bg-[#3A3C41]/85 border border-[#282A2E]"
+                    className="aspect-square w-full rounded-[2px] bg-[#555555]/55"
                   />
                 )
               )}
@@ -321,8 +291,8 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
           </div>
         </div>
 
-        {/* Flush Bottom Inventory Bar: [ ↓≡ Sort ] on Left + [ 🗑️ ] Trash Slot on Right */}
-        <div className="h-10 bg-[#2C2E33] border-t border-[#3E4046] flex items-stretch justify-between shrink-0">
+        {/* Flush Bottom Inventory Bar: [ ↓≡ Sort ] on Left + Translucent Spacer + [ 🗑️ ] on Right */}
+        <div className="h-[56px] bg-transparent flex items-stretch justify-between shrink-0">
           <button
             type="button"
             onClick={() =>
@@ -330,10 +300,16 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
                 prev === 'default' ? 'count' : prev === 'count' ? 'name' : 'default'
               )
             }
-            className="h-full px-6 bg-[#6C6F75] hover:bg-[#7D8087] text-xs font-semibold text-white flex items-center gap-2 border-r border-[#3E4046] transition-colors"
+            className="w-[130px] h-full bg-[#686868] hover:bg-[#7A7A7A] text-[14px] font-normal text-[#EAEAEA] flex items-center justify-center gap-2.5 border-r-2 border-[#18191C] transition-colors cursor-pointer"
           >
-            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M5 3a1 1 0 011 1v9.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 111.414-1.414L4 13.586V4a1 1 0 011-1zm6 2h7a1 1 0 110 2h-7a1 1 0 110-2zm0 4h7a1 1 0 110 2h-7a1 1 0 110-2zm0 4h7a1 1 0 110 2h-7a1 1 0 110-2z" />
+            {/* Satisfactory Stepped Sort Icon: Down Arrow on Left + 3 Stepped Horizontal Bars on Right */}
+            <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 22 18" fill="currentColor">
+              {/* Vertical arrow shaft + downward arrowhead */}
+              <path d="M5 2h2v10h2.5L6 16 2.5 12H5V2z" />
+              {/* 3 horizontal bars of stepped increasing width */}
+              <rect x="11" y="2.5" width="4.5" height="2.2" rx="0.5" />
+              <rect x="11" y="7.4" width="7" height="2.2" rx="0.5" />
+              <rect x="11" y="12.3" width="9.5" height="2.2" rx="0.5" />
             </svg>
             <span>
               Sort{sortMode !== 'default' ? ` (${sortMode.toUpperCase()})` : ''}
@@ -345,10 +321,24 @@ export const PioneerInventoryPanel: React.FC<PioneerInventoryPanelProps> = React
             onClick={onFlushBuffer}
             title="Trash / Flush Machine Internal Buffers"
             aria-label="Flush Machine Buffers"
-            className="w-11 h-full bg-[#6C6F75] hover:bg-rose-600 text-white flex items-center justify-center border-l border-[#3E4046] transition-colors"
+            className="w-[58px] h-full bg-[#686868] hover:bg-rose-600 text-white flex items-center justify-center border-l-2 border-[#18191C] transition-colors cursor-pointer"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9 3h6a1 1 0 011 1v1h4a1 1 0 110 2h-1v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7H4a1 1 0 110-2h4V4a1 1 0 011-1zm1 2h4V4h-4v1zM7 7v12h10V7H7zm2 2a1 1 0 011 1v7a1 1 0 11-2 0v-7a1 1 0 011-1zm6 0a1 1 0 011 1v7a1 1 0 11-2 0v-7a1 1 0 011-1z" />
+            {/* Satisfactory Solid White Tapered Trash Can Silhouette with Lid, Top Handle, and 3 Vertical Cutouts */}
+            <svg className="w-9 h-9" viewBox="0 0 32 32" fill="none">
+              {/* Top Handle Loop */}
+              <path
+                d="M12.5 3.5C12.5 2.67 13.17 2 14 2H18C18.83 2 19.5 2.67 19.5 3.5V5.5H17.5V4H14.5V5.5H12.5V3.5Z"
+                fill="currentColor"
+              />
+              {/* Wide Solid Lid Bar */}
+              <rect x="5.5" y="5.5" width="21" height="3.2" rx="1" fill="currentColor" />
+              {/* Tapered Solid Bin Body with 3 Vertical Cutout Slots */}
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M6.8 10.5H25.2L23.6 28.2C23.5 29.2 22.65 30 21.65 30H10.35C9.35 30 8.5 29.2 8.4 28.2L6.8 10.5ZM10.5 13.5L11.4 26.5H13.2L12.3 13.5H10.5ZM15.1 13.5V26.5H16.9V13.5H15.1ZM19.7 13.5L18.8 26.5H20.6L21.5 13.5H19.7Z"
+                fill="currentColor"
+              />
             </svg>
           </button>
         </div>

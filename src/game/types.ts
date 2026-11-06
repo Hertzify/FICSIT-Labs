@@ -85,8 +85,12 @@ export interface MachineNode {
   purity?: ResourcePurity;
   isWorldDeposit?: boolean;
   status: MachineStatus;
-  efficiency: number; // 0..100 integer
+  efficiency: number; // 0..100 integer displayed on Productivity Display
+  avgEfficiency?: number; // Rolling average operational efficiency (0..100 float)
   progress: number; // 0..1 animation progress
+  clockSpeedPct?: number; // 1..250 clock speed percentage (100% default, up to 250% with 3 Power Shards)
+  powerShards?: number; // 0..3 installed Power Shards (+50% max clock speed per shard)
+  isStandby?: boolean; // True when machine is toggled into Standby / Paused mode
   inputStoredCount?: number; // Current items stored across building input storage slots
   maxInputStoredCount?: number; // Maximum input storage capacity across input slots
   storedCount: number; // Current items in primary building output storage (output buffer or container slots)

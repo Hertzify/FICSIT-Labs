@@ -31,6 +31,10 @@ export function hasInspectorSnapshotChanged(
     prev.recipeId !== next.recipeId ||
     prev.status !== next.status ||
     prev.efficiency !== next.efficiency ||
+    prev.clockSpeedPct !== next.clockSpeedPct ||
+    prev.powerShards !== next.powerShards ||
+    Boolean(prev.isStandby) !== Boolean(next.isStandby) ||
+    Math.round((prev.progress ?? 0) * 25) !== Math.round((next.progress ?? 0) * 25) ||
     prev.maxStoredCount !== next.maxStoredCount ||
     Math.floor(prev.storedCount ?? 0) !== Math.floor(next.storedCount ?? 0) ||
     prev.inputs.length !== next.inputs.length ||
@@ -155,6 +159,23 @@ export function findNodeAtWorld(
   }
   return null;
 }
+
+/**
+ * Checks whether a world-space point hits the exterior STANDBY rocker switch
+ * on the bottom-right corner of a Miner Mk.1 node card.
+ */
+export function isPointOnMinerStandbySwitch(
+  wx: number,
+  wy: number,
+  node: MachineNode,
+  zoom: number
+): boolean {
+  if (node.buildingId !== 'miner_mk1' || isMacroIconZoom(zoom)) return false;
+  const relX = (wx - node.x) / node.width;
+  const relY = (wy - node.y) / node.height;
+  return relX >= 0.805 && relX <= 0.972 && relY >= 0.73 && relY <= 0.975;
+}
+
 
 export function findBeltAtWorld(
   wx: number,

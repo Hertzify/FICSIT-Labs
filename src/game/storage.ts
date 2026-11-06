@@ -1,3 +1,14 @@
+/**
+ * ============================================================================
+ * MODULE INDEX: Persistence & Save Slot Manager (`src/game/storage.ts`)
+ * ============================================================================
+ * [Lines 018-060] DEFAULT_SETTINGS, loadSettings, saveSettings
+ * [Lines 062-080] createInitialSeedSaveSlot
+ * [Lines 082-150] loadSaveSlots (with legacy coordinate migration & fallback)
+ * [Lines 152-198] persistSaveSlots, upsertSaveSlot, upsertAutoSaveForSession, deleteSaveSlotById
+ * ============================================================================
+ */
+
 import {
   createSectorWorldDeposits,
   createStarterFactory,
@@ -84,15 +95,22 @@ export function loadSaveSlots(): SaveSlot[] {
       localStorage.setItem(SAVES_KEY, JSON.stringify([seed]));
       return [seed];
     }
-    return parsed
+    const validSlots = parsed
+      .filter((slot: unknown): slot is SaveSlot => Boolean(slot && typeof slot === 'object'))
       .map((slot: SaveSlot) => {
-        const syncedNodes = ensureWorldDepositsPresent(slot.nodes ?? []);
-        // If legacy starter_miner is still at old (408, 216) while starter_deposit moved to (2544, 2784), relocate starter chain
+        const syncedNodes = ensureWorldDepositsPresent(Array.isArray(slot.nodes) ? slot.nodes : []);
         const legacyMiner = syncedNodes.find(
           (n) => n.id === 'starter_miner' && n.x === 408 && n.y === 216
         );
         let finalNodes = syncedNodes;
-        let finalCamera = slot.camera;
+        let finalCamera =
+          slot.camera &&
+          Number.isFinite(slot.camera.x) &&
+          Number.isFinite(slot.camera.y) &&
+          Number.isFinite(slot.camera.zoom)
+            ? slot.camera
+            : { x: -1820, y: -1920, zoom: 0.74 };
+
         if (legacyMiner) {
           const offsets: Record<string, { x: number; y: number }> = {
             starter_miner: { x: 2544, y: 2784 },
@@ -107,7 +125,8 @@ export function loadSaveSlots(): SaveSlot[] {
         }
 
         const nodeById = new Map(finalNodes.map((n) => [n.id, n]));
-        const validConns = (slot.connections ?? []).filter((c) => {
+        const rawConnections = Array.isArray(slot.connections) ? slot.connections : [];
+        const validConns = rawConnections.filter((c) => {
           const fromN = nodeById.get(c.fromNodeId);
           const toN = nodeById.get(c.toNodeId);
           if (!fromN || !toN) return false;
@@ -117,15 +136,28 @@ export function loadSaveSlots(): SaveSlot[] {
           return true;
         });
 
-        const sim = stepSimulation(finalNodes, validConns, 0.016);
+        // Use dt = 0 so steady-state telemetry and capacities are computed without draining stored items on load
+        const sim = stepSimulation(finalNodes, validConns, 0);
         return {
           ...slot,
+          id: slot.id || `slot_${Date.now()}`,
+          sessionName: slot.sessionName || 'Rocky Desert Sector 01',
+          slotName: slot.slotName || 'Manual Save',
+          kind: slot.kind === 'autosave' ? 'autosave' : 'manual',
+          updatedAt: Number.isFinite(slot.updatedAt) ? slot.updatedAt : Date.now(),
           nodes: sim.nodes,
           connections: sim.connections,
           camera: finalCamera,
-        };
+        } as SaveSlot;
       })
       .sort((a: SaveSlot, b: SaveSlot) => b.updatedAt - a.updatedAt);
+
+    if (validSlots.length === 0) {
+      const seed = createInitialSeedSaveSlot('Rocky Desert Sector 01', true);
+      localStorage.setItem(SAVES_KEY, JSON.stringify([seed]));
+      return [seed];
+    }
+    return validSlots;
   } catch {
     const seed = createInitialSeedSaveSlot('Rocky Desert Sector 01', true);
     return [seed];
@@ -142,13 +174,41 @@ export function persistSaveSlots(slots: SaveSlot[]): SaveSlot[] {
   return sorted;
 }
 
+export function cloneSaveGraph(
+  nodes: SaveSlot['nodes'],
+  connections: SaveSlot['connections']
+): { nodes: SaveSlot['nodes']; connections: SaveSlot['connections'] } {
+  return {
+    nodes: nodes.map((n) => ({
+      ...n,
+      inputs: n.inputs.map((p) => ({ ...p })),
+      outputs: n.outputs.map((p) => ({ ...p })),
+    })),
+    connections: connections.map((c) => ({
+      ...c,
+      waypoints: c.waypoints ? c.waypoints.map((w) => ({ ...w })) : undefined,
+      inFlightItems: c.inFlightItems
+        ? c.inFlightItems.map((pkt) => ({ ...pkt }))
+        : undefined,
+    })),
+  };
+}
+
 export function upsertSaveSlot(slots: SaveSlot[], slot: SaveSlot): SaveSlot[] {
-  const existingIdx = slots.findIndex((s) => s.id === slot.id);
+  const cloned = cloneSaveGraph(slot.nodes, slot.connections);
+  const safeSlot: SaveSlot = {
+    ...slot,
+    updatedAt: Date.now(),
+    nodes: cloned.nodes,
+    connections: cloned.connections,
+    camera: { ...slot.camera },
+  };
+  const existingIdx = slots.findIndex((s) => s.id === safeSlot.id);
   const next = [...slots];
   if (existingIdx >= 0) {
-    next[existingIdx] = { ...slot, updatedAt: Date.now() };
+    next[existingIdx] = safeSlot;
   } else {
-    next.unshift({ ...slot, updatedAt: Date.now() });
+    next.unshift(safeSlot);
   }
   return persistSaveSlots(next);
 }
@@ -158,26 +218,52 @@ export function upsertAutoSaveForSession(
   sessionName: string,
   nodes: SaveSlot['nodes'],
   connections: SaveSlot['connections'],
-  camera: SaveSlot['camera']
+  camera: SaveSlot['camera'],
+  activeSlotId?: string
 ): { slots: SaveSlot[]; autoSlot: SaveSlot } {
+  const cloned = cloneSaveGraph(nodes, connections);
+  const now = Date.now();
   const existingAuto = slots.find(
     (s) => s.sessionName === sessionName && s.kind === 'autosave'
   );
   const autoSlot: SaveSlot = {
-    id: existingAuto ? existingAuto.id : `autosave_${sessionName.replace(/\s+/g, '_').toLowerCase()}`,
+    id: existingAuto
+      ? existingAuto.id
+      : `autosave_${sessionName.replace(/\s+/g, '_').toLowerCase()}`,
     sessionName,
     slotName: 'Auto-Save',
     kind: 'autosave',
-    updatedAt: Date.now(),
-    nodes,
-    connections,
-    camera,
+    updatedAt: now,
+    nodes: cloned.nodes,
+    connections: cloned.connections,
+    camera: { ...camera },
   };
-  const next = upsertSaveSlot(slots, autoSlot);
+
+  // Also keep the active slot's live node storages in sync so reloading or continuing never loses items
+  const syncedSlots = activeSlotId
+    ? slots.map((s) => {
+        if (s.id !== activeSlotId || s.id === autoSlot.id) return s;
+        const activeClone = cloneSaveGraph(nodes, connections);
+        return {
+          ...s,
+          updatedAt: now - 1,
+          nodes: activeClone.nodes,
+          connections: activeClone.connections,
+          camera: { ...camera },
+        };
+      })
+    : slots;
+
+  const next = upsertSaveSlot(syncedSlots, autoSlot);
   return { slots: next, autoSlot };
 }
 
 export function deleteSaveSlotById(slots: SaveSlot[], slotId: string): SaveSlot[] {
   const filtered = slots.filter((s) => s.id !== slotId);
+  if (filtered.length === 0) {
+    const fallback = createInitialSeedSaveSlot('Rocky Desert Sector 01', true);
+    return persistSaveSlots([fallback]);
+  }
   return persistSaveSlots(filtered);
 }
+

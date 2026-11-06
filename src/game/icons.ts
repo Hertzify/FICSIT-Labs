@@ -31,6 +31,7 @@ export const BUILDING_ICON_PATHS: Record<string, string> = {
   conveyor_belt_mk4: './icons/buildings/conveyor_belt_mk4.png',
   conveyor_belt_mk5: './icons/buildings/conveyor_belt_mk5.png',
   conveyor_belt_mk6: './icons/buildings/conveyor_belt_mk6.png',
+  miner_chassis_bg: './icons/buildings/miner_chassis_bg.jpg',
 };
 
 const NAME_TO_ITEM_ID: Record<string, string> = {

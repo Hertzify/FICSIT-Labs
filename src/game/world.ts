@@ -172,6 +172,9 @@ export function createMachineNode(
     status: 'idle',
     efficiency: 0,
     progress: 0,
+    clockSpeedPct: 100,
+    powerShards: 0,
+    isStandby: false,
     inputStoredCount: 0,
     maxInputStoredCount,
     storedCount: 0,
@@ -231,23 +234,49 @@ export function ensureWorldDepositsPresent(nodes: MachineNode[]): MachineNode[] 
     const maxStoredCount = getBuildingMaxStorage(
       n.buildingId,
       n.recipeId,
-      n.outputs[0]?.itemName ?? sanitizedInputs[0]?.itemName ?? null
+      n.outputs[0]?.itemName ??
+        sanitizedInputs.find((p) => p.itemName)?.itemName ??
+        null
     );
-    const maxInputStoredCount = sanitizedInputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0);
-    const inputStoredCount = sanitizedInputs.reduce(
-      (acc, p) => acc + Math.min(p.maxBuffer ?? 100, Math.max(0, p.bufferedCount ?? 0)),
+    const syncedInputs = sanitizedInputs.map((p) => ({
+      ...p,
+      bufferedCount: Math.min(p.maxBuffer ?? 100, Math.max(0, p.bufferedCount ?? 0)),
+    }));
+    let inputStoredCount = syncedInputs.reduce(
+      (acc, p) => acc + (p.bufferedCount ?? 0),
       0
+    );
+    if (inputStoredCount === 0 && (n.inputStoredCount ?? 0) > 0 && syncedInputs[0]) {
+      const restoredIn = Math.min(
+        syncedInputs[0].maxBuffer ?? 100,
+        Math.max(0, n.inputStoredCount ?? 0)
+      );
+      syncedInputs[0].bufferedCount = restoredIn;
+      inputStoredCount = restoredIn;
+    }
+    const maxInputStoredCount = syncedInputs.reduce(
+      (acc, p) => acc + (p.maxBuffer ?? 100),
+      0
+    );
+    const rawStored = Math.max(
+      n.storedCount ?? 0,
+      n.outputs[0]?.bufferedCount ?? 0
+    );
+    const storedCount = Math.min(maxStoredCount, Math.max(0, rawStored));
+    const syncedOutputs = n.outputs.map((p, idx) =>
+      idx === 0 ? { ...p, bufferedCount: storedCount } : { ...p }
     );
     return {
       ...n,
       y: migratedY,
       width: syncedWidth,
       height: syncedHeight,
-      inputs: sanitizedInputs,
+      inputs: syncedInputs,
+      outputs: syncedOutputs,
       inputStoredCount,
       maxInputStoredCount,
       maxStoredCount,
-      storedCount: Math.min(maxStoredCount, Math.max(0, n.storedCount ?? 0)),
+      storedCount,
     };
   });
 
@@ -470,6 +499,8 @@ export function parseSaveImport(rawJson: string): { slot?: SaveSlot; error?: str
     if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.connections)) {
       return { error: 'Save data is missing nodes or connections arrays.' };
     }
+    const syncedNodes = ensureWorldDepositsPresent(parsed.nodes);
+    const sim = stepSimulation(syncedNodes, parsed.connections, 0);
     const now = Date.now();
     const slot: SaveSlot = {
       id: `slot_import_${now}`,
@@ -483,8 +514,8 @@ export function parseSaveImport(rawJson: string): { slot?: SaveSlot; error?: str
           : 'Imported Save',
       kind: 'manual',
       updatedAt: now,
-      nodes: ensureWorldDepositsPresent(parsed.nodes),
-      connections: parsed.connections,
+      nodes: sim.nodes,
+      connections: sim.connections,
       camera: parsed.camera ?? { x: 40, y: 80, zoom: 0.9 },
     };
     return { slot };

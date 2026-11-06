@@ -15,6 +15,70 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_DATA: ChangelogRelease[] = [
   {
+    version: '0.0.19',
+    tag: '0.0.19 dev build',
+    date: '2026-11-05',
+    categories: [
+      {
+        category: '🔘 Interactive Exterior Standby Switch & Real-Time Node Storage Saving',
+        items: [
+          {
+            title: 'Interactive Exterior STANDBY Rocker Switch on Miner Mk.1',
+            description:
+              'Made the exterior STANDBY rocker switch on the bottom-right of Miner Mk.1 cards directly clickable from the canvas without opening the full inspector, complete with live rocker toggle state, Undo/Redo history, and instant telemetry update.',
+          },
+          {
+            title: 'Real-Time Node Input & Output Storage Persistence',
+            description:
+              'Fixed node storage persistence across page reloads, tab switches, manual saves, and auto-saves by preserving exact input/output buffer counts (dt = 0 on load) and continuously syncing live machine storages to localStorage.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '0.0.18',
+    tag: '0.0.18 dev build',
+    date: '2026-11-05',
+    categories: [
+      {
+        category: '🏭 Authentic Satisfactory Machine GUIs, Pioneer Inventory & Miner HUD',
+        items: [
+          {
+            title: 'Authentic Satisfactory Machine Inspector & Pioneer Inventory GUI',
+            description:
+              'Redesigned the internal Machine Inspector to match the original Satisfactory FICSIT brushed-metal window with Select Recipe and Production tabs, Miner centrifugal drum, Input/Output cards, and the right-hand Pioneer Inventory (Relevant Items + 9×5 All Items grid + Sort & Trash).',
+          },
+          {
+            title: '250% Overclocking Slider, 3 Power Shard Slots & Standby Switch',
+            description:
+              'Added authentic 1%–250% clock speed scaling with 3 interactive Power Shard slots (unlocking 150%, 200%, and 250% max clock speed), polynomial MW power scaling, Copy/Paste Settings, and an illuminated Standby rocker switch.',
+          },
+          {
+            title: 'Miner Mk.1 Exterior Canvas HUD & Stable Rolling Efficiency',
+            description:
+              'Upgraded the Miner Mk.1 canvas node with the riveted industrial exterior HUD (ribbed drum, status LED, Mining monitor, white Output card, 0%–250% segmented clock bar, and Standby switch) plus rolling-average productivity telemetry.',
+          },
+        ],
+      },
+      {
+        category: '🗂️ Modular Architecture, Feature Index & Stability Fixes',
+        items: [
+          {
+            title: 'Modular Codebase Split & Feature Index (CODE_INDEX.md / CODE_INDEX.ts)',
+            description:
+              'Split large canvas, simulation, routing, and inspector files into focused single-responsibility modules and added a comprehensive Feature & Codebase Index mapping every feature by file and line range.',
+          },
+          {
+            title: 'Instant Telemetry Sync on Dismantle/Unwire & Save Storage Hardening',
+            description:
+              'Ensured immediate route cache invalidation and zero-dt telemetry recalculation on node/group/belt dismantle and unwire actions, plus defensive save-slot validation and keyboard shortcuts (Escape, Ctrl/Cmd+Z, Ctrl/Cmd+Y).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '0.0.17',
     tag: '0.0.17 dev build',
     date: '2026-11-04',

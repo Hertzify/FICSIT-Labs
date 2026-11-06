@@ -256,9 +256,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.17 dev build', () => {
-  assert.equal(APP_VERSION, '0.0.17');
-  assert.equal(APP_BUILD_TAG, '0.0.17 dev build');
+test('version tracking matches 0.0.19 dev build', () => {
+  assert.equal(APP_VERSION, '0.0.19');
+  assert.equal(APP_BUILD_TAG, '0.0.19 dev build');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -1302,3 +1302,247 @@ test('28. Miner on Resource Deposit connected to Smelter below with 2 corner dot
     );
   }
 });
+
+test('29. Satisfactory Productivity Display shows stable average efficiency without flickering to 100% on discrete item cycles or buffer boundaries', () => {
+  // Part A: 60/m Miner Mk.1 feeding a 30/m Smelter once buffers are saturated (99/100 <-> 100/100)
+  const deposit = createMachineNode('resource_deposit', 240, 2000, 'dep_norm', 'deposit_iron', {
+    purity: 'normal', // 60/m
+  });
+  const miner = createMachineNode('miner_mk1', 240, 2000, 'miner_60', 'mine_iron');
+  const smelter = createMachineNode('smelter', 600, 2000, 'smelter_30', 'smelt_iron');
+  const storage = createMachineNode('storage_container', 960, 2000, 'storage_sink');
+
+  const connMinerSmelter = createConveyorConnection(
+    miner.id,
+    miner.outputs[0].id,
+    smelter.id,
+    smelter.inputs[0].id,
+    1,
+    'conn_ms'
+  );
+  const connSmelterStorage = createConveyorConnection(
+    smelter.id,
+    smelter.outputs[0].id,
+    storage.id,
+    storage.inputs[0].id,
+    1,
+    'conn_ss'
+  );
+
+  // Pre-fill Miner output (100/100) and Smelter input (100/100) so the Miner is throttled to Smelter's 30/m consumption
+  miner.storedCount = 100;
+  miner.outputs[0].bufferedCount = 100;
+  smelter.inputs[0].bufferedCount = 100;
+  smelter.inputStoredCount = 100;
+
+  let nodesA: MachineNode[] = [deposit, miner, smelter, storage];
+  let connsA: ConveyorConnection[] = [
+    { ...connMinerSmelter, firstItemArrived: true, inFlightItems: undefined },
+    { ...connSmelterStorage, firstItemArrived: true, inFlightItems: undefined },
+  ];
+
+  // Warm up for 30s so belt queues pack and Productivity Display rolling average settles to 50%
+  for (let i = 0; i < 60; i++) {
+    const res = stepSimulation(nodesA, connsA, 0.5);
+    nodesA = res.nodes;
+    connsA = res.connections;
+  }
+
+  // Now step 40 fine-grained ticks (0.2s each = 8s across 4 full Smelter cycles) and assert zero flickering!
+  for (let tick = 0; tick < 40; tick++) {
+    const res = stepSimulation(nodesA, connsA, 0.2);
+    nodesA = res.nodes;
+    connsA = res.connections;
+
+    const curMiner = nodesA.find((n) => n.id === miner.id)!;
+    const curSmelter = nodesA.find((n) => n.id === smelter.id)!;
+    const curBelt = connsA.find((c) => c.id === 'conn_ms')!;
+
+    assert.equal(
+      curMiner.efficiency,
+      50,
+      `Miner Mk.1 (60/m) throttled by 30/m Smelter must stay at 50% avg efficiency on tick ${tick} (stored=${curMiner.storedCount}), got ${curMiner.efficiency}%`
+    );
+    assert.equal(curMiner.status, 'working');
+    assert.equal(
+      curBelt.ratePerMin,
+      30,
+      `Packed belt feeding 30/m Smelter must stay at 30/m on tick ${tick}, got ${curBelt.ratePerMin}/m`
+    );
+    assert.equal(
+      curSmelter.efficiency,
+      100,
+      `Smelter receiving full 30/m must stay at 100% OPTIMAL on tick ${tick}, got ${curSmelter.efficiency}%`
+    );
+    assert.equal(curSmelter.status, 'optimal');
+  }
+
+  // Part B: Under-supplied Smelter receiving 15/m (from an Impure 30/m Miner split across 2 Smelters)
+  const impureDep = createMachineNode('resource_deposit', 240, 3000, 'dep_imp', 'deposit_iron', {
+    purity: 'impure', // 30/m
+  });
+  const impMiner = createMachineNode('miner_mk1', 240, 3000, 'miner_30', 'mine_iron');
+  const splitter = createMachineNode('splitter', 600, 3000, 'split_15');
+  const smelt1 = createMachineNode('smelter', 960, 2820, 'smelt_half_1', 'smelt_iron');
+  const smelt2 = createMachineNode('smelter', 960, 3180, 'smelt_half_2', 'smelt_iron');
+
+  let nodesB: MachineNode[] = [impureDep, impMiner, splitter, smelt1, smelt2];
+  let connsB: ConveyorConnection[] = [
+    {
+      ...createConveyorConnection(impMiner.id, impMiner.outputs[0].id, splitter.id, splitter.inputs[0].id, 1, 'c_m_sp'),
+      firstItemArrived: true,
+      inFlightItems: undefined,
+    },
+    {
+      ...createConveyorConnection(splitter.id, splitter.outputs[0].id, smelt1.id, smelt1.inputs[0].id, 1, 'c_sp_s1'),
+      firstItemArrived: true,
+      inFlightItems: undefined,
+    },
+    {
+      ...createConveyorConnection(splitter.id, splitter.outputs[1].id, smelt2.id, smelt2.inputs[0].id, 1, 'c_sp_s2'),
+      firstItemArrived: true,
+      inFlightItems: undefined,
+    },
+  ];
+
+  // Clear initial buffered count on smelt1 & smelt2 so they only have discrete belt arrivals at 15/m
+  nodesB = nodesB.map((n) =>
+    n.id === smelt1.id || n.id === smelt2.id
+      ? { ...n, inputs: n.inputs.map((p) => ({ ...p, bufferedCount: 0 })) }
+      : n
+  );
+
+  // Warm up 20s and then check 40 ticks (0.25s each = 10s across multiple 4s item arrivals & 2s craft cycles)
+  for (let i = 0; i < 40; i++) {
+    const res = stepSimulation(nodesB, connsB, 0.5);
+    nodesB = res.nodes;
+    connsB = res.connections;
+  }
+
+  for (let tick = 0; tick < 40; tick++) {
+    const res = stepSimulation(nodesB, connsB, 0.25);
+    nodesB = res.nodes;
+    connsB = res.connections;
+
+    const s1 = nodesB.find((n) => n.id === smelt1.id)!;
+    const s2 = nodesB.find((n) => n.id === smelt2.id)!;
+    assert.equal(
+      s1.efficiency,
+      50,
+      `Under-supplied Smelter 1 (15/30/m) must stay at 50% avg efficiency on tick ${tick} (buf=${s1.inputs[0].bufferedCount}), got ${s1.efficiency}%`
+    );
+    assert.equal(s1.status, 'working');
+    assert.equal(
+      s2.efficiency,
+      50,
+      `Under-supplied Smelter 2 (15/30/m) must stay at 50% avg efficiency on tick ${tick} (buf=${s2.inputs[0].bufferedCount}), got ${s2.efficiency}%`
+    );
+    assert.equal(s2.status, 'working');
+  }
+});
+
+test('29. Satisfactory 250% Overclocking (0-3 Power Shards) and Standby Mode scale production rates, cycle times, and power MW accurately', async () => {
+  const {
+    getMaxClockSpeedPct,
+    getBuildingPowerMw,
+    getScaledCycleTimeSec,
+    getScaledRatePerMin,
+  } = await import('./rules');
+
+  // Verify Power Shard capacity unlocking: 0 = 100%, 1 = 150%, 2 = 200%, 3 = 250%
+  assert.equal(getMaxClockSpeedPct(0), 100);
+  assert.equal(getMaxClockSpeedPct(1), 150);
+  assert.equal(getMaxClockSpeedPct(2), 200);
+  assert.equal(getMaxClockSpeedPct(3), 250);
+
+  // Verify linear production scaling & inverse cycle time at 250%
+  assert.equal(getScaledRatePerMin(60, 250), 150);
+  assert.equal(getScaledRatePerMin(30, 250), 75);
+  assert.equal(getScaledCycleTimeSec(2.0, 250), 0.8);
+
+  // Verify exponential power scaling: baseMw * (clock / 100)^1.321928
+  assert.equal(getBuildingPowerMw('miner_mk1', 100, false), 5.0);
+  assert.ok(getBuildingPowerMw('miner_mk1', 250, false) > 16.5);
+  assert.equal(getBuildingPowerMw('miner_mk1', 250, true), 0.1); // Standby uses 0.1 MW
+
+  // Verify simulation scales Miner Mk.1 extraction to 150/m at 250% clock speed with 3 Power Shards
+  const deposit = createMachineNode('resource_deposit', 480, 2000, 'dep_oc', 'deposit_iron', {
+    purity: 'normal', // 60/m base
+  });
+  const miner = {
+    ...createMachineNode('miner_mk1', 480, 2000, 'miner_oc', 'mine_iron'),
+    powerShards: 3,
+    clockSpeedPct: 250,
+    storedCount: 0,
+  };
+
+  // Step two 1.0s ticks (2.0 seconds total) at 250% (150 items/min = 2.5 items/sec -> 5 items in 2.0s)
+  const simTick1 = stepSimulation([deposit, miner], [], 1.0);
+  const simActive = stepSimulation(simTick1.nodes, simTick1.connections, 1.0);
+  const updatedMiner = simActive.nodes.find((n) => n.id === 'miner_oc')!;
+  assert.equal(updatedMiner.outputs[0].targetRatePerMin, 150);
+  assert.equal(updatedMiner.storedCount, 5);
+  assert.equal(updatedMiner.efficiency, 100);
+
+  // Toggle Standby mode on the miner: production pauses and efficiency drops to 0%
+  const standbyMiner = { ...updatedMiner, isStandby: true };
+  const simStandby = stepSimulation([deposit, standbyMiner], [], 1.0);
+  const pausedMiner = simStandby.nodes.find((n) => n.id === 'miner_oc')!;
+  assert.equal(pausedMiner.storedCount, 5, 'Standby miner must not extract additional ore');
+  assert.equal(pausedMiner.efficiency, 0);
+  assert.equal(pausedMiner.status, 'idle');
+});
+
+test('30. Exterior Miner Mk.1 STANDBY switch hit-testing and exact node storage save/load persistence', async () => {
+  const { isPointOnMinerStandbySwitch } = await import('../components/canvasHitTesting');
+
+  const miner = createMachineNode('miner_mk1', 1000, 1000, 'miner_ext');
+  // Bottom-right STANDBY switch region on Miner Mk.1 (relX ~0.88, relY ~0.84)
+  const switchX = miner.x + miner.width * 0.88;
+  const switchY = miner.y + miner.height * 0.84;
+  assert.equal(isPointOnMinerStandbySwitch(switchX, switchY, miner, 1.0), true);
+  // Center of Miner Mk.1 is NOT the STANDBY switch
+  assert.equal(
+    isPointOnMinerStandbySwitch(miner.x + miner.width * 0.5, miner.y + miner.height * 0.5, miner, 1.0),
+    false
+  );
+
+  // Verify node input & output storages survive save/load round-trip without draining a single item
+  const smelter = createMachineNode('smelter', 1500, 1000, 'smelter_saved', 'smelt_iron');
+  smelter.inputs[0].bufferedCount = 42;
+  smelter.inputStoredCount = 42;
+  smelter.storedCount = 77;
+  smelter.outputs[0].bufferedCount = 77;
+
+  const hub = createMachineNode('the_hub', 1900, 1000, 'hub_saved', null);
+  hub.inputs[0].itemName = 'Iron Plate';
+  hub.inputs[0].bufferedCount = 15;
+  hub.inputStoredCount = 15;
+  hub.storedCount = 380;
+
+  const slotJson = serializeSaveExport({
+    id: 'test_storage_slot',
+    sessionName: 'Storage Test',
+    slotName: 'Test Slot',
+    kind: 'manual',
+    updatedAt: Date.now(),
+    nodes: [smelter, hub],
+    connections: [],
+    camera: { x: 0, y: 0, zoom: 1 },
+  });
+
+  const imported = parseSaveImport(slotJson);
+  assert.ok(imported.slot, 'Expected imported slot to parse cleanly');
+  const loadedSmelter = imported.slot!.nodes.find((n) => n.id === 'smelter_saved')!;
+  const loadedHub = imported.slot!.nodes.find((n) => n.id === 'hub_saved')!;
+
+  assert.equal(loadedSmelter.inputs[0].bufferedCount, 42);
+  assert.equal(loadedSmelter.inputStoredCount, 42);
+  assert.equal(loadedSmelter.storedCount, 77);
+  assert.equal(loadedSmelter.outputs[0].bufferedCount, 77);
+  assert.equal(loadedHub.storedCount, 380);
+  assert.equal(loadedHub.inputs[0].bufferedCount, 15);
+});
+
+
+

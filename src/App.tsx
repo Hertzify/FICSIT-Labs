@@ -1,3 +1,17 @@
+/**
+ * MODULE INDEX (`src/App.tsx`)
+ * -----------------------------------------------------------------------------
+ * Root application shell managing GameState ('title' | 'playing' | 'paused'),
+ * save slot persistence, auto-save intervals, Undo/Redo history triggers, and
+ * top/bottom HUD controls (SatisfactoryToolbar, Belt Tier Selector, Build Menu).
+ *
+ * Line Map:
+ * - [L48–L105]  Root state initialization (`settings`, `saveSlots`, `activeSlot`, `gameState`, `nodesRef`, `connectionsRef`, `cameraRef`)
+ * - [L107–L175] `hydrateSlotIntoEngine`, `triggerSessionAutoSave`, `handleUndo`, `handleRedo`
+ * - [L210–L305] Save/Load & Reset handlers (`handleContinueLatest`, `handleStartNewGame`, `handleCreateManualSave`, `handleDeleteSlot`, `handleFactoryReset`)
+ * - [L307–L695] Full-viewport `<NodeCanvas />`, `<MainMenu />`, playing HUD overlays, Pause dialog, and modals
+ */
+
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BuildMenuModal } from './components/BuildMenuModal';
 import { MainMenu } from './components/MainMenu';
@@ -36,18 +50,15 @@ import {
 export default function App() {
   const [settings, setSettings] = useState<SettingsConfig>(() => loadSettings());
   const [saveSlots, setSaveSlots] = useState<SaveSlot[]>(() => loadSaveSlots());
-  const [activeSlot, setActiveSlot] = useState<SaveSlot>(() => {
-    const initialSlots = loadSaveSlots();
-    return initialSlots[0];
-  });
+  const [activeSlot, setActiveSlot] = useState<SaveSlot>(
+    () => saveSlots[0] ?? createInitialSeedSaveSlot('Rocky Desert Sector 01', true)
+  );
 
   const [gameState, setGameState] = useState<GameState>(() => {
-    const initialSettings = loadSettings();
-    const initialSlots = loadSaveSlots();
     const params = new URLSearchParams(window.location.search);
     if (
       params.get('autostart') === '1' ||
-      (initialSettings.skipMainMenu && initialSlots.length > 0)
+      (settings.skipMainMenu && saveSlots.length > 0)
     ) {
       return 'playing';
     }
@@ -115,23 +126,26 @@ export default function App() {
     playSynthSfx('click', next);
   };
 
-  // Trigger Auto-Save helper
+  // Trigger Auto-Save helper (also keeps activeSlot's live node storages synced)
   const triggerSessionAutoSave = useCallback(
     (showBadge = true) => {
-      if (!settings.autoSaveEnabled) return;
-      const { slots: updatedSlots } = upsertAutoSaveForSession(
-        saveSlots,
-        activeSlot.sessionName,
-        nodesRef.current,
-        connectionsRef.current,
-        cameraRef.current
-      );
-      setSaveSlots(updatedSlots);
-      if (showBadge) {
+      if (!settings.autoSaveEnabled && showBadge) return;
+      setSaveSlots((prevSlots) => {
+        const { slots: updatedSlots } = upsertAutoSaveForSession(
+          prevSlots,
+          activeSlot.sessionName,
+          nodesRef.current,
+          connectionsRef.current,
+          cameraRef.current,
+          activeSlot.id
+        );
+        return updatedSlots;
+      });
+      if (showBadge && settings.autoSaveEnabled) {
         setAutoSaveNotice('Auto-Saved');
       }
     },
-    [settings.autoSaveEnabled, saveSlots, activeSlot.sessionName]
+    [settings.autoSaveEnabled, activeSlot.sessionName, activeSlot.id]
   );
 
   const handleUndo = useCallback(() => {
@@ -158,15 +172,41 @@ export default function App() {
     triggerSessionAutoSave(false);
   }, [settings, triggerSessionAutoSave]);
 
-
-
   useEffect(() => {
     if (!autoSaveNotice) return;
     const t = window.setTimeout(() => setAutoSaveNotice(null), 2200);
     return () => window.clearTimeout(t);
   }, [autoSaveNotice]);
 
-  // Periodic Auto-Save Interval while playing
+  // Continuous background storage persistence (every 2.5s while playing + on tab hide/unload)
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    const syncTimer = window.setInterval(() => {
+      triggerSessionAutoSave(false);
+    }, 2500);
+
+    const handlePersistOnExit = () => {
+      triggerSessionAutoSave(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        triggerSessionAutoSave(false);
+      }
+    };
+
+    window.addEventListener('beforeunload', handlePersistOnExit);
+    window.addEventListener('pagehide', handlePersistOnExit);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(syncTimer);
+      window.removeEventListener('beforeunload', handlePersistOnExit);
+      window.removeEventListener('pagehide', handlePersistOnExit);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [gameState, triggerSessionAutoSave]);
+
+  // Periodic Auto-Save Badge Notification while playing
   useEffect(() => {
     if (gameState !== 'playing' || !settings.autoSaveEnabled) return;
     const intervalMs = Math.max(10, settings.autoSaveIntervalSec || 30) * 1000;
@@ -270,6 +310,9 @@ export default function App() {
   const handleDeleteSlot = (slotId: string) => {
     const updated = deleteSaveSlotById(saveSlots, slotId);
     setSaveSlots(updated);
+    if (slotId === activeSlot.id && updated[0]) {
+      setActiveSlot(updated[0]);
+    }
     playSynthSfx('disconnect', settings);
   };
 
@@ -351,6 +394,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                triggerSessionAutoSave(false);
                 playSynthSfx('click', settings);
                 setGameState('paused');
               }}
@@ -362,6 +406,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                triggerSessionAutoSave(false);
                 playSynthSfx('click', settings);
                 setShowSettingsModal(true);
               }}

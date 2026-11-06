@@ -1,8 +1,19 @@
+/**
+ * ============================================================================
+ * MODULE INDEX: Factory Scene & Conveyor Belt Renderer (`src/components/canvasRenderer.ts`)
+ * ============================================================================
+ * [Lines 055-093] CanvasRenderParams & Viewport Culling Constants
+ * [Lines 095-260] renderFactoryScene Setup, Topographic Terrain & Blueprint Grid
+ * [Lines 262-478] Conveyor Belts, Roller Slats, Discrete Item Packets & Overpass Bridges
+ * [Lines 480-599] Live Wiring Preview & Waypoint Corner Handles
+ * [Lines 601-620] Machine Nodes & Deposits Delegation (`renderMachineNodesAndDeposits`)
+ * [Lines 622-718] Floating Belt Telemetry Badges (Top Layer)
+ * [Lines 720-885] Ghost Building Hologram, Snap Alignment Lasers & Marquee Box
+ * ============================================================================
+ */
+
 import {
   BUILDINGS,
-  getBuildingMaxStorage,
-  PURITY_CONFIG,
-  RECIPES,
 } from '../game/catalog';
 import {
   getCanvasBuildingImage,
@@ -16,14 +27,11 @@ import {
   computeNodeSnapAlignment,
   computeOrthogonalConveyorPath,
   ConveyorCrossing,
-  doesPathIntersectNode,
-  doNodesOverlap,
   findConveyorCrossings,
   getBeltTierDef,
   getCachedConveyorRoute,
   getPortWorldPosition,
   isMacroIconZoom,
-  isMinerDirectlyOnDeposit,
   isNodePositionValid,
   sampleFilletedPath,
   sampleOrthogonalPath,
@@ -40,8 +48,6 @@ import {
   SettingsConfig,
 } from '../game/types';
 import {
-  drawMachineVectorIcon,
-  drawNaturalResourceDeposit,
   drawRoundedRect,
   TOPOGRAPHIC_RIDGE_CENTERS,
 } from './canvasArtwork';
@@ -49,6 +55,7 @@ import {
   doesCandidateNodeOverlapBeltsOrDots,
   PortHit,
 } from './canvasHitTesting';
+import { renderMachineNodesAndDeposits } from './canvasNodeRenderer';
 
 export type { PortHit };
 
@@ -302,7 +309,6 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     const route = connRouteMap.get(conn.id);
     if (!route || route.pts.length < 2) continue;
 
-    // Frustum cull off-screen belts
     if (!isBoxInViewport(route.minX - 24, route.minY - 24, route.maxX + 24, route.maxY + 24)) {
       continue;
     }
@@ -331,7 +337,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       ctx.stroke();
     }
 
-    // Outer Industrial Conveyor Track Rails (16px wide bed so items sit snugly inside)
+    // Outer Industrial Conveyor Track Rails
     drawPolyline(pts);
     ctx.strokeStyle = isConnSelected
       ? '#F59E0B'
@@ -353,15 +359,14 @@ export function renderFactoryScene(params: CanvasRenderParams) {
 
     const filleted = route.filletedPath ?? computeFilletedConveyorPath(pts);
 
-    // Moving Conveyor Roller Slats & Directional Chevrons
-    // Thin precision slats and periodic chevrons that rotate smoothly around corner arcs (pauses when backpressured)
+    // Moving Conveyor Roller Slats
     if (!macroMode && !allItemsStalled && (isFlowing || enteringRate > 0 || hasMovingItems)) {
       const totalLen = filleted.totalLength;
-      const slatSpacing = 11; // 11px pitch gives dense, sleek industrial roller track
+      const slatSpacing = 11;
       const speed = tierDef.speedPxPerSec;
       const offset = (elapsedTime * speed) % slatSpacing;
       const endDist = Math.max(0, totalLen - 4);
-      const slatHalfWidth = 4.2; // spans 8.4px inside the 12.5px inner roller bed
+      const slatHalfWidth = 4.2;
 
       ctx.save();
       ctx.lineCap = 'round';
@@ -377,7 +382,6 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         const nx = -sinA;
         const ny = cosA;
 
-        // Thin precision roller slat perpendicular to belt (rotates smoothly around corner arcs)
         const x1 = x - nx * slatHalfWidth;
         const y1 = y - ny * slatHalfWidth;
         const x2 = x + nx * slatHalfWidth;
@@ -402,12 +406,11 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     ctx.lineJoin = 'round';
     ctx.stroke();
 
-    // Render Physical Discrete Resource Items Traveling or Lined Up Along the Belt (`conn.inFlightItems`)
+    // Render Physical Discrete Resource Items Traveling Along the Belt
     if (!macroMode && cam.zoom >= 0.35 && packets.length > 0) {
       const itemImg = getCanvasItemImage(conn.itemName);
       if (itemImg) {
         const curPathLen = filleted.totalLength;
-        // Draw from source (back) to destination (front) so leading items layer cleanly
         for (let i = packets.length - 1; i >= 0; i--) {
           const pkt = packets[i];
           if (pkt.distancePx > maxBeltDist + 1) continue;
@@ -435,7 +438,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     }
   }
 
-  // Render Industrial Elevated Overpass Bridges where belts cross each other (cached by geometry signature)
+  // Render Industrial Elevated Overpass Bridges where belts cross each other
   if (beltSigParts !== cachedCrossingsSignature) {
     cachedCrossingsSignature = beltSigParts;
     cachedCrossingsResult = findConveyorCrossings(allBeltPathsList);
@@ -519,7 +522,6 @@ export function renderFactoryScene(params: CanvasRenderParams) {
         ctx.setLineDash([]);
       }
 
-      // Outer halo ring
       ctx.beginPath();
       ctx.arc(wp.x, wp.y, isActive ? 10 : 8, 0, Math.PI * 2);
       ctx.fillStyle = '#0E1524';
@@ -535,7 +537,6 @@ export function renderFactoryScene(params: CanvasRenderParams) {
       ctx.lineWidth = isActive ? 3 : 2.2;
       ctx.stroke();
 
-      // Inner target core
       ctx.beginPath();
       ctx.arc(wp.x, wp.y, isActive ? 4.5 : 3.2, 0, Math.PI * 2);
       ctx.fillStyle =
@@ -548,7 +549,6 @@ export function renderFactoryScene(params: CanvasRenderParams) {
           : '#38BDF8';
       ctx.fill();
 
-      // Small index tag in close zoom
       if (!macroMode && cam.zoom >= 0.45) {
         ctx.font = '700 8px "JetBrains Mono", monospace';
         ctx.fillStyle =
@@ -569,7 +569,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     }
   }
 
-  // Ghost Waypoint Placement Preview (in Waypoint mode)
+  // Ghost Waypoint Placement Preview
   if (activeTool === 'waypoint' && previewWaypoint) {
     ctx.save();
     ctx.beginPath();
@@ -597,636 +597,25 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     ctx.restore();
   }
 
-  // 4. Render Machine Nodes & Natural World Resource Deposits (with Padded Viewport Culling)
-  // Deposits render first as ground bedrock, and extractors (Miner Mk.1) mount cleanly on top!
-  const depositsList: MachineNode[] = [];
-  const buildingsList: MachineNode[] = [];
-  for (const n of nodes) {
-    if (n.buildingId === 'resource_deposit') {
-      depositsList.push(n);
-    } else {
-      buildingsList.push(n);
-    }
-  }
-  const sortedNodes = [...depositsList, ...buildingsList];
-
-  // Precompute mounted Deposit <-> Miner Mk.1 pairs in O(M * D) once per frame
-  const mountedDepositIds = new Set<string>();
-  const mountedMinerIds = new Set<string>();
-  for (const bNode of buildingsList) {
-    if (bNode.buildingId !== 'miner_mk1') continue;
-    for (const dNode of depositsList) {
-      if (isMinerDirectlyOnDeposit(bNode, dNode, 4)) {
-        mountedDepositIds.add(dNode.id);
-        mountedMinerIds.add(bNode.id);
-        break;
-      }
-    }
-  }
-
-  for (const node of sortedNodes) {
-    const isDeposit = node.buildingId === 'resource_deposit';
-    const cullPad = macroMode && isDeposit ? 160 : 60;
-    if (
-      !isBoxInViewport(
-        node.x - cullPad,
-        node.y - cullPad,
-        node.x + node.width + cullPad,
-        node.y + node.height + cullPad
-      )
-    ) {
-      continue;
-    }
-
-    const bDef = BUILDINGS[node.buildingId];
-    const purityKey = node.purity ?? 'normal';
-    const purityInfo = PURITY_CONFIG[purityKey];
-    const accent = isDeposit
-      ? purityInfo.badgeColor
-      : bDef?.accentColor ?? '#F59E0B';
-    const isSelected =
-      node.id === curSelectedId || selectedNodeIds.includes(node.id);
-    const recipe = node.recipeId ? RECIPES[node.recipeId] : null;
-
-    let statusColor = '#64748B';
-    if (node.status === 'optimal') {
-      statusColor = '#10B981';
-    } else if (node.status === 'working' || node.status === 'backed_up') {
-      statusColor = '#F59E0B';
-    } else if (node.status === 'waiting') {
-      statusColor = '#38BDF8';
-    } else if (node.status === 'starved') {
-      statusColor = '#EF4444';
-    }
-
-    const buildingImg = getCanvasBuildingImage(node.buildingId, node.recipeId);
-    const primaryItemId =
-      recipe?.outputs[0]?.itemId ??
-      recipe?.outputs[0]?.itemName ??
-      node.outputs[0]?.itemName ??
-      node.inputs[0]?.itemName;
-    const primaryItemImg = getCanvasItemImage(primaryItemId);
-
-    if (macroMode) {
-      const cx = node.x + node.width * 0.5;
-      const cy = node.y + node.height * 0.5;
-
-      if (isDeposit) {
-        const pinRadius = 116;
-        const stemEndX = cx + pinRadius * 0.72;
-        const stemEndY = cy + pinRadius * 1.28;
-
-        ctx.beginPath();
-        ctx.moveTo(cx + pinRadius * 0.35, cy + pinRadius * 0.65);
-        ctx.lineTo(stemEndX, stemEndY);
-        ctx.strokeStyle = '#E2E8F0';
-        ctx.lineWidth = Math.min(18, Math.max(4, 1.8 / cam.zoom));
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(stemEndX, stemEndY, pinRadius * 0.16, 0, Math.PI * 2);
-        ctx.fillStyle = '#0B0F17';
-        ctx.fill();
-        ctx.strokeStyle = '#E2E8F0';
-        ctx.lineWidth = Math.min(14, Math.max(3, 1.4 / cam.zoom));
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(cx + 6, cy + 10, pinRadius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, pinRadius, 0, Math.PI * 2);
-        ctx.fillStyle = purityInfo.badgeColor;
-        ctx.fill();
-        ctx.strokeStyle = isSelected ? '#FACC15' : '#F8FAFC';
-        ctx.lineWidth = isSelected
-          ? Math.min(28, Math.max(8, 3.2 / cam.zoom))
-          : Math.min(20, Math.max(5, 2.1 / cam.zoom));
-        ctx.stroke();
-
-        const pinIcon = primaryItemImg ?? buildingImg;
-        if (pinIcon) {
-          const iconDim = pinRadius * 1.28;
-          ctx.drawImage(
-            pinIcon,
-            cx - iconDim * 0.5,
-            cy - iconDim * 0.5,
-            iconDim,
-            iconDim
-          );
-        } else {
-          drawMachineVectorIcon(
-            ctx,
-            node.buildingId,
-            cx,
-            cy,
-            pinRadius * 0.9,
-            '#FFFFFF'
-          );
-        }
-        continue;
-      }
-
-      if (!isBatterySaver) {
-        drawRoundedRect(ctx, node.x + 4, node.y + 8, node.width, node.height, 16);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-        ctx.fill();
-      }
-
-      drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
-      ctx.fillStyle = '#111A2E';
-      ctx.fill();
-
-      drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 16);
-      ctx.strokeStyle = isSelected ? '#FFFFFF' : accent;
-      ctx.lineWidth = isSelected ? Math.max(4, 3.2 / cam.zoom) : Math.max(2.6, 2.1 / cam.zoom);
-      ctx.stroke();
-
-      ctx.fillStyle = accent;
-      ctx.fillRect(node.x + 18, node.y, node.width - 36, Math.max(5, 3 / cam.zoom));
-
-      const medallionSize = Math.min(node.width, node.height) * 0.66;
-
-      drawRoundedRect(
-        ctx,
-        cx - medallionSize * 0.5,
-        cy - medallionSize * 0.5,
-        medallionSize,
-        medallionSize,
-        14
-      );
-      ctx.fillStyle = '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = Math.max(2, 1.5 / cam.zoom);
-      ctx.stroke();
-
-      const macroImg = buildingImg ?? primaryItemImg;
-      if (macroImg) {
-        const imgSize = medallionSize * 0.78;
-        ctx.drawImage(
-          macroImg,
-          cx - imgSize * 0.5,
-          cy - imgSize * 0.5,
-          imgSize,
-          imgSize
-        );
-      } else {
-        drawMachineVectorIcon(
-          ctx,
-          node.buildingId,
-          cx,
-          cy,
-          medallionSize * 0.68,
-          accent
-        );
-      }
-
-      ctx.beginPath();
-      ctx.arc(node.x + node.width - 22, node.y + 22, 9.5, 0, Math.PI * 2);
-      ctx.fillStyle = statusColor;
-      ctx.fill();
-      ctx.strokeStyle = '#0B0F17';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-      continue;
-    }
-
-    // In Satisfactory, Resource Deposits are natural geological planetary features,
-    // NOT machine card boxes! We render them as terrain features with embedded crystals & miner mounting collar.
-    if (isDeposit) {
-      const isMinerMounted = mountedDepositIds.has(node.id);
-      drawNaturalResourceDeposit(
-        ctx,
-        node,
-        isSelected,
-        isBatterySaver,
-        primaryItemImg,
-        isMinerMounted
-      );
-      continue;
-    }
-
-    // DETAILED UPLOAD LABS NODE CARD WINDOW (cam.zoom >= 0.25)
-    if (!isBatterySaver) {
-      drawRoundedRect(ctx, node.x + 3, node.y + 6, node.width, node.height, 10);
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
-      ctx.fill();
-    }
-
-    drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
-    ctx.fillStyle = '#131B2E';
-    ctx.fill();
-
-    const isDraggedColliding = draggingNodeId === node.id && dragHasCollision;
-
-    drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
-    ctx.strokeStyle = isDraggedColliding
-      ? '#EF4444'
-      : isSelected
-      ? '#F59E0B'
-      : isDeposit
-      ? accent
-      : '#26334D';
-    ctx.lineWidth = isDraggedColliding ? 3.2 : isSelected ? 2.4 : isDeposit ? 1.6 : 1.2;
-    ctx.stroke();
-
-    const isMinerMissingDeposit =
-      node.buildingId === 'miner_mk1' && !mountedMinerIds.has(node.id);
-
-    if (isDraggedColliding) {
-      ctx.save();
-      drawRoundedRect(ctx, node.x, node.y, node.width, node.height, 10);
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.24)';
-      ctx.fill();
-
-      ctx.font = '700 11px "JetBrains Mono", monospace';
-      ctx.fillStyle = '#EF4444';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      const blockedMsg = isMinerMissingDeposit
-        ? 'BLOCKED: MUST BE DIRECTLY ON DEPOSIT'
-        : 'BLOCKED: OVERLAP DETECTED';
-      ctx.fillText(blockedMsg, node.x + node.width / 2, node.y - 8);
-      ctx.restore();
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(node.x + 10, node.y);
-    ctx.lineTo(node.x + node.width - 10, node.y);
-    ctx.quadraticCurveTo(node.x + node.width, node.y, node.x + node.width, node.y + 10);
-    ctx.lineTo(node.x + node.width, node.y + 34);
-    ctx.lineTo(node.x, node.y + 34);
-    ctx.lineTo(node.x, node.y + 10);
-    ctx.quadraticCurveTo(node.x, node.y, node.x + 10, node.y);
-    ctx.closePath();
-    ctx.fillStyle = isDeposit ? '#132433' : '#1A2540';
-    ctx.fill();
-
-    ctx.fillStyle = accent;
-    ctx.fillRect(node.x + 10, node.y, node.width - 20, 2.5);
-    ctx.restore();
-
-    if (buildingImg) {
-      ctx.drawImage(buildingImg, node.x + 10, node.y + 8, 19, 19);
-    } else {
-      drawMachineVectorIcon(ctx, node.buildingId, node.x + 20, node.y + 18, 15, accent);
-    }
-
-    ctx.fillStyle = '#F8FAFC';
-    ctx.font = '700 12.5px "Outfit", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    const displayTitle = isDeposit ? node.title.replace(/\s*\([^)]*\)/, '') : node.title;
-    ctx.fillText(displayTitle, node.x + 34, node.y + 18);
-
-    if (isDeposit) {
-      const pText = `${purityInfo.label} · ${purityInfo.ratePerMin}/m`;
-      ctx.font = '700 9.5px "JetBrains Mono", monospace';
-      ctx.fillStyle = purityInfo.badgeColor;
-      ctx.textAlign = 'right';
-      ctx.fillText(pText, node.x + node.width - 10, node.y + 18);
-    } else {
-      let statusText = 'IDLE';
-      if (isMinerMissingDeposit) {
-        statusText = 'NO DEPOSIT';
-        statusColor = '#EF4444';
-      } else if (node.status === 'optimal') {
-        statusText = `${node.efficiency}% OPTIMAL`;
-      } else if (node.status === 'working') {
-        statusText = `${node.efficiency}% ACTIVE`;
-      } else if (node.status === 'backed_up') {
-        statusText = 'BACKED UP';
-      } else if (node.status === 'waiting') {
-        statusText = 'WAITING';
-      } else if (node.status === 'starved') {
-        statusText = 'STARVED';
-      }
-
-      ctx.font = '600 10px "JetBrains Mono", monospace';
-      ctx.fillStyle = statusColor;
-      ctx.textAlign = 'right';
-      ctx.fillText(statusText, node.x + node.width - 12, node.y + 18);
-    }
-
-    const maxCap =
-      node.maxStoredCount ??
-      getBuildingMaxStorage(
-        node.buildingId,
-        node.recipeId,
-        node.outputs[0]?.itemName ?? node.inputs[0]?.itemName ?? null
-      );
-    const storedInt = Math.min(maxCap, Math.floor(node.storedCount ?? 0));
-
-    const recipeTitle = isDeposit
-      ? `${recipe?.outputs[0]?.itemName ?? 'Ore'} Vein (${purityInfo.multiplier}x Purity)`
-      : isMinerMissingDeposit
-      ? 'Unmounted · Place on Deposit'
-      : recipe?.name ??
-        (node.buildingId === 'the_hub'
-          ? `24-Slot Depot · ${storedInt}/${maxCap}`
-          : node.buildingId === 'storage_container'
-          ? `24-Slot Buffer · ${storedInt}/${maxCap}`
-          : 'Logistics Pass-Through');
-
-    if (primaryItemImg) {
-      ctx.drawImage(primaryItemImg, node.x + 14, node.y + 40, 20, 20);
-      ctx.font = '600 11.5px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#E2E8F0';
-      ctx.textAlign = 'left';
-      ctx.fillText(recipeTitle, node.x + 38, node.y + 50);
-    } else {
-      ctx.font = '500 11.5px "Plus Jakarta Sans", sans-serif';
-      ctx.fillStyle = '#CBD5E1';
-      ctx.textAlign = 'left';
-      ctx.fillText(recipeTitle, node.x + 14, node.y + 50);
-    }
-
-    const barX = node.x + 14;
-    const barW = node.width - 28;
-
-    // 1. STORAGE BARS: Miner Mk.1 has single full-width output buffer; Processors have dual IN & OUT bars
-    if (node.buildingId === 'miner_mk1') {
-      const storageBarY = node.y + node.height - 30;
-      const storageBarH = 11;
-      const outMax = Math.max(1, maxCap);
-      const outInt = storedInt;
-      const outRatio = Math.max(0, Math.min(1, (node.storedCount ?? 0) / outMax));
-      const isOutFull = outRatio >= 0.995;
-
-      drawRoundedRect(ctx, barX, storageBarY, barW, storageBarH, 4);
-      ctx.fillStyle = '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = isOutFull ? '#F59E0B' : '#1E293B';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (outRatio > 0.005) {
-        drawRoundedRect(
-          ctx,
-          barX,
-          storageBarY,
-          Math.max(5, barW * outRatio),
-          storageBarH,
-          4
-        );
-        ctx.fillStyle = isOutFull ? '#D97706' : '#0D9488';
-        ctx.fill();
-      }
-
-      ctx.font = '700 8px "JetBrains Mono", monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = isOutFull ? '#FDE68A' : '#5EEAD4';
-      const oreName = node.outputs[0]?.itemName ?? 'ORE';
-      ctx.fillText(`STORAGE · ${oreName.toUpperCase()}`, barX + 6, storageBarY + storageBarH * 0.5 + 0.5);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = isOutFull ? '#FDE68A' : '#F8FAFC';
-      ctx.fillText(
-        `${outInt} / ${outMax}`,
-        barX + barW - 6,
-        storageBarY + storageBarH * 0.5 + 0.5
-      );
-    } else {
-      // DUAL INPUT & OUTPUT STORAGE BARS (IN on Left under Input Ports, OUT on Right under Output Ports)
-      const storageBarY = node.y + node.height - 30;
-      const storageBarH = 11;
-      const halfBarW = (barW - 6) * 0.5;
-
-      const inMax = Math.max(
-        1,
-        node.maxInputStoredCount ??
-          node.inputs.reduce((acc, p) => acc + (p.maxBuffer ?? 100), 0)
-      );
-      const inRaw =
-        node.inputStoredCount ??
-        node.inputs.reduce((acc, p) => acc + (p.bufferedCount ?? 0), 0);
-      const inInt = Math.min(inMax, Math.floor(inRaw));
-      const inRatio = Math.max(0, Math.min(1, inRaw / inMax));
-      const isInFull =
-        node.inputs.length > 0 &&
-        node.inputs.some((p) => (p.bufferedCount ?? 0) >= (p.maxBuffer ?? 100) - 0.5);
-
-      const outMax = Math.max(1, maxCap);
-      const outRaw = node.storedCount ?? 0;
-      const outInt = storedInt;
-      const outRatio = Math.max(0, Math.min(1, outRaw / outMax));
-      const isOutFull = outRatio >= 0.995;
-
-      // Left Bar: Input Storage (IN)
-      drawRoundedRect(ctx, barX, storageBarY, halfBarW, storageBarH, 4);
-      ctx.fillStyle = '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = isInFull ? '#F59E0B' : '#1E293B';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (inRatio > 0.005) {
-        drawRoundedRect(
-          ctx,
-          barX,
-          storageBarY,
-          Math.max(5, halfBarW * inRatio),
-          storageBarH,
-          4
-        );
-        ctx.fillStyle = isInFull ? '#D97706' : '#0891B2';
-        ctx.fill();
-      }
-
-      ctx.font = '700 8px "JetBrains Mono", monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = isInFull ? '#FDE68A' : '#67E8F9';
-      ctx.fillText('IN', barX + 4, storageBarY + storageBarH * 0.5 + 0.5);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = isInFull ? '#FDE68A' : '#F8FAFC';
-      ctx.fillText(
-        `${inInt}/${inMax}`,
-        barX + halfBarW - 4,
-        storageBarY + storageBarH * 0.5 + 0.5
-      );
-
-      // Right Bar: Output Storage (OUT)
-      const outBarX = barX + halfBarW + 6;
-      drawRoundedRect(ctx, outBarX, storageBarY, halfBarW, storageBarH, 4);
-      ctx.fillStyle = '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = isOutFull ? '#F59E0B' : '#1E293B';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (outRatio > 0.005) {
-        drawRoundedRect(
-          ctx,
-          outBarX,
-          storageBarY,
-          Math.max(5, halfBarW * outRatio),
-          storageBarH,
-          4
-        );
-        ctx.fillStyle = isOutFull ? '#D97706' : '#0D9488';
-        ctx.fill();
-      }
-
-      ctx.textAlign = 'left';
-      ctx.fillStyle = isOutFull ? '#FDE68A' : '#5EEAD4';
-      ctx.fillText('OUT', outBarX + 4, storageBarY + storageBarH * 0.5 + 0.5);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = isOutFull ? '#FDE68A' : '#F8FAFC';
-      ctx.fillText(
-        `${outInt}/${outMax}`,
-        outBarX + halfBarW - 4,
-        storageBarY + storageBarH * 0.5 + 0.5
-      );
-    }
-
-    // 2. CRAFTING / EXTRACTION CYCLE PROGRESS BAR (Below Storage Bars)
-    const cycleBarY = node.y + node.height - 14;
-    const cycleBarH = 6;
-    const isContainer =
-      node.buildingId === 'storage_container' || node.buildingId === 'the_hub';
-    const isLogistics =
-      node.buildingId === 'splitter' || node.buildingId === 'merger';
-
-    drawRoundedRect(ctx, barX, cycleBarY, barW, cycleBarH, 3);
-    ctx.fillStyle = '#0B0F17';
-    ctx.fill();
-    ctx.strokeStyle = '#1E293B';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    const cycleFillRatio =
-      isLogistics || isContainer
-        ? node.efficiency > 0
-          ? 1
-          : 0
-        : Math.max(0, Math.min(1, node.progress));
-
-    if (cycleFillRatio > 0.01) {
-      drawRoundedRect(
-        ctx,
-        barX,
-        cycleBarY,
-        Math.max(6, barW * cycleFillRatio),
-        cycleBarH,
-        3
-      );
-      ctx.fillStyle = accent;
-      ctx.fill();
-    }
-
-    // Input Port Dots, Official Resource Icons & Stacked Rate Readouts (Miners have 0 input ports)
-    const inputCount = node.buildingId === 'miner_mk1' ? 0 : node.inputs.length;
-    for (let i = 0; i < inputCount; i++) {
-      const port = node.inputs[i];
-      const pt = getPortWorldPosition(node, 'input', i, inputCount);
-      const isConnected = connectedInputPortKeys.has(`${node.id}:${port.id}`);
-      const isPortFull = (port.bufferedCount ?? 0) >= (port.maxBuffer ?? 100) - 0.5;
-      const portImg = getCanvasItemImage(port.itemName ?? port.label);
-
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 7.5, 0, Math.PI * 2);
-      ctx.fillStyle = isPortFull
-        ? '#D97706'
-        : isConnected
-        ? '#06B6D4'
-        : '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = isPortFull ? '#FBBF24' : '#38BDF8';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = isConnected || isPortFull ? '#FFFFFF' : '#38BDF8';
-      ctx.fill();
-
-      let textOffsetX = pt.x + 12;
-      if (portImg) {
-        ctx.drawImage(portImg, pt.x + 11, pt.y - 7, 14, 14);
-        textOffsetX = pt.x + 28;
-      }
-
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      if (cfg.showPortRates) {
-        ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
-        ctx.fillStyle = '#CBD5E1';
-        ctx.fillText(port.label, textOffsetX, pt.y - 6);
-
-        ctx.font = '600 9.5px "JetBrains Mono", monospace';
-        ctx.fillStyle = isPortFull ? '#FBBF24' : '#38BDF8';
-        ctx.fillText(
-          `${port.actualRatePerMin}/${port.targetRatePerMin}/m`,
-          textOffsetX,
-          pt.y + 7
-        );
-      } else {
-        ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
-        ctx.fillStyle = '#CBD5E1';
-        ctx.fillText(port.label, textOffsetX, pt.y);
-      }
-    }
-
-    // Output Port Dots, Official Resource Icons & Stacked Rate Readouts
-    for (let i = 0; i < node.outputs.length; i++) {
-      const port = node.outputs[i];
-      const pt = getPortWorldPosition(node, 'output', i, node.outputs.length);
-      const isConnected = connectedOutputPortKeys.has(`${node.id}:${port.id}`);
-      const isTapSelected =
-        curTapPort?.nodeId === node.id && curTapPort?.portId === port.id;
-      const portImg = getCanvasItemImage(port.itemName ?? port.label);
-
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, isTapSelected ? 9.5 : 7.5, 0, Math.PI * 2);
-      ctx.fillStyle = isTapSelected
-        ? '#F59E0B'
-        : isConnected
-        ? '#F59E0B'
-        : '#0B0F17';
-      ctx.fill();
-      ctx.strokeStyle = '#FBBF24';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = isConnected || isTapSelected ? '#0B0F17' : '#FBBF24';
-      ctx.fill();
-
-      let textRightX = pt.x - 12;
-      if (portImg) {
-        ctx.drawImage(portImg, pt.x - 25, pt.y - 7, 14, 14);
-        textRightX = pt.x - 28;
-      }
-
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      if (cfg.showPortRates) {
-        ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillText(port.label, textRightX, pt.y - 6);
-
-        ctx.font = '600 9.5px "JetBrains Mono", monospace';
-        ctx.fillStyle = '#FBBF24';
-        ctx.fillText(`${port.actualRatePerMin}/m`, textRightX, pt.y + 7);
-      } else {
-        ctx.font = '600 10.5px "Plus Jakarta Sans", sans-serif';
-        ctx.fillStyle = '#F8FAFC';
-        ctx.fillText(port.label, textRightX, pt.y);
-      }
-    }
-  }
-
-  // 4.5 Render Floating Belt Telemetry Badges (Top Layer so they always draw ON TOP of Machine Nodes)
+  // 4. Render Machine Nodes & Natural World Resource Deposits
+  renderMachineNodesAndDeposits({
+    ctx,
+    cam,
+    cfg,
+    nodes,
+    macroMode,
+    isBatterySaver,
+    curSelectedId,
+    selectedNodeIds,
+    draggingNodeId,
+    dragHasCollision,
+    curTapPort,
+    connectedInputPortKeys,
+    connectedOutputPortKeys,
+    isBoxInViewport,
+  });
+
+  // 4.5 Render Floating Belt Telemetry Badges (Top Layer)
   if (!macroMode && cfg.showPortRates) {
     const placedBadges: { x: number; y: number; w: number; h: number }[] = [];
     const badgeH = 18;
@@ -1413,7 +802,7 @@ export function renderFactoryScene(params: CanvasRenderParams) {
     }
   }
 
-  // 5. Render Satisfactory-Style Snap Mode Alignment Laser Guidelines (Topmost Layer)
+  // 5. Render Satisfactory-Style Snap Mode Alignment Laser Guidelines
   const guidelinesToDraw =
     activeGuidelines.length > 0 ? activeGuidelines : ghostGuidelines;
 

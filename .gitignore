@@ -9,3 +9,5 @@ coverage/
 .aistudio/
 .playwright-cli/
 public/assets/aistudio/
+godot/.godot/
+*.apk

@@ -4,6 +4,14 @@ Short, straight to the point.
 
 ---
 
+## [0.0.2] — 2026-11-07 (`0.0.2 Initial Release`)
+
+- **Native Godot 4 Engine (`/godot`)**: Full statically-typed GDScript 2.0 migration targeting the OpenGL ES 3 (`gl_compatibility`) renderer for locked 60 FPS on low-end Android devices.
+- **Automated Godot 4 Android APK CI/CD**: Updated `.github/workflows/android-release.yml` to compile and publish `ficsit-labs-0.0.2.apk` using headless Godot 4.3 and official Android export templates.
+- **Icon Header & Asset Cleanup**: Re-encoded `power_shard.png` and `somersloop.png` to canonical PNG headers for native Godot 4 texture import and removed unused assets.
+
+---
+
 ## [0.0.1] — 2026-11-06 (`0.0.1 Initial Release`)
 
 - **Initial Open Source Release**: Clean initial public release licensed under the GNU General Public License v3.0 (GPLv3).
@@ -11,7 +19,7 @@ Short, straight to the point.
 - **Authentic Machine GUI**: Real Satisfactory top & lower machine plates, 1%–250% manual overclocking, Power Shard slots, 45-slot Pioneer Inventory, and interactive Standby switches.
 - **2D Conveyor Physics**: Discrete item simulation with backpressure, tight 1.2m item spacing, filleted 90° corners, and automated overpass crossings.
 - **Continuous Camera & Controls**: Smooth panning and zooming from `0.06x` to `1.85x` with no edge snapping, touch pinch/double-tap, and keyboard shortcuts.
-- **Offline PWA & Saves**: Local storage persistence, auto-saving, and JSON save export/import.
+- **Offline PWA & Saves**: Local storage persistence, auto-saving, and cross-compatible JSON save export/import.
 
 ---
 

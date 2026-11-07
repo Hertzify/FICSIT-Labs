@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3 uid="uid://ficsit_labs_main"]
+
+[ext_resource type="Script" path="res://scripts/SectorWorld.gd" id="1_world"]
+[ext_resource type="Script" path="res://scripts/HUDController.gd" id="2_hud"]
+
+[node name="Main" type="Node2D"]
+
+[node name="SectorWorld" type="Node2D" parent="."]
+script = ExtResource("1_world")
+
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+script = ExtResource("2_hud")
+sector_world_path = NodePath("../SectorWorld")

@@ -271,9 +271,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.1 Initial Release', () => {
-  assert.equal(APP_VERSION, '0.0.1');
-  assert.equal(APP_BUILD_TAG, '0.0.1 Initial Release');
+test('version tracking matches 0.0.2 Initial Release', () => {
+  assert.equal(APP_VERSION, '0.0.2');
+  assert.equal(APP_BUILD_TAG, '0.0.2 Initial Release');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -1667,5 +1667,37 @@ test('Dense 20-machine factory with multi-waypoint belts routes in under 50ms wi
     `Expected dense waypoint belt simulation to complete in < 50ms, took ${elapsedMs}ms`
   );
   assert.ok((sim.connections[0].lengthPx ?? 0) > 100);
+});
+
+test('Native Godot 4 (GDScript 2.0 + gl_compatibility) project in /godot maintains 1:1 asset and script parity', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const root = process.cwd();
+
+  const requiredFiles = [
+    'godot/project.godot',
+    'godot/export_presets.cfg',
+    'godot/scenes/Main.tscn',
+    'godot/scripts/Catalog.gd',
+    'godot/scripts/SynthAudio.gd',
+    'godot/scripts/Router.gd',
+    'godot/scripts/FactorySim.gd',
+    'godot/scripts/GameState.gd',
+    'godot/scripts/SectorWorld.gd',
+    'godot/scripts/HUDController.gd',
+    'godot/assets/icons/buildings/miner_top_bay_clean.png',
+    'godot/assets/icons/buildings/processor_top_bay_clean.png',
+    'godot/assets/icons/buildings/machine_lower_bay_clean.png',
+    'godot/assets/icons/buildings/miner_mk1.png',
+    'godot/assets/icons/items/power_shard.png',
+  ];
+
+  for (const rel of requiredFiles) {
+    assert.ok(fs.existsSync(path.join(root, rel)), `Expected ${rel} to exist in native Godot 4 project`);
+  }
+
+  const projectCfg = fs.readFileSync(path.join(root, 'godot/project.godot'), 'utf8');
+  assert.ok(projectCfg.includes('gl_compatibility'), 'Godot 4 project must target gl_compatibility (GLES3) renderer for low-end Android');
+  assert.ok(projectCfg.includes('config/version="0.0.2"'), 'Godot 4 project version must match 0.0.2');
 });
 

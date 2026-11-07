@@ -1,4 +1,4 @@
-name: Android APK & Dev Release
+name: Native Godot 4 Android APK & Release
 
 on:
   push:
@@ -10,16 +10,19 @@ on:
   workflow_dispatch:
     inputs:
       release_title:
-        description: 'Release Title (defaults to package.json version + dev build)'
+        description: 'Release Title (defaults to v{version} — Initial Release — FICSIT Labs)'
         required: false
         default: ''
 
 permissions:
   contents: write
 
+env:
+  GODOT_VERSION: "4.3"
+
 jobs:
   build-android-apk:
-    name: Build Android APK & Publish Dev Release
+    name: Build Native Godot 4 Android APK & Publish Release
     runs-on: ubuntu-latest
 
     steps:
@@ -31,17 +34,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Setup Java JDK 21 for Android Gradle
+      - name: Setup Java JDK 17 for Godot 4 Android Export
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
-
-      - name: Accept Pre-Installed Android SDK Licenses
-        run: |
-          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          fi
+          java-version: '17'
 
       - name: Read Version from package.json
         id: pkg
@@ -51,46 +48,45 @@ jobs:
           echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
           echo "apk_name=ficsit-labs-${VERSION}.apk" >> $GITHUB_OUTPUT
 
-      - name: Install Dependencies & Build Web Bundle
+      - name: Install Headless Godot 4 & Export Templates
         run: |
-          npm install --legacy-peer-deps || (
-            node -e '
-              const fs = require("fs");
-              const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-              for (const section of ["dependencies", "devDependencies"]) {
-                if (!pkg[section]) continue;
-                for (const k of Object.keys(pkg[section])) {
-                  if (k === "tailwindcss" || k === "@tailwindcss/vite") {
-                    pkg[section][k] = "4.3.3";
-                  } else {
-                    pkg[section][k] = "latest";
-                  }
-                }
-              }
-              fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
-            ' && npm install --legacy-peer-deps
-          )
-          npm run build
+          mkdir -p ~/.local/bin
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
 
-      - name: Initialize Capacitor Android, Game Category & Immersive Fullscreen
-        run: |
-          npm install --save --legacy-peer-deps @capacitor/core@^7.0.0 @capacitor/cli@^7.0.0 @capacitor/android@^7.0.0
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
-          npx cap copy android
-          node scripts/configure-android.mjs
+          wget -q https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/.local/bin/godot
+          chmod +x ~/.local/bin/godot
 
-      - name: Build Android APK via Gradle
-        working-directory: ./android
+          wget -q https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+          rm -rf Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip Godot_v${GODOT_VERSION}-stable_export_templates.tpz templates
+
+      - name: Configure Android SDK & Debug Keystore for Godot 4
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease assembleDebug --no-daemon
-          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            cp app/build/outputs/apk/release/app-release.apk "../${{ steps.pkg.outputs.apk_name }}"
-          else
-            cp app/build/outputs/apk/debug/app-debug.apk "../${{ steps.pkg.outputs.apk_name }}"
-          fi
+          mkdir -p ~/.android
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
+            -keystore ~/.android/debug.keystore -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+
+          mkdir -p ~/.config/godot
+          cat <<EOF > ~/.config/godot/editor_settings-4.tres
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF
+
+      - name: Export Native Godot 4 Android APK (GLES3 Compatibility)
+        run: |
+          ~/.local/bin/godot --headless --path ./godot --import
+          ~/.local/bin/godot --headless --path ./godot --export-debug "Android" "../${{ steps.pkg.outputs.apk_name }}"
+          ls -lh "./${{ steps.pkg.outputs.apk_name }}"
 
       - name: Generate Release Notes from CHANGELOG.md
         run: |

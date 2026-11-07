@@ -21,7 +21,7 @@ export const ITEM_ICON_PATHS: Record<string, string> = {
 export const BUILDING_ICON_PATHS: Record<string, string> = {
   the_hub: './icons/buildings/the_hub.png',
   miner_mk1: './icons/buildings/miner_mk1.png',
-  miner_chassis_bg: './icons/buildings/miner_chassis_bg.jpg?v=2',
+  miner_chassis_bg: './icons/buildings/miner_chassis_bg.jpg?v=7',
   smelter: './icons/buildings/smelter.png',
   constructor: './icons/buildings/constructor.png',
   assembler: './icons/buildings/assembler.png',
@@ -113,6 +113,9 @@ function getOrLoadImage(src: string | null): HTMLImageElement | null {
   let img = imageCache.get(src);
   if (!img) {
     img = new Image();
+    img.onerror = () => {
+      imageCache.delete(src);
+    };
     img.src = src;
     imageCache.set(src, img);
   }

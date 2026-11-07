@@ -46,6 +46,7 @@ var _sim_accum: float = 0.0
 var _autosave_timer: float = 0.0
 
 func _ready() -> void:
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
 	_init_default_pioneer_inventory()
 	load_settings_from_disk()
 	load_saves_from_disk()

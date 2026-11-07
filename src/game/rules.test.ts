@@ -271,9 +271,9 @@ test('serializeSaveExport and parseSaveImport round-trip save slot and ensure 32
   assert.equal(parsed.slot.nodes.length, 36);
 });
 
-test('version tracking matches 0.0.2 Initial Release', () => {
-  assert.equal(APP_VERSION, '0.0.2');
-  assert.equal(APP_BUILD_TAG, '0.0.2 Initial Release');
+test('version tracking matches 0.0.2.1 Initial Release', () => {
+  assert.equal(APP_VERSION, '0.0.2.1');
+  assert.equal(APP_BUILD_TAG, '0.0.2.1 Initial Release');
 });
 
 test('doNodesOverlap and isNodePositionValid enforce strict no-overlap rule between buildings', () => {
@@ -1688,6 +1688,8 @@ test('Native Godot 4 (GDScript 2.0 + gl_compatibility) project in /godot maintai
     'godot/assets/icons/buildings/miner_top_bay_clean.png',
     'godot/assets/icons/buildings/processor_top_bay_clean.png',
     'godot/assets/icons/buildings/machine_lower_bay_clean.png',
+    'godot/assets/icons/buildings/miner_chassis_bg.png',
+    'public/icons/buildings/miner_chassis_bg.jpg',
     'godot/assets/icons/buildings/miner_mk1.png',
     'godot/assets/icons/items/power_shard.png',
   ];
@@ -1698,6 +1700,7 @@ test('Native Godot 4 (GDScript 2.0 + gl_compatibility) project in /godot maintai
 
   const projectCfg = fs.readFileSync(path.join(root, 'godot/project.godot'), 'utf8');
   assert.ok(projectCfg.includes('gl_compatibility'), 'Godot 4 project must target gl_compatibility (GLES3) renderer for low-end Android');
-  assert.ok(projectCfg.includes('config/version="0.0.2"'), 'Godot 4 project version must match 0.0.2');
+  assert.ok(projectCfg.includes('config/version="0.0.2.1"'), 'Godot 4 project version must match 0.0.2.1');
+  assert.ok(projectCfg.includes('window/handheld/orientation=4'), 'Godot 4 project must lock handheld orientation to SCREEN_SENSOR_LANDSCAPE (4)');
 });
 

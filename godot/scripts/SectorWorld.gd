@@ -699,58 +699,95 @@ func _draw_machine_node(n: Dictionary, macro: bool, cam_z: float, font: Font) ->
 			draw_texture_rect(b_tex, Rect2(nx + nw * 0.5 - 36.0, ny + nh * 0.5 - 36.0, 72.0, 72.0), false)
 		return
 
-	# Authentic Exterior Miner Mk.1 Card (with Miner Mk.1 Build Icon in top-left bay + clickable Standby switch)
+	# Authentic Exterior Miner Mk.1 Card using miner_chassis_bg.png + live telemetry & clickable I/O Standby switch
 	if b_id == "miner_mk1":
-		draw_rect(Rect2(nx, ny, nw, nh), Color("#4A4F57"), true)
-		draw_rect(Rect2(nx, ny, nw, nh), Color("#38BDF8") if is_sel else Color("#20242A"), false, 3.0 if is_sel else 2.0)
+		var chassis_tex: Texture2D = Catalog.get_cached_texture("res://assets/icons/buildings/miner_chassis_bg.png")
+		if chassis_tex:
+			draw_texture_rect(chassis_tex, Rect2(nx, ny, nw, nh), false)
+		else:
+			draw_rect(Rect2(nx, ny, nw, nh), Color("#52565E"), true)
 
-		# Top-left bay recessed housing + Miner Mk.1 Build Menu Icon
-		var bay_rect := Rect2(nx + nw * 0.06, ny + nh * 0.11, nw * 0.40, nh * 0.50)
-		draw_rect(bay_rect, Color("#14181F"), true)
-		draw_rect(bay_rect, Color("#F59E0B", 0.45), false, 1.5)
-		var miner_tex: Texture2D = Catalog.get_building_texture("miner_mk1")
-		if miner_tex:
-			draw_texture_rect(miner_tex, Rect2(bay_rect.position.x + 14.0, bay_rect.position.y + 4.0, bay_rect.size.x - 28.0, bay_rect.size.y - 8.0), false)
-
-		# Central black status monitor
-		var mon_rect := Rect2(nx + nw * 0.48, ny + nh * 0.06, nw * 0.25, nh * 0.60)
-		draw_rect(mon_rect, Color("#0D1117"), true)
 		var is_stby: bool = bool(n.get("standby", false))
-		var status_str: String = "Standby" if is_stby else ("Mining" if str(n.get("status", "")) == "running" else "Paused")
-		var status_col: Color = Color("#EF4444") if is_stby else Color("#FACC15")
-		draw_circle(Vector2(mon_rect.position.x + 14.0, mon_rect.position.y + 18.0), 4.5, status_col)
-		draw_string(font, Vector2(mon_rect.position.x + 24.0, mon_rect.position.y + 22.0), status_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#F8FAFC"))
+		var status_raw: String = str(n.get("status", "running"))
+		var is_backed_up: bool = status_raw == "backed_up"
+		var eff_val: int = int(roundf(float(n.get("efficiency", 0.0))))
+		var status_str: String = "Standby" if is_stby else ("Output Full" if is_backed_up else ("Mining" if status_raw == "running" else "No Deposit"))
+		var light_col: Color = Color("#EF4444") if (is_stby or status_raw == "starved") else (Color("#FACC15") if (is_backed_up or eff_val < 99) else Color("#22C55E"))
+
+		# 1. Center Dark Monitor Screen Overlay (0.506..0.734, 0.111..0.392)
+		var scr_rect := Rect2(nx + nw * 0.506, ny + nh * 0.111, nw * 0.228, nh * 0.281)
+		draw_rect(scr_rect, Color("#0A0C0F"), true)
+		draw_circle(Vector2(scr_rect.position.x + 10.0, scr_rect.position.y + 11.0), 3.6, light_col)
+		draw_string(font, Vector2(scr_rect.position.x + 18.0, scr_rect.position.y + 15.0), status_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("#FFFFFF"))
 
 		var clock_pct: float = float(n.get("overclock", 100.0))
 		var mw_val: float = Catalog.get_building_power_mw("miner_mk1", clock_pct, is_stby)
-		var eff_val: int = int(roundf(float(n.get("efficiency", 0.0))))
-		draw_string(font, Vector2(mon_rect.position.x + 6.0, mon_rect.position.y + 52.0), "%.1f MW · %d%%" % [mw_val, eff_val], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#FACC15"))
+		draw_string(font, Vector2(scr_rect.position.x + 4.0, scr_rect.position.y + 34.0), "%.1f MW · %d%%" % [mw_val, eff_val], HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#FACC15"))
 
-		# Right-side Output Card
-		var out_rect := Rect2(nx + nw * 0.75, ny + nh * 0.10, nw * 0.19, nh * 0.56)
-		draw_rect(out_rect, Color("#F1F5F9"), true)
+		# 2. Top-Right White [ OUTPUT ] Card Overlay (Ore slot at 0.795, 0.165, 0.143, 0.276)
+		var slot_rect := Rect2(nx + nw * 0.795, ny + nh * 0.165, nw * 0.143, nh * 0.276)
 		var outs: Array = n.get("outputs", [])
 		var out_item: String = str(outs[0].get("itemName", "Iron Ore")) if outs.size() > 0 else "Iron Ore"
 		var out_rate: float = float(outs[0].get("ratePerMin", 60.0)) if outs.size() > 0 else 60.0
-		var item_tex: Texture2D = Catalog.get_item_texture(out_item)
-		if item_tex:
-			draw_texture_rect(item_tex, Rect2(out_rect.position.x + 8.0, out_rect.position.y + 4.0, 34.0, 34.0), false)
-		draw_rect(Rect2(out_rect.position.x + 22.0, out_rect.position.y + 28.0, 26.0, 13.0), Color("#E5941A"), true)
-		draw_string(font, Vector2(out_rect.position.x + 25.0, out_rect.position.y + 38.0), str(int(n.get("outputStorage", 0))), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#FFFFFF"))
-		draw_string(font, Vector2(out_rect.position.x + 4.0, out_rect.position.y + 66.0), "%d/m" % int(roundf(out_rate)), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#D97706"))
+		if out_item != "Iron Ore":
+			draw_rect(slot_rect, Color("#9EA2AB"), true)
+			var item_tex: Texture2D = Catalog.get_item_texture(out_item)
+			if item_tex:
+				draw_texture_rect(item_tex, Rect2(slot_rect.position.x + 3.0, slot_rect.position.y + 3.0, slot_rect.size.x - 6.0, slot_rect.size.y - 6.0), false)
 
-		# Bottom-left Clock Speed Bar (0% - 250%)
-		var oc_rect := Rect2(nx + nw * 0.06, ny + nh * 0.70, nw * 0.68, nh * 0.24)
-		draw_rect(oc_rect, Color("#F8FAFC"), true)
-		draw_string(font, Vector2(oc_rect.position.x + 6.0, oc_rect.position.y + 13.0), "Clock Speed: %d%%" % int(roundf(clock_pct)), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("#0F172A"))
-		var fill_ratio: float = clampf(clock_pct / 250.0, 0.0, 1.0)
-		draw_rect(Rect2(oc_rect.position.x + 6.0, oc_rect.position.y + 18.0, (oc_rect.size.x - 12.0) * fill_ratio, 10.0), Color("#E5941A"), true)
+		# Orange Stored Count Badge at Bottom-Right of Ore Slot
+		var stored_str: String = str(int(n.get("outputStorage", 0)))
+		var badge_rect := Rect2(slot_rect.end.x - 18.0, slot_rect.end.y - 11.0, 17.0, 10.0)
+		draw_rect(badge_rect, Color("#DF8A2E"), true)
+		draw_string(font, Vector2(badge_rect.position.x + 2.0, badge_rect.position.y + 8.5), stored_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#FFFFFF"))
 
-		# Bottom-right Standby Rocker Switch
-		var sw_rect := Rect2(nx + nw * 0.78, ny + nh * 0.72, nw * 0.16, nh * 0.18)
-		draw_rect(sw_rect, Color("#1E293B"), true)
-		draw_rect(Rect2(sw_rect.position.x + 2.0, sw_rect.position.y + 2.0, sw_rect.size.x * 0.45, sw_rect.size.y - 4.0), Color("#EF4444") if not is_stby else Color("#334155"), true)
-		draw_string(font, Vector2(sw_rect.position.x + 4.0, sw_rect.position.y + sw_rect.size.y + 10.0), "STANDBY", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#E2E8F0"))
+		var is_compact: bool = str(GameState.settings.get("rateDisplayFormat", "per_minute")) == "compact"
+		var rate_lbl: String = "%d %s" % [int(roundf(out_rate)), "/m" if is_compact else "per min"]
+		draw_string(font, Vector2(nx + nw * 0.785, ny + nh * 0.525), rate_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#DF8A2E"))
+
+		# 3. Bottom-Left Stepped White Overclock Box Overlay (0% — 250%)
+		draw_string(font, Vector2(nx + nw * 0.068, ny + nh * 0.768), "Clock Speed: %d%%" % int(roundf(clock_pct)), HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#1E2024"))
+		var seg_x: float = nx + nw * 0.068
+		var seg_y: float = ny + nh * 0.815
+		var seg_total_w: float = nw * 0.705
+		var seg_h: float = nh * 0.072
+		var shards: int = clampi(int(n.get("powerShards", 0)), 0, 3)
+		var max_unlocked: float = 100.0 + float(shards * 50)
+		var seg_w: float = seg_total_w / 5.0
+		for s_idx in range(5):
+			var s_start: float = float(s_idx * 50)
+			var s_end: float = float((s_idx + 1) * 50)
+			var sx: float = seg_x + float(s_idx) * seg_w
+			var sw: float = seg_w - 2.0
+			draw_rect(Rect2(sx, seg_y, sw, seg_h), Color("#484B51") if s_end <= max_unlocked else Color("#9CA3AF"), true)
+			if clock_pct > s_start:
+				var fill_span: float = minf(s_end, clock_pct) - s_start
+				var fw: float = (fill_span / 50.0) * sw
+				if fw > 0.0:
+					draw_rect(Rect2(sx, seg_y, fw, seg_h), Color("#E0862B"), true)
+
+		# 4. Bottom-Right Horizontal I / O Standby Rocker Switch Overlay (0.838, 0.785, 0.098, 0.096)
+		var rkr_rect := Rect2(nx + nw * 0.838, ny + nh * 0.785, nw * 0.098, nh * 0.096)
+		var half_w: float = rkr_rect.size.x * 0.5
+		draw_rect(Rect2(rkr_rect.position.x, rkr_rect.position.y, half_w, rkr_rect.size.y), Color("#B93815") if not is_stby else Color("#262930"), true)
+		draw_rect(Rect2(rkr_rect.position.x + half_w, rkr_rect.position.y, half_w, rkr_rect.size.y), Color("#B91C1C") if is_stby else Color("#32363E"), true)
+		draw_line(
+			Vector2(rkr_rect.position.x + half_w * 0.48, rkr_rect.position.y + rkr_rect.size.y * 0.25),
+			Vector2(rkr_rect.position.x + half_w * 0.48, rkr_rect.position.y + rkr_rect.size.y * 0.75),
+			Color("#FFFFFF") if not is_stby else Color("#9CA3AF"),
+			1.6
+		)
+		draw_arc(
+			Vector2(rkr_rect.position.x + half_w * 1.48, rkr_rect.position.y + rkr_rect.size.y * 0.5),
+			minf(half_w, rkr_rect.size.y) * 0.24,
+			0.0,
+			TAU,
+			12,
+			Color("#FFFFFF") if is_stby else Color("#9CA3AF"),
+			1.4
+		)
+
+		draw_rect(Rect2(nx, ny, nw, nh), Color("#F59E0B") if is_sel else Color("#27292E"), false, 2.5 if is_sel else 1.5)
 	else:
 		# Standard Processor / Logistics Card
 		draw_rect(Rect2(nx, ny, nw, nh), Color("#161F30"), true)

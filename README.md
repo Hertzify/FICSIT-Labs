@@ -2,7 +2,7 @@
 
 A fast, touch-friendly 2D factory automation tycoon powered by **Godot Engine 4 (GDScript + OpenGL ES 3 Compatibility)** for low-end Android devices, with a companion interactive web build.
 
-![Version](https://img.shields.io/badge/version-0.0.2%20Initial%20Release-F59E0B?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.0.2.1%20Initial%20Release-F59E0B?style=flat-square)
 ![Engine](https://img.shields.io/badge/engine-Godot%204.3%20%28GDScript%20%2B%20GLES3%29-478CBF?style=flat-square)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Android%20APK%20%7C%20Desktop%20%7C%20Web-38BDF8?style=flat-square)
@@ -30,10 +30,10 @@ Open the `/godot/project.godot` file in **Godot Engine 4.3+**:
 godot --path ./godot
 
 # Export Native Android APK (GLES3 Compatibility)
-godot --headless --path ./godot --export-debug "Android" ../ficsit-labs-0.0.2.apk
+godot --headless --path ./godot --export-debug "Android" ../ficsit-labs-0.0.2.1.apk
 ```
 
-*Note: Pushing to `main` automatically compiles and publishes `ficsit-labs-0.0.2.apk` via GitHub Actions (`.github/workflows/android-release.yml`).*
+*Note: Pushing to `main` automatically compiles and publishes `ficsit-labs-0.0.2.1.apk` via GitHub Actions (`.github/workflows/android-release.yml`).*
 
 ### 2. Companion Web Preview
 

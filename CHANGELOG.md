@@ -4,11 +4,18 @@ Short, straight to the point.
 
 ---
 
+## [0.0.2.1] — 2026-11-07 (`0.0.2.1 Initial Release`)
+
+- **Landscape Orientation Lock**: Fixed Godot 4 Android orientation (`window/handheld/orientation=4` / `SCREEN_SENSOR_LANDSCAPE`) and startup `DisplayServer.screen_set_orientation` so the APK locks strictly to landscape.
+- **Restored Exact `miner_chassis_bg.jpg`**: Restored the original `v0.0.1` `miner_chassis_bg.jpg` artwork (`154 KB`) and synced its lossless PNG counterpart into `/godot/assets/icons/buildings/miner_chassis_bg.png`.
+
+---
+
 ## [0.0.2] — 2026-11-07 (`0.0.2 Initial Release`)
 
 - **Native Godot 4 Engine (`/godot`)**: Full statically-typed GDScript 2.0 migration targeting the OpenGL ES 3 (`gl_compatibility`) renderer for locked 60 FPS on low-end Android devices.
-- **Automated Godot 4 Android APK CI/CD**: Updated `.github/workflows/android-release.yml` to compile and publish `ficsit-labs-0.0.2.apk` using headless Godot 4.3 and official Android export templates.
-- **Icon Header & Asset Cleanup**: Re-encoded `power_shard.png` and `somersloop.png` to canonical PNG headers for native Godot 4 texture import and removed unused assets.
+- **Automated Godot 4 Android APK CI/CD**: Updated `.github/workflows/android-release.yml` to compile and publish the native Android APK using headless Godot 4.3.
+- **Canonical PNG Headers**: Re-encoded `power_shard.png` and `somersloop.png` to canonical PNG byte headers for native Godot 4 texture import.
 
 ---
 

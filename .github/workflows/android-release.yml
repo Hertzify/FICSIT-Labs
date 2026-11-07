@@ -63,12 +63,26 @@ jobs:
           mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
           rm -rf Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip Godot_v${GODOT_VERSION}-stable_export_templates.tpz templates
 
-      - name: Configure Android SDK & Debug Keystore for Godot 4
+      - name: Configure Persistent Android Signing Keystore & Version Code
         run: |
           mkdir -p ~/.android
-          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
-            -keystore ~/.android/debug.keystore -storepass android \
-            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          if [ -f "./godot/android/ficsit-debug.cert.pem" ] && [ -f "./godot/android/ficsit-debug.key.pem" ]; then
+            openssl pkcs12 -export \
+              -in ./godot/android/ficsit-debug.cert.pem \
+              -inkey ./godot/android/ficsit-debug.key.pem \
+              -name androiddebugkey \
+              -passout pass:android \
+              -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+              -out ~/.android/debug.keystore
+            cp ~/.android/debug.keystore ./godot/android/debug.keystore
+          else
+            cp ./godot/android/debug.keystore ~/.android/debug.keystore
+          fi
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android | head -n 20
+
+          VERSION_CODE=$(( 100 + ${GITHUB_RUN_NUMBER:-3} ))
+          sed -i "s/^version\/code=.*/version\/code=${VERSION_CODE}/" ./godot/export_presets.cfg
+          sed -i "s/^version\/name=.*/version\/name=\"${{ steps.pkg.outputs.version }}\"/" ./godot/export_presets.cfg
 
           mkdir -p ~/.config/godot
           cat <<EOF > ~/.config/godot/editor_settings-4.tres

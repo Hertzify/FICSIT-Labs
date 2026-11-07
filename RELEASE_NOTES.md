@@ -1,7 +1,8 @@
-# FICSIT Labs — `0.0.2.1 Initial Release`
+# FICSIT Labs — `0.0.3 Initial Release`
 
-- **Landscape Orientation Lock**: Fixed Godot 4 Android orientation (`window/handheld/orientation=4` / `SCREEN_SENSOR_LANDSCAPE`) and startup `DisplayServer.screen_set_orientation` so the APK locks strictly to landscape.
-- **Restored Exact `miner_chassis_bg.jpg`**: Restored the original `v0.0.1` `miner_chassis_bg.jpg` artwork (`154 KB`) and synced its lossless PNG counterpart into `/godot/assets/icons/buildings/miner_chassis_bg.png`.
+- **1:1 Godot 4 Canvas & UI Parity**: Rewrote `SectorWorld.gd` and `HUDController.gd` to match the web renderer 1:1 (topographic ridge contours, geological resource deposits, conveyor belts with overpass bridges & rounded item boxes, Miner Mk.1 chassis card, and responsive `StyleBoxFlat` modal layouts).
+- **Android Touch Button Fix**: Enabled `pointing/emulate_mouse_from_touch=true` in `project.godot` so all Godot `Control` buttons, sliders, and text inputs respond reliably to mobile touchscreens.
+- **Persistent Android APK Signing & In-Place Updates**: Replaced per-run random key generation with a persistent repository signing certificate (`godot/android/debug.keystore`) and auto-incrementing `version/code` so new APK releases update cleanly over existing installations without uninstalling.
 
 ---
 *Full changelog in [`CHANGELOG.md`](./CHANGELOG.md)*

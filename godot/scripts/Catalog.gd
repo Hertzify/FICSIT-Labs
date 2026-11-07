@@ -3,8 +3,8 @@ extends Node
 ## FICSIT Labs — Catalog & Geometry Registry (Godot 4 Statically-Typed GDScript)
 ## ============================================================================
 
-const APP_VERSION: String = "0.0.2.1"
-const APP_BUILD_TAG: String = "0.0.2.1 Initial Release"
+const APP_VERSION: String = "0.0.3"
+const APP_BUILD_TAG: String = "0.0.3 Initial Release"
 
 const WORLD_WIDTH: float = 12000.0
 const WORLD_HEIGHT: float = 8000.0

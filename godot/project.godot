@@ -12,7 +12,7 @@ config_version=5
 
 config/name="FICSIT Labs"
 config/description="A 2D landscape factory automation and node-tycoon adaptation of Satisfactory with an Upload Labs-inspired interface."
-config/version="0.0.2.1"
+config/version="0.0.3"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 boot_splash/bg_color=Color(0.0431373, 0.0588235, 0.0901961, 1)
@@ -37,8 +37,8 @@ window/vsync/vsync_mode=1
 
 [input_devices]
 
-pointing/emulate_touch_from_mouse=true
-pointing/emulate_mouse_from_touch=false
+pointing/emulate_touch_from_mouse=false
+pointing/emulate_mouse_from_touch=true
 
 [rendering]
 
